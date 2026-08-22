@@ -34,7 +34,15 @@ nav{display:flex;gap:.25rem;margin-left:auto}
 nav button{background:none;border:1px solid transparent;color:var(--muted);
   padding:.5rem 1rem;border-radius:999px;cursor:pointer;font-size:.9rem}
 nav button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-main{padding:1.5rem;max-width:1100px;margin:0 auto}
+main{padding:1.5rem;padding-bottom:4rem;max-width:1100px;margin:0 auto}
+footer#vpnbar{position:fixed;left:0;right:0;bottom:0;z-index:10;
+  display:flex;align-items:center;gap:.5rem;padding:.6rem 1.5rem;
+  background:color-mix(in srgb, var(--panel) 70%, transparent);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-top:1px solid var(--line);font-size:.8rem;color:var(--muted)}
+footer#vpnbar b{color:var(--text)}
+footer#vpnbar .dot.on{animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
 .card{background:color-mix(in srgb, var(--panel) 80%, transparent);
       backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
@@ -91,10 +99,28 @@ render.shell = (body) => {
         ).join('')}
       </nav>
     </header>
-    <main>${body}</main>`;
+    <main>${body}</main>
+    <footer id="vpnbar"><span class="dot off"></span>checking VPN&hellip;</footer>`;
   document.querySelectorAll('nav button').forEach(b =>
     b.onclick = () => { state.tab = b.dataset.tab; render[state.tab](); });
+  updateVpnBar();
 };
+
+// Refreshed on every tab switch (render.shell) plus on a timer, so the
+// tunnel and public IP stay visible no matter which tab is open.
+const updateVpnBar = async () => {
+  const bar = $('#vpnbar');
+  if (!bar) return;
+  try {
+    const v = await api('/vpn');
+    if (!v.enabled) { bar.innerHTML = '<span class="dot off"></span>VPN disabled'; return; }
+    const up = !!v.public_ip;
+    bar.innerHTML = `<span class="dot ${up ? 'on' : 'off'}"></span>` +
+      (up ? `Tunnel up via ${v.provider || 'VPN'} &mdash; public IP <b>${v.public_ip}</b>`
+          : `Tunnel status unknown &mdash; ${v.provider || 'VPN'}`);
+  } catch (e) { /* not signed in yet, or the request failed; leave it as-is */ }
+};
+setInterval(updateVpnBar, 30000);
 
 
 render.setup = () => {
@@ -255,6 +281,7 @@ render.vpn = async () => {
         <h3><span class="dot ${v.enabled?'on':'off'}"></span>${v.provider||'not set'}</h3>
         <p>Tunnelled: ${(v.tunnelled||[]).filter(Boolean).join(', ')||'none'}</p>
         <p>Forwarded port: ${v.forwarded_port||'none'}</p>
+        <p>Public IP: ${v.public_ip||'unknown'}</p>
         <div class="row">
           <button class="act primary" id="leak">Run leak test</button>
           <button class="act" id="rst">Restart tunnel group</button>

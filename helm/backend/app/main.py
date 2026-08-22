@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import auth, catalogue, compose, config, scheduler
+from .gluetun import parse_public_ip as _parse_public_ip
 from .wireguard import parse_conf as _parse_wireguard_conf
 
 FRONTEND = pathlib.Path(__file__).resolve().parents[2] / "frontend"
@@ -285,12 +286,17 @@ async def vpn_status(user: str = Depends(require_user)):
                                   "wget", "-qO-",
                                   "http://127.0.0.1:8000/v1/openvpn/portforwarded",
                                   timeout=30)
+    ip_code, ip_out = await compose.run("exec", "-T", "gluetun",
+                                        "wget", "-qO-",
+                                        "http://127.0.0.1:8000/v1/publicip/ip",
+                                        timeout=30)
     return {
         "enabled": env.get("VPN_ENABLED") == "true",
         "provider": env.get("VPN_SERVICE_PROVIDER"),
         "countries": env.get("VPN_SERVER_COUNTRIES"),
         "tunnelled": env.get("VPN_TUNNELLED_APPS", "").split(","),
         "forwarded_port": out.strip() if code == 0 else None,
+        "public_ip": _parse_public_ip(ip_out) if ip_code == 0 else None,
     }
 
 
