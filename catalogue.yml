@@ -20,11 +20,13 @@ apps:
     tier: acquisition
     summary: TV series management and automatic downloading.
     releases: https://github.com/Sonarr/Sonarr/releases
-    internal: http://sonarr:8989
+    internal: http://gluetun:8989
     subdomain: sonarr
     api: v3
     provides: [tv-pvr]
     wires: [download-client, indexer-proxy, root-folder]
+    requires: [gluetun]
+    tunnelled: forced
     default: true
 
   radarr:
@@ -32,11 +34,13 @@ apps:
     tier: acquisition
     summary: Film management and automatic downloading.
     releases: https://github.com/Radarr/Radarr/releases
-    internal: http://radarr:7878
+    internal: http://gluetun:7878
     subdomain: radarr
     api: v3
     provides: [film-pvr]
     wires: [download-client, indexer-proxy, root-folder]
+    requires: [gluetun]
+    tunnelled: forced
     default: true
 
   prowlarr:
@@ -44,11 +48,13 @@ apps:
     tier: acquisition
     summary: Indexer manager. Pushes indexers to Sonarr and Radarr.
     releases: https://github.com/Prowlarr/Prowlarr/releases
-    internal: http://prowlarr:9696
+    internal: http://gluetun:9696
     subdomain: prowlarr
     api: v1
     provides: [indexer-proxy]
     wires: [pvr-applications]
+    requires: [gluetun]
+    tunnelled: forced
     default: true
 
   bazarr:
@@ -56,10 +62,12 @@ apps:
     tier: acquisition
     summary: Subtitle management for Sonarr and Radarr libraries.
     releases: https://github.com/morpheus65535/bazarr/releases
-    internal: http://bazarr:6767
+    internal: http://gluetun:6767
     subdomain: bazarr
     provides: [subtitles]
     wires: [pvr-link]
+    requires: [gluetun]
+    tunnelled: forced
     default: false
 
   transmission:
@@ -83,7 +91,7 @@ apps:
     subdomain: nzbget
     provides: [download-client]
     requires: [gluetun]
-    tunnelled: default
+    tunnelled: forced
     default: true
 
   unpackerr:
@@ -92,6 +100,8 @@ apps:
     summary: Extracts archives the *arr apps cannot import.
     releases: https://github.com/Unpackerr/unpackerr/releases
     wires: [pvr-link]
+    requires: [gluetun]
+    tunnelled: forced
     default: false
 
   recyclarr:
@@ -100,6 +110,8 @@ apps:
     summary: Syncs TRaSH-guide quality profiles into Sonarr and Radarr.
     releases: https://github.com/recyclarr/recyclarr/releases
     wires: [pvr-link]
+    requires: [gluetun]
+    tunnelled: forced
     default: false
 
   dispatcharr:
@@ -138,7 +150,8 @@ apps:
   gluetun:
     name: VPN gateway
     tier: platform
-    summary: WireGuard tunnel and kill switch for the download clients.
+    summary: WireGuard tunnel and kill switch for the whole acquisition tier.
     releases: https://github.com/qdm12/gluetun/releases
     default: true
+    mandatory: true
     hidden: true

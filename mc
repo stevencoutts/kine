@@ -50,7 +50,9 @@ profiles_remove() {
 }
 
 # gluetun's dependants lose their networking when it restarts, so the
-# whole tunnel group goes together or not at all.
+# whole tunnel group goes together or not at all. That group is now the
+# entire acquisition tier, which makes this restart a bigger event than
+# it looks: expect roughly a minute of no *arr and no downloads.
 vpn_group() {
   echo "gluetun ${VPN_TUNNELLED_APPS//,/ } vpn-portsync"
 }
@@ -61,7 +63,8 @@ case "$cmd" in
   down)      docker compose down ;;
   restart)
     if [[ "${1:-}" == "gluetun" ]]; then
-      echo "Restarting gluetun alone would sever its dependants."
+      echo "Restarting gluetun alone would sever every app inside it:"
+      echo "  ${VPN_TUNNELLED_APPS}"
       echo "Use: ./mc vpn restart"; exit 1
     fi
     docker compose restart ${1:-} ;;

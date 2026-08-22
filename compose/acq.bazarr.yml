@@ -1,10 +1,19 @@
+# Tunnelled. Every tier 2 application runs inside gluetun's network
+# namespace, so this fragment carries no ports, no networks and no
+# Traefik labels: all three live on the gluetun service.
+#
+# Inside the namespace these apps address each other as 127.0.0.1,
+# because they genuinely share one loopback.
 services:
   bazarr:
     image: lscr.io/linuxserver/bazarr:${BAZARR_TAG}
     container_name: mc-bazarr
     profiles: ["bazarr"]
     restart: unless-stopped
-    security_opt: [no-new-privileges:true]
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    network_mode: "service:gluetun"
     environment:
       PUID: ${PUID}
       PGID: ${PGID}
@@ -15,14 +24,9 @@ services:
       # Single /data mount, not separate media and downloads mounts.
       # Anything else costs you hardlinks and atomic moves.
       - ${DATA_ROOT}:/data
-    networks: [mc_internal, mc_edge]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:6767/ping || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 45s
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.bazarr.rule=Host(`bazarr.${MC_DOMAIN}`)
-      - traefik.http.services.bazarr.loadbalancer.server.port=6767

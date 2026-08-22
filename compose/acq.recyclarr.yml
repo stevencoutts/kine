@@ -4,9 +4,12 @@ services:
     container_name: mc-recyclarr
     profiles: ["recyclarr"]
     restart: unless-stopped
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    network_mode: "service:gluetun"
     user: "${PUID}:${PGID}"
     environment:
       TZ: ${MC_TIMEZONE}
     volumes:
       - ${STACK_ROOT}/config/recyclarr:/config
-    networks: [mc_internal]

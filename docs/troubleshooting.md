@@ -55,3 +55,26 @@ stat -c '%g' /dev/dri/renderD128
 
 They must match. If `/dev/dri/renderD128` does not exist, the host has
 no usable GPU and Emby will transcode in software.
+
+## Sonarr, Radarr and Prowlarr are all offline at once
+
+They are not broken. They live inside the tunnel, so they go down with
+it. Check the tunnel first, before touching any of them:
+
+```bash
+./mc vpn status
+docker logs mc-gluetun --tail 50
+```
+
+A bad WireGuard key, an expired subscription or a dead endpoint all
+present the same way: the entire acquisition tier unreachable while
+Emby and Dispatcharr carry on fine. That split is the diagnostic.
+
+## A newly added tier 2 app will not start
+
+Two apps in the tunnel cannot claim the same port, because they share
+one network stack. Check `docs/port-map.md` and pick a free one.
+
+```bash
+docker logs mc-<app> --tail 20   # look for "address already in use"
+```

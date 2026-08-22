@@ -14,9 +14,16 @@ Three files, in this order.
 - a healthcheck, because the updater's rollback depends on one
 - Traefik labels, unless it is tunnelled
 
-If it must go through the VPN, give it `network_mode: "service:gluetun"`
-and no ports, no networks and no labels. Its Traefik router goes on the
-gluetun service instead.
+If it belongs to tier 2, it goes through the VPN, and that is not
+optional: give it `network_mode: "service:gluetun"`, a
+`depends_on: gluetun` gated on `service_healthy`, and no ports, no
+networks and no labels. Its Traefik router goes on the gluetun service
+instead, and its catalogue entry needs `requires: [gluetun]`.
+
+Before you pick its port, check `docs/port-map.md`. Tunnelled apps
+share one network stack, so a port already claimed in there is not a
+conflict you resolve in configuration; it is a container that refuses
+to start. Add your app to that table in the same commit.
 
 ## 2. A catalogue entry
 

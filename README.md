@@ -63,12 +63,27 @@ the *arr containers under a single parent. Split them and you lose
 hardlinks and atomic moves, and every import becomes a full copy. The
 preflight check refuses to install if they straddle a filesystem.
 
-**The VPN is a namespace, not a route.** Tunnelled apps join gluetun's
-network namespace. They have no interface of their own and no path out
-except `wg0`, and gluetun's firewall drops the rest. If the tunnel
-drops, the traffic stops. The consequence is that those apps cannot
-carry their own ports or Traefik labels, and cannot be restarted
-independently of the tunnel; the CLI and GUI both enforce that.
+**The VPN is a namespace, not a route, and it covers the whole
+acquisition tier.** Sonarr, Radarr, Prowlarr, Bazarr, Transmission,
+NZBGet, Unpackerr and Recyclarr all join gluetun's network namespace.
+None of them has an interface of its own or any path out except `wg0`,
+and gluetun's firewall drops the rest. If the tunnel drops, all of that
+traffic stops rather than falling back to your own address.
+
+Three things follow, and they are worth understanding before you rely
+on this:
+
+- Those apps carry no ports and no Traefik labels of their own. Every
+  router for them lives on the gluetun service, because that is the
+  container holding their sockets. From inside they reach each other on
+  `127.0.0.1`; from outside they are `gluetun:<port>`.
+- They share one port space, so no two of them may claim the same port.
+  `docs/port-map.md` is the register.
+- The tunnel is now a hard dependency for far more than torrenting. A
+  flapping VPN presents as a broken *arr stack, and restarting the
+  tunnel takes the whole acquisition tier down for about a minute. The
+  CLI and GUI both refuse to restart gluetun on its own for that
+  reason.
 
 **Updates are opt-in and reversible.** Images are pinned by tag and
 digest. An update snapshots config, pulls, recreates, and watches the

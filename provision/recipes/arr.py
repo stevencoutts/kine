@@ -31,9 +31,9 @@ def transmission_client(category: str) -> dict:
         "implementation": "Transmission",
         "configContract": "TransmissionSettings",
         "fields": [
-            # Transmission lives inside gluetun's namespace, so it is
-            # addressed as gluetun on the internal network.
-            {"name": "host", "value": "gluetun"},
+            # Sonarr and Transmission share gluetun's namespace, so
+            # this is a genuine loopback call, not a network hop.
+            {"name": "host", "value": "localhost"},
             {"name": "port", "value": 9091},
             {"name": "useSsl", "value": False},
             {"name": "urlBase", "value": "/transmission/"},
@@ -54,7 +54,7 @@ def nzbget_client(category: str) -> dict:
         "implementation": "Nzbget",
         "configContract": "NzbgetSettings",
         "fields": [
-            {"name": "host", "value": "gluetun"},
+            {"name": "host", "value": "localhost"},
             {"name": "port", "value": 6789},
             {"name": "useSsl", "value": False},
             {"name": "username", "value": "nzbget"},
@@ -66,7 +66,10 @@ def nzbget_client(category: str) -> dict:
 
 def configure(app: str, enabled: set[str], log) -> None:
     client = ArrClient(
-        {"sonarr": "http://sonarr:8989", "radarr": "http://radarr:7878"}[app],
+        # The provisioner sits on mc_internal, outside the tunnel, so it
+        # reaches the tier 2 apps at gluetun's address: that container is
+        # the one that actually holds their sockets.
+        {"sonarr": "http://gluetun:8989", "radarr": "http://gluetun:7878"}[app],
         api_key(app),
     )
     if not client.wait():
