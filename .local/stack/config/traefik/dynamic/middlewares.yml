@@ -1,0 +1,14 @@
+http:
+  middlewares:
+    kine-auth:
+      forwardAuth:
+        address: "http://helm:8600/api/auth/verify"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - X-Kine-User
+    kine-headers:
+      headers:
+        stsSeconds: 31536000
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: same-origin

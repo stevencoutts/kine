@@ -1,6 +1,6 @@
 services:
   provision:
-    build: ./provision
+    build: ../provision
     image: kine/provision:local
     container_name: kine-provision
     # Runs to completion then exits. Re-run on demand:

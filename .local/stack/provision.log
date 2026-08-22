@@ -1,0 +1,21 @@
+2026-08-22 20:24:15Z  Provisioning: dispatcharr, ecm, emby, mdns, teamarr
+2026-08-22 20:24:51Z  Provisioning: dispatcharr, ecm, emby, mdns, teamarr
+2026-08-22 20:24:56Z  emby: library Movies -> /data/media/movies
+2026-08-22 20:24:56Z  emby: library TV -> /data/media/tv
+2026-08-22 20:24:56Z  emby: library Sports -> /data/media/sports
+2026-08-22 20:24:56Z  emby: startup wizard completed
+2026-08-22 20:24:56Z  Provisioning complete
+2026-08-22 20:25:05Z  Provisioning: dispatcharr, ecm, emby, mdns, teamarr
+2026-08-22 20:25:05Z  emby: step /Startup/Configuration failed (Client error '401 Unauthorized' for url 'http://emby:8096/Startup/Configuration'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401); continuing
+2026-08-22 20:25:05Z  emby: step /Startup/User failed (Client error '401 Unauthorized' for url 'http://emby:8096/Startup/User'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401); continuing
+2026-08-22 20:25:05Z  emby: library Movies not created (Client error '401 Unauthorized' for url 'http://emby:8096/Library/VirtualFolders?name=Movies&collectionType=movies&refreshLibrary=false'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401)
+2026-08-22 20:25:05Z  emby: library TV not created (Client error '401 Unauthorized' for url 'http://emby:8096/Library/VirtualFolders?name=TV&collectionType=tvshows&refreshLibrary=false'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401)
+2026-08-22 20:25:05Z  emby: library Sports not created (Client error '401 Unauthorized' for url 'http://emby:8096/Library/VirtualFolders?name=Sports&collectionType=tvshows&refreshLibrary=false'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401)
+2026-08-22 20:25:05Z  emby: could not complete wizard (Client error '401 Unauthorized' for url 'http://emby:8096/Startup/Complete'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/401)
+2026-08-22 20:25:05Z  Provisioning complete

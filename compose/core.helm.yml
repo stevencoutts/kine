@@ -1,6 +1,6 @@
 services:
   helm:
-    build: ./helm
+    build: ../helm
     image: kine/helm:local
     container_name: kine-helm
     restart: unless-stopped

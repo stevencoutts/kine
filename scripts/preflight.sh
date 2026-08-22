@@ -47,7 +47,8 @@ for p in 80 443; do
 done
 
 if is_darwin; then
-  warn "macOS: no /dev/net/tun or /dev/dri passthrough under Docker Desktop; VPN and hardware transcoding are unavailable"
+  ok "macOS: Docker Desktop's Linux VM supplies /dev/net/tun for VPN containers"
+  warn "macOS: no /dev/dri passthrough under Docker Desktop; hardware transcoding is unavailable"
 else
   [[ -e /dev/net/tun ]] || warn "/dev/net/tun missing; the VPN container will not start"
   [[ -e /dev/dri/renderD128 ]] || warn "no /dev/dri; hardware transcoding unavailable"

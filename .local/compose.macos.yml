@@ -1,0 +1,5 @@
+services:
+  emby:
+    # Docker Desktop exposes /dev/net/tun through its Linux VM, but not
+    # Intel's /dev/dri device. Software transcoding still works.
+    devices: !reset []

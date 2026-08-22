@@ -162,6 +162,14 @@ async def first_run(request: Request):
 
 
 # ── catalogue and lifecycle ─────────────────────────────────────
+def _tier_section_enabled(tier: str, enabled: set[str]) -> bool:
+    defaults = catalogue.tier_default_apps(tier)
+    if not defaults:
+        visible = catalogue.tier_visible_apps(tier)
+        return bool(visible) and all(app in enabled for app in visible)
+    return all(app in enabled for app in defaults)
+
+
 @app.get("/api/apps")
 async def apps(user: str = Depends(require_user)):
     cat = catalogue.load()
@@ -177,6 +185,7 @@ async def apps(user: str = Depends(require_user)):
             "tier": meta.get("tier", "other"),
             "summary": meta.get("summary", ""),
             "enabled": key in enabled,
+            "default": meta.get("default", False),
             "running": f'"{key}"' in running or f"kine-{key}" in running,
             "url": f"https://{meta['subdomain']}.{env.get('KINE_DOMAIN','')}"
                    if meta.get("subdomain") else None,
@@ -185,7 +194,62 @@ async def apps(user: str = Depends(require_user)):
             "tunnelled": meta.get("tunnelled"),
             "hidden": meta.get("hidden", False),
         })
-    return result
+    tiers = {}
+    for tier in catalogue.TIER_LABELS:
+        visible = catalogue.tier_visible_apps(tier)
+        if visible:
+            tiers[tier] = {
+                "label": catalogue.TIER_LABELS[tier],
+                "enabled": _tier_section_enabled(tier, enabled),
+                "defaults": catalogue.tier_default_apps(tier),
+            }
+    return {"apps": result, "tiers": tiers}
+
+
+@app.post("/api/tiers/{tier}/enable")
+async def enable_tier(tier: str, user: str = Depends(require_user)):
+    defaults = catalogue.tier_default_apps(tier)
+    if not defaults:
+        raise HTTPException(404, "no default apps in this section")
+    cat = catalogue.load()
+    wanted = config.profiles()
+    for app_id in defaults:
+        wanted = catalogue.resolve_deps(app_id, cat, wanted)
+        if app_id not in wanted:
+            wanted.append(app_id)
+    config.set_profiles(wanted)
+    code, out = await compose.run("up", "-d")
+    if code != 0:
+        raise HTTPException(500, out[-2000:])
+    await compose.run("run", "--rm", "provision", "wire")
+    return {"ok": True, "enabled": defaults}
+
+
+@app.post("/api/tiers/{tier}/disable")
+async def disable_tier(tier: str, user: str = Depends(require_user)):
+    cat = catalogue.load()
+    to_remove = {
+        k for k, v in cat.items()
+        if v.get("tier") == tier and not v.get("mandatory") and not v.get("hidden")
+    }
+    wanted = config.profiles()
+    for app_id in to_remove:
+        if app_id not in wanted:
+            continue
+        dependants = [k for k, v in cat.items() if app_id in v.get("requires", [])]
+        still_on = [d for d in dependants if d in wanted and d not in to_remove]
+        if still_on:
+            raise HTTPException(409, f"{', '.join(still_on)} depend on {app_id}")
+    removed = sorted(to_remove & set(wanted))
+    for app_id in to_remove:
+        if app_id in wanted:
+            await compose.run("stop", app_id)
+            await compose.run("rm", "-f", app_id)
+    wanted = catalogue.prune_orphan_gluetun(
+        [p for p in wanted if p not in to_remove], cat,
+    )
+    config.set_profiles(wanted)
+    return {"ok": True, "disabled": removed}
 
 
 @app.post("/api/apps/{app_id}/enable")
@@ -337,7 +401,8 @@ async def vpn_leaktest(user: str = Depends(require_user)):
 async def get_settings(user: str = Depends(require_user)):
     env = config.read()
     public = ("KINE_DOMAIN", "KINE_TLS_MODE", "KINE_ACME_EMAIL", "KINE_ACME_DNS_PROVIDER",
-              "KINE_TIMEZONE", "STACK_ROOT", "DATA_ROOT", "HELM_UPDATE_CHECK_CRON")
+              "KINE_TIMEZONE", "STACK_ROOT", "DATA_ROOT", "HELM_UPDATE_CHECK_CRON",
+              "NFS_SERVER", "NFS_TV", "NFS_MOVIES", "NFS_DOWNLOADS")
     return {k: env.get(k, "") for k in public}
 
 
@@ -345,7 +410,8 @@ async def get_settings(user: str = Depends(require_user)):
 async def set_settings(request: Request, user: str = Depends(require_user)):
     body = await request.json()
     allowed = {"KINE_DOMAIN", "KINE_TLS_MODE", "KINE_ACME_EMAIL",
-               "KINE_ACME_DNS_PROVIDER", "KINE_TIMEZONE", "HELM_UPDATE_CHECK_CRON"}
+               "KINE_ACME_DNS_PROVIDER", "KINE_TIMEZONE", "HELM_UPDATE_CHECK_CRON",
+               "NFS_SERVER", "NFS_TV", "NFS_MOVIES", "NFS_DOWNLOADS"}
     config.write({k: str(v) for k, v in body.items() if k in allowed})
     if {"KINE_TLS_MODE", "KINE_DOMAIN", "KINE_ACME_EMAIL"} & set(body):
         await compose.script("tls-setup.sh")
@@ -354,7 +420,10 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
         # Best-effort: mdns may not be enabled, and a missing container
         # is not a settings-save failure.
         await compose.run("restart", "mdns")
-    return {"ok": True}
+    nfs_changed = bool(
+        {"NFS_SERVER", "NFS_TV", "NFS_MOVIES", "NFS_DOWNLOADS"} & set(body)
+    )
+    return {"ok": True, "nfs_requires_host_mount": nfs_changed}
 
 
 @app.post("/api/backup")

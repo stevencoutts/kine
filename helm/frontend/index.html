@@ -61,6 +61,13 @@ a.link{color:var(--accent);text-decoration:none;font-size:.8rem}
 pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);
     padding:.75rem;overflow:auto;font-size:.8rem;max-height:420px}
 .section{margin-bottom:2rem}
+.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem}
+.section-head h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--muted);margin:0}
+.tier-toggle{gap:.5rem;cursor:pointer;flex:1}
+.tier-toggle input{width:auto;margin:0}
+button.collapse{background:none;border:none;color:var(--muted);cursor:pointer;
+  font-size:.75rem;padding:.25rem .5rem}
 .section h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;
   color:var(--muted);margin:0 0 .75rem}
 label{display:block;font-size:.8rem;color:var(--muted);margin:.75rem 0 .25rem}
@@ -81,11 +88,15 @@ const $ = (s,r=document)=>r.querySelector(s);
 const api = async (path, opts={}) => {
   const r = await fetch('/api'+path, {credentials:'same-origin',
     headers:{'Content-Type':'application/json'}, ...opts});
-  if (r.status === 401) { render.login(); throw new Error('unauthenticated'); }
-  return r.json();
+  if (r.status === 401) { render.login(); throw new Error('Unauthenticated'); }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || 'Request failed');
+  return data;
 };
 
-const state = { tab:'apps', apps:[] };
+const state = { tab:'apps', apps:[], tiers:{}, collapsed:{} };
+const TAB_LABELS = {apps:'Apps', updates:'Updates', vpn:'VPN', status:'Status', settings:'Settings'};
+const TIER_ORDER = ['media','acquisition','live','platform'];
 
 const render = {};
 
@@ -95,7 +106,7 @@ render.shell = (body) => {
       <h1>Kine</h1>
       <nav>
         ${['apps','updates','vpn','status','settings'].map(t =>
-          `<button class="${state.tab===t?'active':''}" data-tab="${t}">${t}</button>`
+          `<button class="${state.tab===t?'active':''}" data-tab="${t}">${TAB_LABELS[t]}</button>`
         ).join('')}
       </nav>
     </header>
@@ -113,7 +124,7 @@ const updateVpnBar = async () => {
   if (!bar) return;
   try {
     const v = await api('/vpn');
-    if (!v.enabled) { bar.innerHTML = '<span class="dot off"></span>VPN disabled'; return; }
+    if (!v.enabled) { bar.innerHTML = '<span class="dot off"></span>VPN Disabled'; return; }
     const up = !!v.public_ip;
     bar.innerHTML = `<span class="dot ${up ? 'on' : 'off'}"></span>` +
       (up ? `Tunnel up via ${v.provider || 'VPN'} &mdash; public IP <b>${v.public_ip}</b>`
@@ -127,10 +138,10 @@ render.setup = () => {
   $('#app').innerHTML = `
     <main class="login" style="max-width:460px">
       <div class="card">
-        <h3>First run</h3>
+        <h3>First Run</h3>
         <p>Set the admin password and how this appliance is reached. Both
            can be changed later from Settings.</p>
-        <label>Admin password (12 characters minimum)</label>
+        <label>Admin Password (12 Characters Minimum)</label>
         <input id="pw" type="password">
         <label>Confirm</label>
         <input id="pw2" type="password">
@@ -143,8 +154,8 @@ render.setup = () => {
           <option value="custom">custom &mdash; supply your own PEM files</option>
         </select>
         <div id="acme" style="display:none">
-          <label>ACME email</label><input id="email">
-          <label>DNS provider code</label><input id="prov" value="cloudflare">
+          <label>ACME Email</label><input id="email">
+          <label>DNS Provider Code</label><input id="prov" value="cloudflare">
         </div>
         <label>Timezone</label><input id="tz" value="Europe/London">
         <label class="row" style="margin-top:.75rem">
@@ -152,13 +163,13 @@ render.setup = () => {
           Enable VPN (recommended &mdash; tunnels the whole acquisition tier)
         </label>
         <div id="vpn_conf_wrap">
-          <label>WireGuard config file</label>
+          <label>WireGuard Config File</label>
           <input id="vpn_conf" type="file" accept=".conf,.txt">
-          <label>&hellip;or paste it here</label>
+          <label>&hellip;Or Paste It Here</label>
           <textarea id="vpn_conf_text" rows="5" placeholder="[Interface]&#10;PrivateKey = ...&#10;Address = ..."></textarea>
         </div>
         <div class="row" style="margin-top:1rem">
-          <button class="act primary" id="go">Finish setup</button>
+          <button class="act primary" id="go">Finish Setup</button>
         </div>
         <div id="msg"></div>
       </div>
@@ -200,11 +211,11 @@ render.login = () => {
   $('#app').innerHTML = `
     <main class="login">
       <div class="card">
-        <h3>Sign in</h3>
+        <h3>Sign In</h3>
         <label>Username</label><input id="u" value="admin">
         <label>Password</label><input id="p" type="password">
         <div class="row" style="margin-top:1rem">
-          <button class="act primary" id="go">Sign in</button>
+          <button class="act primary" id="go">Sign In</button>
         </div>
         <div id="err"></div>
       </div>
@@ -219,17 +230,29 @@ render.login = () => {
 };
 
 render.apps = async () => {
-  state.apps = await api('/apps');
-  const tiers = ['media','acquisition','live','platform'];
-  const body = tiers.map(tier => {
+  const data = await api('/apps');
+  state.apps = data.apps;
+  state.tiers = data.tiers;
+  const body = TIER_ORDER.map(tier => {
+    const meta = state.tiers[tier];
+    if (!meta) return '';
     const items = state.apps.filter(a => a.tier===tier && !a.hidden);
     if (!items.length) return '';
-    return `<div class="section"><h2>${tier}</h2><div class="grid">` +
+    const collapsed = state.collapsed[tier];
+    return `<div class="section" data-tier="${tier}">
+      <div class="section-head">
+        <label class="tier-toggle row">
+          <input type="checkbox" data-tier="${tier}" ${meta.enabled?'checked':''}>
+          <h2>${meta.label}</h2>
+        </label>
+        <button class="collapse" data-tier="${tier}" aria-label="Toggle section">${collapsed?'&#9654;':'&#9660;'}</button>
+      </div>
+      <div class="grid tier-body" ${collapsed?'style="display:none"':''}>` +
       items.map(a => `
         <div class="card">
           <h3><span class="dot ${a.running?'on':'off'}"></span>${a.name}</h3>
           <p>${a.summary}</p>
-          ${a.tunnelled==='forced'?'<p style="color:var(--warn)">Always tunnelled</p>':''}
+          ${a.tunnelled==='forced'?'<p style="color:var(--warn)">Always Tunnelled</p>':''}
           <div class="row">
             ${a.enabled
               ? `<button class="act" data-act="disable" data-id="${a.id}">Disable</button>
@@ -240,20 +263,40 @@ render.apps = async () => {
         </div>`).join('') + '</div></div>';
   }).join('');
   render.shell(body);
+  document.querySelectorAll('[data-tier]').forEach(el => {
+    if (el.type === 'checkbox') {
+      el.onchange = async () => {
+        el.disabled = true;
+        try {
+          await api(`/tiers/${el.dataset.tier}/${el.checked?'enable':'disable'}`, {method:'POST'});
+          render.apps();
+        } catch (e) {
+          el.checked = !el.checked;
+          alert(e.message || 'Could not update section');
+          el.disabled = false;
+        }
+      };
+    } else if (el.classList.contains('collapse')) {
+      el.onclick = () => {
+        state.collapsed[el.dataset.tier] = !state.collapsed[el.dataset.tier];
+        render.apps();
+      };
+    }
+  });
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
-    b.disabled = true; b.textContent = 'working...';
+    b.disabled = true; b.textContent = 'Working...';
     await api(`/apps/${b.dataset.id}/${b.dataset.act}`, {method:'POST'});
     render.apps();
   });
 };
 
 render.updates = async (refresh=false) => {
-  render.shell(`<div class="section"><h2>image updates</h2>
+  render.shell(`<div class="section"><h2>Image Updates</h2>
     <p style="color:var(--muted);font-size:.85rem">Nothing updates on its own.
     The overnight job only checks digests; applying an update snapshots
     config first and rolls back if the app does not come back healthy.</p>
     <div class="row" style="margin-bottom:1rem">
-      <button class="act" id="refresh">Check now</button>
+      <button class="act" id="refresh">Check Now</button>
       <span id="age" style="color:var(--muted);font-size:.8rem"></span>
     </div>
     <pre id="rep">${refresh?'checking registries...':'loading...'}</pre>
@@ -276,15 +319,15 @@ render.updates = async (refresh=false) => {
 render.vpn = async () => {
   const v = await api('/vpn');
   render.shell(`
-    <div class="section"><h2>vpn</h2>
+    <div class="section"><h2>VPN</h2>
       <div class="card">
         <h3><span class="dot ${v.enabled?'on':'off'}"></span>${v.provider||'not set'}</h3>
         <p>Tunnelled: ${(v.tunnelled||[]).filter(Boolean).join(', ')||'none'}</p>
         <p>Forwarded port: ${v.forwarded_port||'none'}</p>
         <p>Public IP: ${v.public_ip||'unknown'}</p>
         <div class="row">
-          <button class="act primary" id="leak">Run leak test</button>
-          <button class="act" id="rst">Restart tunnel group</button>
+          <button class="act primary" id="leak">Run Leak Test</button>
+          <button class="act" id="rst">Restart Tunnel Group</button>
         </div>
       </div>
       <pre id="out" style="margin-top:1rem"></pre>
@@ -315,15 +358,15 @@ render.status = async () => {
   const jobs = s.jobs || {};
   const pending = (jobs.updates?.pending || []);
   render.shell(`
-    <div class="section"><h2>storage</h2><div class="grid">
+    <div class="section"><h2>Storage</h2><div class="grid">
       ${disk('Stack', s.disks.stack)}${disk('Media and downloads', s.disks.data)}
     </div></div>
-    <div class="section"><h2>background jobs</h2><div class="grid">
-      <div class="card"><h3>Update check</h3>
+    <div class="section"><h2>Background Jobs</h2><div class="grid">
+      <div class="card"><h3>Update Check</h3>
         <p>Last run: ${jobs.updates?.checked || 'never'}</p>
         <p>${pending.length ? pending.length + ' app(s) with a newer image: ' + pending.join(', ')
                             : 'Everything is on its pinned image'}</p></div>
-      <div class="card"><h3>Config backup</h3>
+      <div class="card"><h3>Config Backup</h3>
         <p>Last run: ${jobs.backup?.ran || 'never'}</p>
         <p>${jobs.backup?.path || 'no snapshot recorded'}</p></div>
     </div></div>
@@ -335,29 +378,50 @@ render.status = async () => {
 render.settings = async () => {
   const s = await api('/settings');
   render.shell(`
-    <div class="section"><h2>settings</h2><div class="card">
+    <div class="section"><h2>Settings</h2><div class="card">
       <label>Domain</label><input id="KINE_DOMAIN" value="${s.KINE_DOMAIN}">
-      <label>TLS mode</label>
+      <label>TLS Mode</label>
       <select id="KINE_TLS_MODE">
         ${['internal','acme-dns','custom'].map(m =>
           `<option ${s.KINE_TLS_MODE===m?'selected':''}>${m}</option>`).join('')}
       </select>
-      <label>ACME email (acme-dns only)</label>
+      <label>ACME Email (acme-dns only)</label>
       <input id="KINE_ACME_EMAIL" value="${s.KINE_ACME_EMAIL}">
-      <label>ACME DNS provider</label>
+      <label>ACME DNS Provider</label>
       <input id="KINE_ACME_DNS_PROVIDER" value="${s.KINE_ACME_DNS_PROVIDER}">
       <label>Timezone</label><input id="KINE_TIMEZONE" value="${s.KINE_TIMEZONE}">
       <div class="row" style="margin-top:1rem">
-        <button class="act primary" id="save">Save and reload Traefik</button>
-        <button class="act" id="bk">Back up now</button>
+        <button class="act primary" id="save">Save and Reload Traefik</button>
+        <button class="act" id="bk">Back Up Now</button>
       </div>
       <div id="msg"></div>
+    </div></div>
+    <div class="section"><h2>Media Storage</h2><div class="card">
+      <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
+        Optional NFS mounts. Exports are mounted onto the local tree under
+        <code>${s.DATA_ROOT||'/srv/media-data'}</code> before containers start.
+        Enabled apps are already wired to <code>/data/media/tv</code>,
+        <code>/data/media/movies</code> and <code>/data/downloads</code>.</p>
+      <label>NFS Server</label><input id="NFS_SERVER" value="${s.NFS_SERVER||''}" placeholder="192.168.1.10">
+      <label>TV Export Path</label><input id="NFS_TV" value="${s.NFS_TV||''}" placeholder="/media/TV">
+      <label>Movies Export Path</label><input id="NFS_MOVIES" value="${s.NFS_MOVIES||''}" placeholder="/media/Movies">
+      <label>Downloads Export Path</label><input id="NFS_DOWNLOADS" value="${s.NFS_DOWNLOADS||''}" placeholder="/media/downloads">
+      <div class="row" style="margin-top:1rem">
+        <button class="act primary" id="save-nfs">Save NFS Settings</button>
+      </div>
+      <div id="nfs-msg"></div>
     </div></div>`);
   $('#save').onclick = async () => {
     const keys = ['KINE_DOMAIN','KINE_TLS_MODE','KINE_ACME_EMAIL','KINE_ACME_DNS_PROVIDER','KINE_TIMEZONE'];
     await api('/settings', {method:'POST',
       body: JSON.stringify(Object.fromEntries(keys.map(k=>[k,$('#'+k).value])))});
     $('#msg').innerHTML = '<div class="banner ok">Saved. Certificates may take a minute.</div>';
+  };
+  $('#save-nfs').onclick = async () => {
+    const keys = ['NFS_SERVER','NFS_TV','NFS_MOVIES','NFS_DOWNLOADS'];
+    await api('/settings', {method:'POST',
+      body: JSON.stringify(Object.fromEntries(keys.map(k=>[k,$('#'+k).value])))});
+    $('#nfs-msg').innerHTML = '<div class="banner ok">Saved. Apply on the host with <code>sudo ./scripts/mount-media.sh</code>.</div>';
   };
   $('#bk').onclick = async () => {
     const r = await api('/backup', {method:'POST'});

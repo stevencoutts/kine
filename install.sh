@@ -75,6 +75,7 @@ mkdir -p "${DATA_ROOT}"/media/{movies,tv,sports,recordings}
 mkdir -p "${DATA_ROOT}"/downloads/{incomplete,complete}
 chown -R "${PUID_ACTUAL}:${PGID_ACTUAL}" "${STACK_ROOT}" "${DATA_ROOT}"
 chmod -R g+rwX "${DATA_ROOT}"
+./scripts/mount-media.sh || warn "NFS mounts failed; using local directories"
 ok "directory tree ready"
 
 # ── 4. TLS ──────────────────────────────────────────────────────

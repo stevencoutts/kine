@@ -7,7 +7,7 @@
 # separate namespace for one to belong to.
 services:
   mdns:
-    build: ./mdns
+    build: ../mdns
     image: kine/mdns:local
     container_name: kine-mdns
     profiles: ["mdns"]
@@ -17,4 +17,4 @@ services:
       KINE_DOMAIN: ${KINE_DOMAIN}
       COMPOSE_PROFILES: ${COMPOSE_PROFILES}
     volumes:
-      - ./catalogue.yml:/catalogue.yml:ro
+      - ../catalogue.yml:/catalogue.yml:ro

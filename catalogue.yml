@@ -92,7 +92,7 @@ apps:
     provides: [download-client]
     requires: [gluetun]
     tunnelled: forced
-    default: true
+    default: false
 
   unpackerr:
     name: Unpackerr
