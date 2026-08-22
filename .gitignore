@@ -1,5 +1,33 @@
+# Local configuration and generated runtime state
 .env
-*.tar.gz
+.env.*
+!.env.example
+.local/
+.claude/
+
+# Python
+.venv/
+venv/
 __pycache__/
-*.pyc
-helm/frontend/node_modules/
+*.py[cod]
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Frontend dependencies and build output
+node_modules/
+dist/
+
+# Logs, backups, and archives
+*.log
+*.tar.gz
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

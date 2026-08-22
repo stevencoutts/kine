@@ -1,4 +1,0 @@
-﻿Hardware acceleration methods:
-drm
-
-
