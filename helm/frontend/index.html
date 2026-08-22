@@ -15,10 +15,20 @@
         --text:#22201b;--muted:#7a7568;}
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--text);
-     font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+/* ponytail: a CSS gradient stands in for the reference's background
+   photo — no image asset to embed, and a stock interior shot would
+   just add dead weight to a single-file admin panel. */
+body{margin:0;color:var(--text);
+     font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+     background:
+       radial-gradient(1100px 500px at 15% -10%, color-mix(in srgb, var(--accent) 35%, transparent), transparent),
+       radial-gradient(900px 500px at 100% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent),
+       var(--bg);
+     background-attachment:fixed}
 header{display:flex;align-items:center;gap:1rem;padding:1rem 1.5rem;
-       border-bottom:1px solid var(--line);background:var(--panel)}
+       border-bottom:1px solid var(--line);
+       background:color-mix(in srgb, var(--panel) 65%, transparent);
+       backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
 header h1{font-size:1rem;margin:0;letter-spacing:.02em}
 nav{display:flex;gap:.25rem;margin-left:auto}
 nav button{background:none;border:1px solid transparent;color:var(--muted);
@@ -26,7 +36,9 @@ nav button{background:none;border:1px solid transparent;color:var(--muted);
 nav button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
 main{padding:1.5rem;max-width:1100px;margin:0 auto}
 .grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+.card{background:color-mix(in srgb, var(--panel) 80%, transparent);
+      backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+      border:1px solid var(--line);border-radius:var(--radius);
       padding:1.1rem;display:flex;flex-direction:column;gap:.5rem}
 .card h3{margin:0;font-size:.95rem;display:flex;align-items:center;gap:.5rem}
 .card p{margin:0;color:var(--muted);font-size:.85rem;flex:1}
