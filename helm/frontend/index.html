@@ -120,6 +120,14 @@ render.setup = () => {
           <label>DNS provider code</label><input id="prov" value="cloudflare">
         </div>
         <label>Timezone</label><input id="tz" value="Europe/London">
+        <label class="row" style="margin-top:.75rem">
+          <input id="vpn_enable" type="checkbox" checked style="width:auto">
+          Enable VPN (recommended &mdash; tunnels the whole acquisition tier)
+        </label>
+        <div id="vpn_conf_wrap">
+          <label>WireGuard config file (optional &mdash; add the key later from the VPN page if you skip this)</label>
+          <input id="vpn_conf" type="file" accept=".conf,.txt">
+        </div>
         <div class="row" style="margin-top:1rem">
           <button class="act primary" id="go">Finish setup</button>
         </div>
@@ -129,17 +137,24 @@ render.setup = () => {
   $('#tls').onchange = e => {
     $('#acme').style.display = e.target.value === 'acme-dns' ? 'block' : 'none';
   };
+  $('#vpn_enable').onchange = e => {
+    $('#vpn_conf_wrap').style.display = e.target.checked ? 'block' : 'none';
+  };
   $('#go').onclick = async () => {
     const pw = $('#pw').value;
     if (pw !== $('#pw2').value)
       return $('#msg').innerHTML = '<div class="banner bad">Passwords do not match</div>';
     if (pw.length < 12)
       return $('#msg').innerHTML = '<div class="banner bad">Needs at least 12 characters</div>';
+    const vpnEnabled = $('#vpn_enable').checked;
+    const vpnFile = $('#vpn_conf').files[0];
+    const wireguardConf = vpnEnabled && vpnFile ? await vpnFile.text() : '';
     const r = await fetch('/api/setup', {method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({password:pw, domain:$('#domain').value,
         tls_mode:$('#tls').value, acme_email:$('#email')?.value||'',
-        acme_provider:$('#prov')?.value||'', timezone:$('#tz').value})});
+        acme_provider:$('#prov')?.value||'', timezone:$('#tz').value,
+        vpn_enabled:vpnEnabled, wireguard_conf:wireguardConf})});
     if (r.ok) render.login();
     else {
       const e = await r.json();

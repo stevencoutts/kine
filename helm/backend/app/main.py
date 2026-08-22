@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import auth, catalogue, compose, config, scheduler
+from .wireguard import parse_conf as _parse_wireguard_conf
 
 FRONTEND = pathlib.Path(__file__).resolve().parents[2] / "frontend"
 app = FastAPI(title="Media Centre Helm", docs_url=None, redoc_url=None)
@@ -132,6 +133,27 @@ async def first_run(request: Request):
     if updates:
         config.write(updates)
         await compose.script("tls-setup.sh")
+
+    vpn_enabled = bool(body.get("vpn_enabled", True))
+    cat = catalogue.load()
+    tunnelled = [k for k, v in cat.items() if "gluetun" in v.get("requires", [])]
+    wanted = config.profiles()
+    if vpn_enabled:
+        if "gluetun" not in wanted:
+            wanted.append("gluetun")
+        conf = body.get("wireguard_conf", "")
+        vpn_updates = {"VPN_ENABLED": "true"}
+        if conf.strip():
+            vpn_updates.update(_parse_wireguard_conf(conf))
+        config.write(vpn_updates)
+    else:
+        # Nothing tunnelled-forced can run without it, so switching VPN
+        # off at setup drops them too rather than leaving them enabled
+        # and silently broken.
+        wanted = [p for p in wanted if p != "gluetun" and p not in tunnelled]
+        config.write({"VPN_ENABLED": "false"})
+    config.set_profiles(wanted)
+
     return {"ok": True}
 
 
