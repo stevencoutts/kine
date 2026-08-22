@@ -7,7 +7,7 @@
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 source ./scripts/lib.sh
-set -a; source .env; set +a
+load_env .env
 
 var_for() { echo "$(echo "$1" | tr 'a-z-' 'A-Z_')"; }
 

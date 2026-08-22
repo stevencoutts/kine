@@ -127,8 +127,8 @@ const updateVpnBar = async () => {
     if (!v.enabled) { bar.innerHTML = '<span class="dot off"></span>VPN Disabled'; return; }
     const up = !!v.public_ip;
     bar.innerHTML = `<span class="dot ${up ? 'on' : 'off'}"></span>` +
-      (up ? `Tunnel up via ${v.provider || 'VPN'} &mdash; public IP <b>${v.public_ip}</b>`
-          : `Tunnel status unknown &mdash; ${v.provider || 'VPN'}`);
+      (up ? `Tunnel up via ${v.connection_type || 'VPN'} &mdash; public IP <b>${v.public_ip}</b>`
+          : `Tunnel status unknown &mdash; ${v.connection_type || 'VPN'}`);
   } catch (e) { /* not signed in yet, or the request failed; leave it as-is */ }
 };
 setInterval(updateVpnBar, 30000);
@@ -321,7 +321,7 @@ render.vpn = async () => {
   render.shell(`
     <div class="section"><h2>VPN</h2>
       <div class="card">
-        <h3><span class="dot ${v.enabled?'on':'off'}"></span>${v.provider||'not set'}</h3>
+        <h3><span class="dot ${v.enabled?'on':'off'}"></span>${v.connection_type||'VPN'}</h3>
         <p>Tunnelled: ${(v.tunnelled||[]).filter(Boolean).join(', ')||'none'}</p>
         <p>Forwarded port: ${v.forwarded_port||'none'}</p>
         <p>Public IP: ${v.public_ip||'unknown'}</p>

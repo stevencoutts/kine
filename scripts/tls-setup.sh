@@ -2,7 +2,8 @@
 # Writes Traefik's dynamic configuration for the chosen TLS mode.
 # Re-run after changing KINE_TLS_MODE: ./kine tls
 set -Eeuo pipefail
-set -a; source .env; set +a
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+load_env .env
 
 DYN="${STACK_ROOT}/config/traefik/dynamic"
 mkdir -p "$DYN" "${STACK_ROOT}/config/traefik/certs"

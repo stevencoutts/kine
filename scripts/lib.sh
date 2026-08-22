@@ -2,6 +2,22 @@
 # Portability shims. The appliance targets Linux (README says so), but
 # these are the handful of places GNU coreutils syntax would otherwise
 # hard-fail on macOS during local dev/testing on Docker Desktop.
+load_env() {
+  local file="${1:-.env}" line key value
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# || "$line" != *=* ]] && continue
+    key="${line%%=*}"
+    value="${line#*=}"
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    case "$value" in
+      \"*\") value="${value:1:${#value}-2}" ;;
+      \'*\') value="${value:1:${#value}-2}" ;;
+    esac
+    export "$key=$value"
+  done < "$file"
+}
+
 is_darwin() { [[ "$(uname)" == "Darwin" ]]; }
 
 # In-place sed: GNU wants `-i pattern`, BSD/macOS requires `-i ''`.

@@ -4,6 +4,7 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 FRONTEND = (ROOT / "helm" / "frontend" / "index.html").read_text()
+BACKEND = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()
 
 
 def test_visible_control_labels_use_title_case():
@@ -19,3 +20,12 @@ def test_visible_control_labels_use_title_case():
     )
     for label in lower_case_labels:
         assert label not in FRONTEND
+
+
+def test_vpn_views_display_connection_type_not_provider():
+    assert FRONTEND.count("v.connection_type") == 3
+    assert "v.provider" not in FRONTEND
+
+
+def test_vpn_api_derives_display_from_tunnel_type():
+    assert '"connection_type": _connection_label(env.get("VPN_TYPE", ""))' in BACKEND

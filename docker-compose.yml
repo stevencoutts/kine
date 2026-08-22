@@ -5,6 +5,8 @@
 # means adding one word to COMPOSE_PROFILES in .env. Nothing is
 # templated or generated: the repo plus .env is the whole truth.
 
+name: kine
+
 include:
   - compose/core.traefik.yml
   - compose/core.helm.yml

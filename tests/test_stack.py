@@ -8,8 +8,10 @@ service. Run them before every commit:
 
     python -m pytest tests -q
 """
+import ast
 import pathlib
 import re
+import subprocess
 
 import pytest
 import yaml
@@ -17,6 +19,8 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CATALOGUE = yaml.safe_load((ROOT / "catalogue.yml").read_text())["apps"]
 FRAGMENTS = sorted((ROOT / "compose").glob("*.yml"))
+HELM_MAIN = ROOT / "helm" / "backend" / "app" / "main.py"
+VPN_LEAKTEST = ROOT / "scripts" / "vpn-leaktest.sh"
 
 
 def fragments():
@@ -35,6 +39,41 @@ TUNNELLED = {k for k, v in CATALOGUE.items() if v.get("tunnelled") == "forced"}
 
 
 # ── structure ───────────────────────────────────────────────────
+def test_compose_project_name_is_stable_across_working_directories():
+    top = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+    assert top.get("name") == "kine"
+
+
+def test_shell_env_loader_does_not_expand_password_hash(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        'HELM_ADMIN_HASH=$argon2id$v=19$m=65536,t=3,p=4$hash\n'
+        'VPN_SERVER_COUNTRIES="United Kingdom"\n'
+    )
+    result = subprocess.run(
+        [
+            "bash", "-c",
+            'source scripts/lib.sh; load_env "$1"; '
+            'printf "%s\\n%s\\n" "$HELM_ADMIN_HASH" "$VPN_SERVER_COUNTRIES"',
+            "bash", str(env_file),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [
+        "$argon2id$v=19$m=65536,t=3,p=4$hash",
+        "United Kingdom",
+    ]
+
+
+def test_leaktest_probes_from_inside_gluetun():
+    script = VPN_LEAKTEST.read_text()
+    assert "docker exec kine-gluetun wget" in script
+    assert "--network container:kine-gluetun" not in script
+
+
 def test_top_level_includes_every_fragment():
     top = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
     included = {pathlib.Path(p).name for p in top["include"]}
@@ -174,6 +213,60 @@ def test_helm_never_touches_the_raw_docker_socket():
     assert "docker.sock" not in mounts, \
         "Helm must reach Docker through the socket proxy, not the raw socket"
     assert helm["environment"]["DOCKER_HOST"].startswith("tcp://dockerproxy")
+
+
+def test_helm_mounts_repository_root():
+    """Include-relative paths must mount the repo, not compose/."""
+    _, helm = SERVICES["helm"]
+    assert "../:/repo" in helm.get("volumes", [])
+
+
+def test_helm_can_resolve_host_absolute_env_files():
+    """Compose validates host-absolute env_file paths inside Helm."""
+    _, helm = SERVICES["helm"]
+    assert "${STACK_ROOT}:${STACK_ROOT}" in helm.get("volumes", [])
+
+
+def test_vpn_portsync_mounts_the_real_script():
+    _, portsync = SERVICES["vpn-portsync"]
+    assert "../scripts/vpn-portsync.sh:/portsync.sh:ro" in portsync.get("volumes", [])
+
+
+def test_first_run_starts_newly_enabled_profiles():
+    tree = ast.parse(HELM_MAIN.read_text())
+    first_run = next(
+        node for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "first_run"
+    )
+    compose_calls = [
+        tuple(arg.value for arg in node.args if isinstance(arg, ast.Constant))
+        for node in ast.walk(first_run)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "compose"
+        and node.func.attr == "run"
+    ]
+    assert ("up", "-d", "--wait", "gluetun") in compose_calls
+
+    password_write = next(
+        node.lineno for node in ast.walk(first_run)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "auth"
+        and node.func.attr == "set_password"
+    )
+    gluetun_start = next(
+        node.lineno for node in ast.walk(first_run)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "compose"
+        and node.func.attr == "run"
+    )
+    assert password_write > gluetun_start
 
 
 def test_socket_proxy_denies_the_dangerous_endpoints():

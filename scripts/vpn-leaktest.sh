@@ -4,8 +4,8 @@
 set -Eeuo pipefail
 host_ip=$(docker run --rm --network kine_internal curlimages/curl:latest \
           -fsS https://api.ipify.org 2>/dev/null || echo "unavailable")
-vpn_ip=$(docker run --rm --network container:kine-gluetun curlimages/curl:latest \
-         -fsS https://api.ipify.org 2>/dev/null || echo "unavailable")
+vpn_ip=$(docker exec kine-gluetun wget -qO- https://api.ipify.org \
+         2>/dev/null || echo "unavailable")
 
 echo "untunnelled exit : ${host_ip}"
 echo "tunnelled exit   : ${vpn_ip}"

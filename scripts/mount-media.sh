@@ -4,6 +4,7 @@
 set -Eeuo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$REPO/scripts/lib.sh"
 
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 warn() { printf '\033[33m! %s\033[0m\n' "$*" >&2; }
@@ -12,8 +13,7 @@ ok()   { printf '\033[32m+ %s\033[0m\n' "$*"; }
 
 [[ $EUID -eq 0 ]] || die "run with sudo"
 [[ -f "$REPO/.env" ]] || die ".env not found; run install.sh first"
-# shellcheck disable=SC1091
-set -a; source "$REPO/.env"; set +a
+load_env "$REPO/.env"
 
 for value in "${NFS_SERVER:-}" "${NFS_TV:-}" "${NFS_MOVIES:-}" "${NFS_DOWNLOADS:-}"; do
   [[ "$value" != *[[:space:]]* ]] || die "NFS server and export paths cannot contain whitespace"

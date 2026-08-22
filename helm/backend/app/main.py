@@ -15,6 +15,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import auth, catalogue, compose, config, scheduler
+from .gluetun import connection_label as _connection_label
+from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
 from .wireguard import parse_conf as _parse_wireguard_conf
 
@@ -127,7 +129,6 @@ async def first_run(request: Request):
         if "WIREGUARD_PRIVATE_KEY" not in vpn_fields:
             raise HTTPException(400, "VPN is enabled: a valid WireGuard config is required")
 
-    auth.set_password(pw)
     updates = {
         k: str(body[v])
         for k, v in (
@@ -158,6 +159,14 @@ async def first_run(request: Request):
         config.write({"VPN_ENABLED": "false"})
     config.set_profiles(wanted)
 
+    if vpn_enabled:
+        code, _ = await compose.run("up", "-d", "--wait", "gluetun", timeout=180)
+        if code != 0:
+            raise HTTPException(500, "VPN could not start; check Gluetun logs")
+
+    # Only lock onboarding after every requested prerequisite succeeded,
+    # so a bad tunnel configuration can be corrected and submitted again.
+    auth.set_password(pw)
     return {"ok": True}
 
 
@@ -357,9 +366,10 @@ async def vpn_status(user: str = Depends(require_user)):
     return {
         "enabled": env.get("VPN_ENABLED") == "true",
         "provider": env.get("VPN_SERVICE_PROVIDER"),
+        "connection_type": _connection_label(env.get("VPN_TYPE", "")),
         "countries": env.get("VPN_SERVER_COUNTRIES"),
         "tunnelled": env.get("VPN_TUNNELLED_APPS", "").split(","),
-        "forwarded_port": out.strip() if code == 0 else None,
+        "forwarded_port": _parse_forwarded_port(out) if code == 0 else None,
         "public_ip": _parse_public_ip(ip_out) if ip_code == 0 else None,
     }
 

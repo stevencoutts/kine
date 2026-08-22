@@ -33,8 +33,7 @@ else
   ok ".env already present, leaving it alone"
 fi
 
-# shellcheck disable=SC1091
-set -a; source .env; set +a
+load_env .env
 
 # ── 3. Service user and directories ─────────────────────────────
 if is_darwin; then

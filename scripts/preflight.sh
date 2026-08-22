@@ -26,7 +26,7 @@ fi
 # boundary, every import silently becomes a full copy: slow, and it
 # doubles your disk use until the download is cleaned up.
 if [[ -f .env ]]; then
-  set -a; source .env; set +a
+  load_env .env
   mkdir -p "${DATA_ROOT}/media" "${DATA_ROOT}/downloads" 2>/dev/null
   fs_media=$(dev_id "${DATA_ROOT}/media" || echo x)
   fs_dl=$(dev_id "${DATA_ROOT}/downloads" || echo y)

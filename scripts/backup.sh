@@ -2,7 +2,8 @@
 # Config, .env and compose files. Never the media: that is what your
 # actual storage strategy is for.
 set -Eeuo pipefail
-set -a; source .env; set +a
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+load_env .env
 stamp=$(date +%Y%m%d-%H%M%S)
 out="${STACK_ROOT}/backups/kine-${stamp}.tar.gz"
 mkdir -p "${STACK_ROOT}/backups"

@@ -3,7 +3,8 @@
 set -Eeuo pipefail
 tarball="${1:?usage: restore.sh <tarball> [app]}"
 app="${2:-}"
-set -a; source .env; set +a
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+load_env .env
 docker compose down
 if [[ -n "$app" ]]; then
   tar xzf "$tarball" -C "${STACK_ROOT}" "config/${app}"

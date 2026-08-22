@@ -98,5 +98,5 @@ services:
     environment:
       TRANSMISSION_RPC: http://127.0.0.1:9091/transmission/rpc
     volumes:
-      - ./scripts/vpn-portsync.sh:/portsync.sh:ro
+      - ../scripts/vpn-portsync.sh:/portsync.sh:ro
     entrypoint: ["/bin/sh", "/portsync.sh"]

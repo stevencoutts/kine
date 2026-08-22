@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./scripts/lib.sh
-set -a; source .env 2>/dev/null || true; set +a
+[[ ! -f .env ]] || load_env .env
 
 usage() {
 cat <<'USAGE'
@@ -76,7 +76,7 @@ case "$cmd" in
   enable)
     app="${1:?app}"
     profiles_add "$app"
-    set -a; source .env; set +a
+    load_env .env
     docker compose up -d
     docker compose run --rm provision wire ;;
   disable)

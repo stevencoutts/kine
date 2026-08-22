@@ -20,8 +20,11 @@ services:
       HELM_UPDATE_CHECK_CRON: ${HELM_UPDATE_CHECK_CRON}
     volumes:
       # The repo itself: Helm edits .env and runs docker compose here.
-      - ./:/repo
+      - ../:/repo
       - ${STACK_ROOT}:/stack
+      # Compose validates env_file paths in this container before it
+      # sends their host-absolute paths to Docker.
+      - ${STACK_ROOT}:${STACK_ROOT}
     networks: [kine_edge, kine_internal, kine_ctrl]
     ports:
       # Bound directly as well as via Traefik, so the GUI stays
