@@ -22,7 +22,7 @@ def _serializer() -> URLSafeTimedSerializer:
     )
     if not secret:
         raise RuntimeError("HELM_SESSION_SECRET is unset")
-    return URLSafeTimedSerializer(secret, salt="mc-session")
+    return URLSafeTimedSerializer(secret, salt="kine-session")
 
 
 def hash_password(pw: str) -> str:

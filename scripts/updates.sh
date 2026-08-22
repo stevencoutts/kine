@@ -44,10 +44,10 @@ apply() {
 
   echo "Waiting up to 90s for ${svc} to come back healthy..."
   for _ in $(seq 1 18); do
-    state=$(docker inspect --format '{{.State.Health.Status}}' "mc-${svc}" 2>/dev/null || echo "none")
+    state=$(docker inspect --format '{{.State.Health.Status}}' "kine-${svc}" 2>/dev/null || echo "none")
     [[ "$state" == "healthy" ]] && { echo "OK: ${svc} healthy on the new image"; exit 0; }
     [[ "$state" == "none" ]] && {
-      running=$(docker inspect --format '{{.State.Running}}' "mc-${svc}" 2>/dev/null || echo false)
+      running=$(docker inspect --format '{{.State.Running}}' "kine-${svc}" 2>/dev/null || echo false)
       [[ "$running" == "true" ]] && { echo "OK: ${svc} running (no healthcheck defined)"; exit 0; }
     }
     sleep 5

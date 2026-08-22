@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Media Centre CLI. Everything the GUI does, you can do here.
+# Kine CLI. Everything the GUI does, you can do here.
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 source ./scripts/lib.sh
@@ -7,7 +7,7 @@ set -a; source .env 2>/dev/null || true; set +a
 
 usage() {
 cat <<'USAGE'
-mc <command>
+kine <command>
 
   up                    start everything enabled
   down                  stop everything
@@ -21,7 +21,7 @@ mc <command>
 
   provision [--force]   re-run the wiring (idempotent)
   seed                  write app config before first start
-  rekey                 rotate MC_SECRET and re-key every app
+  rekey                 rotate KINE_SECRET and re-key every app
 
   updates               check for newer images (no pull)
   update <app>          snapshot, pull, recreate, roll back on failure
@@ -30,7 +30,7 @@ mc <command>
   vpn restart           restart the tunnel and everything inside it
   vpn leaktest          prove the tunnel is actually carrying traffic
 
-  tls                   re-apply TLS config after changing MC_TLS_MODE
+  tls                   re-apply TLS config after changing KINE_TLS_MODE
   backup                config + env tarball
   restore <file> [app]  restore all, or one app's config
 USAGE
@@ -67,7 +67,7 @@ case "$cmd" in
     if [[ "${1:-}" == "gluetun" ]]; then
       echo "Restarting gluetun alone would sever every app inside it:"
       echo "  ${VPN_TUNNELLED_APPS}"
-      echo "Use: ./mc vpn restart"; exit 1
+      echo "Use: ./kine vpn restart"; exit 1
     fi
     docker compose restart ${1:-} ;;
   logs)      docker compose logs -f --tail=200 "${1:?service}" ;;
@@ -97,12 +97,12 @@ PY
 
   seed)      docker compose run --rm provision seed ;;
   rekey)
-    # Every internal API key is derived from MC_SECRET, so rotating it
+    # Every internal API key is derived from KINE_SECRET, so rotating it
     # re-keys the whole stack at once. Anything outside the stack that
     # holds an old key (a phone app, a script, Tautulli) stops working
     # until it is given the new one.
     cat <<'WARN'
-This rotates MC_SECRET and every derived API key.
+This rotates KINE_SECRET and every derived API key.
 
   - all stack-internal wiring is rebuilt automatically
   - any EXTERNAL client holding an old API key will break
@@ -112,7 +112,7 @@ WARN
     read -r -p "Type 'rekey' to continue: " confirm
     [[ "$confirm" == "rekey" ]] || { echo "aborted"; exit 1; }
     ./scripts/backup.sh
-    sedi "s|^MC_SECRET=.*|MC_SECRET=$(openssl rand -hex 32)|" .env
+    sedi "s|^KINE_SECRET=.*|KINE_SECRET=$(openssl rand -hex 32)|" .env
     docker compose down
     # Existing config.xml files hold the old key and are never
     # overwritten by the seeder, so they have to go first.
@@ -131,9 +131,9 @@ WARN
   vpn)
     case "${1:-status}" in
       status)
-        docker exec mc-gluetun wget -qO- http://127.0.0.1:8000/v1/openvpn/status || true
+        docker exec kine-gluetun wget -qO- http://127.0.0.1:8000/v1/openvpn/status || true
         echo
-        docker exec mc-gluetun wget -qO- http://127.0.0.1:8000/v1/openvpn/portforwarded || true
+        docker exec kine-gluetun wget -qO- http://127.0.0.1:8000/v1/openvpn/portforwarded || true
         echo ;;
       restart)   docker compose restart $(vpn_group) ;;
       leaktest)  ./scripts/vpn-leaktest.sh ;;

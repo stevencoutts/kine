@@ -7,7 +7,7 @@
 services:
   bazarr:
     image: lscr.io/linuxserver/bazarr:${BAZARR_TAG}
-    container_name: mc-bazarr
+    container_name: kine-bazarr
     profiles: ["bazarr"]
     restart: unless-stopped
     depends_on:
@@ -18,7 +18,7 @@ services:
       PUID: ${PUID}
       PGID: ${PGID}
       UMASK: ${UMASK}
-      TZ: ${MC_TIMEZONE}
+      TZ: ${KINE_TIMEZONE}
     volumes:
       - ${STACK_ROOT}/config/bazarr:/config
       # Single /data mount, not separate media and downloads mounts.

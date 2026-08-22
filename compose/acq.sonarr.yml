@@ -7,7 +7,7 @@
 services:
   sonarr:
     image: lscr.io/linuxserver/sonarr:${SONARR_TAG}
-    container_name: mc-sonarr
+    container_name: kine-sonarr
     profiles: ["sonarr"]
     restart: unless-stopped
     depends_on:
@@ -18,7 +18,7 @@ services:
       PUID: ${PUID}
       PGID: ${PGID}
       UMASK: ${UMASK}
-      TZ: ${MC_TIMEZONE}
+      TZ: ${KINE_TIMEZONE}
     volumes:
       - ${STACK_ROOT}/config/sonarr:/config
       # Single /data mount, not separate media and downloads mounts.

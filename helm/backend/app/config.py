@@ -10,7 +10,7 @@ import pathlib
 import re
 import threading
 
-REPO = pathlib.Path(os.environ.get("MC_REPO", "/repo"))
+REPO = pathlib.Path(os.environ.get("KINE_REPO", "/repo"))
 ENV = REPO / ".env"
 _lock = threading.Lock()
 

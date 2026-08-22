@@ -3,7 +3,7 @@ import pathlib
 
 import yaml
 
-REPO = pathlib.Path(os.environ.get("MC_REPO", "/repo"))
+REPO = pathlib.Path(os.environ.get("KINE_REPO", "/repo"))
 
 
 def load() -> dict:

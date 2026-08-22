@@ -9,7 +9,7 @@ import asyncio
 import os
 import pathlib
 
-REPO = pathlib.Path(os.environ.get("MC_REPO", "/repo"))
+REPO = pathlib.Path(os.environ.get("KINE_REPO", "/repo"))
 
 
 async def run(*args: str, timeout: int = 600) -> tuple[int, str]:

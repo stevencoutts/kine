@@ -2,9 +2,9 @@
 # Proves the tunnel is doing its job, rather than assuming it is.
 # The GUI runs this and shows both addresses side by side.
 set -Eeuo pipefail
-host_ip=$(docker run --rm --network mc_internal curlimages/curl:latest \
+host_ip=$(docker run --rm --network kine_internal curlimages/curl:latest \
           -fsS https://api.ipify.org 2>/dev/null || echo "unavailable")
-vpn_ip=$(docker run --rm --network container:mc-gluetun curlimages/curl:latest \
+vpn_ip=$(docker run --rm --network container:kine-gluetun curlimages/curl:latest \
          -fsS https://api.ipify.org 2>/dev/null || echo "unavailable")
 
 echo "untunnelled exit : ${host_ip}"

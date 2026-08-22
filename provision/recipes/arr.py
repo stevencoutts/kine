@@ -66,7 +66,7 @@ def nzbget_client(category: str) -> dict:
 
 def configure(app: str, enabled: set[str], log) -> None:
     client = ArrClient(
-        # The provisioner sits on mc_internal, outside the tunnel, so it
+        # The provisioner sits on kine_internal, outside the tunnel, so it
         # reaches the tier 2 apps at gluetun's address: that container is
         # the one that actually holds their sockets.
         {"sonarr": "http://gluetun:8989", "radarr": "http://gluetun:7878"}[app],

@@ -1,4 +1,4 @@
-"""Helm: the Media Centre admin GUI.
+"""Helm: the Kine admin GUI.
 
 Design note. Helm can create containers, which makes it root-equivalent
 on the host. The socket proxy narrows what a bug in this code can reach;
@@ -18,9 +18,9 @@ from . import auth, catalogue, compose, config, scheduler
 from .wireguard import parse_conf as _parse_wireguard_conf
 
 FRONTEND = pathlib.Path(__file__).resolve().parents[2] / "frontend"
-app = FastAPI(title="Media Centre Helm", docs_url=None, redoc_url=None)
+app = FastAPI(title="Kine Helm", docs_url=None, redoc_url=None)
 
-COOKIE = "mc_session"
+COOKIE = "kine_session"
 
 
 @app.on_event("startup")
@@ -85,7 +85,7 @@ async def auth_verify(request: Request):
     user = auth.verify(request.cookies.get(COOKIE))
     if not user:
         return Response(status_code=401)
-    return Response(status_code=200, headers={"X-Mc-User": user})
+    return Response(status_code=200, headers={"X-Kine-User": user})
 
 
 @app.post("/api/auth/login")
@@ -130,11 +130,11 @@ async def first_run(request: Request):
     updates = {
         k: str(body[v])
         for k, v in (
-            ("MC_DOMAIN", "domain"),
-            ("MC_TLS_MODE", "tls_mode"),
-            ("MC_ACME_EMAIL", "acme_email"),
-            ("MC_ACME_DNS_PROVIDER", "acme_provider"),
-            ("MC_TIMEZONE", "timezone"),
+            ("KINE_DOMAIN", "domain"),
+            ("KINE_TLS_MODE", "tls_mode"),
+            ("KINE_ACME_EMAIL", "acme_email"),
+            ("KINE_ACME_DNS_PROVIDER", "acme_provider"),
+            ("KINE_TIMEZONE", "timezone"),
         )
         if v in body
     }
@@ -176,8 +176,8 @@ async def apps(user: str = Depends(require_user)):
             "tier": meta.get("tier", "other"),
             "summary": meta.get("summary", ""),
             "enabled": key in enabled,
-            "running": f'"{key}"' in running or f"mc-{key}" in running,
-            "url": f"https://{meta['subdomain']}.{env.get('MC_DOMAIN','')}"
+            "running": f'"{key}"' in running or f"kine-{key}" in running,
+            "url": f"https://{meta['subdomain']}.{env.get('KINE_DOMAIN','')}"
                    if meta.get("subdomain") else None,
             "releases": meta.get("releases"),
             "requires": meta.get("requires", []),
@@ -330,21 +330,21 @@ async def vpn_leaktest(user: str = Depends(require_user)):
 @app.get("/api/settings")
 async def get_settings(user: str = Depends(require_user)):
     env = config.read()
-    public = ("MC_DOMAIN", "MC_TLS_MODE", "MC_ACME_EMAIL", "MC_ACME_DNS_PROVIDER",
-              "MC_TIMEZONE", "STACK_ROOT", "DATA_ROOT", "HELM_UPDATE_CHECK_CRON")
+    public = ("KINE_DOMAIN", "KINE_TLS_MODE", "KINE_ACME_EMAIL", "KINE_ACME_DNS_PROVIDER",
+              "KINE_TIMEZONE", "STACK_ROOT", "DATA_ROOT", "HELM_UPDATE_CHECK_CRON")
     return {k: env.get(k, "") for k in public}
 
 
 @app.post("/api/settings")
 async def set_settings(request: Request, user: str = Depends(require_user)):
     body = await request.json()
-    allowed = {"MC_DOMAIN", "MC_TLS_MODE", "MC_ACME_EMAIL",
-               "MC_ACME_DNS_PROVIDER", "MC_TIMEZONE", "HELM_UPDATE_CHECK_CRON"}
+    allowed = {"KINE_DOMAIN", "KINE_TLS_MODE", "KINE_ACME_EMAIL",
+               "KINE_ACME_DNS_PROVIDER", "KINE_TIMEZONE", "HELM_UPDATE_CHECK_CRON"}
     config.write({k: str(v) for k, v in body.items() if k in allowed})
-    if {"MC_TLS_MODE", "MC_DOMAIN", "MC_ACME_EMAIL"} & set(body):
+    if {"KINE_TLS_MODE", "KINE_DOMAIN", "KINE_ACME_EMAIL"} & set(body):
         await compose.script("tls-setup.sh")
         await compose.run("restart", "traefik")
-    if "MC_DOMAIN" in body:
+    if "KINE_DOMAIN" in body:
         # Best-effort: mdns may not be enabled, and a missing container
         # is not a settings-save failure.
         await compose.run("restart", "mdns")

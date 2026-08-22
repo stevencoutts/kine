@@ -1,7 +1,7 @@
 services:
   recyclarr:
     image: ghcr.io/recyclarr/recyclarr:${RECYCLARR_TAG}
-    container_name: mc-recyclarr
+    container_name: kine-recyclarr
     profiles: ["recyclarr"]
     restart: unless-stopped
     depends_on:
@@ -10,6 +10,6 @@ services:
     network_mode: "service:gluetun"
     user: "${PUID}:${PGID}"
     environment:
-      TZ: ${MC_TIMEZONE}
+      TZ: ${KINE_TIMEZONE}
     volumes:
       - ${STACK_ROOT}/config/recyclarr:/config

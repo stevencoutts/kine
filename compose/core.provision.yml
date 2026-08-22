@@ -1,15 +1,15 @@
 services:
   provision:
     build: ./provision
-    image: media-centre/provision:local
-    container_name: mc-provision
+    image: kine/provision:local
+    container_name: kine-provision
     # Runs to completion then exits. Re-run on demand:
-    #   ./mc provision            (idempotent, safe to repeat)
+    #   ./kine provision            (idempotent, safe to repeat)
     restart: "no"
     environment:
-      TZ: ${MC_TIMEZONE}
-      MC_SECRET: ${MC_SECRET}
-      MC_DOMAIN: ${MC_DOMAIN}
+      TZ: ${KINE_TIMEZONE}
+      KINE_SECRET: ${KINE_SECRET}
+      KINE_DOMAIN: ${KINE_DOMAIN}
       COMPOSE_PROFILES: ${COMPOSE_PROFILES}
       VPN_TUNNELLED_APPS: ${VPN_TUNNELLED_APPS}
       PUID: ${PUID}
@@ -17,4 +17,4 @@ services:
     volumes:
       - ${STACK_ROOT}:/stack
       - ${DATA_ROOT}:/data
-    networks: [mc_internal]
+    networks: [kine_internal]

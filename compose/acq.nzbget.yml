@@ -2,7 +2,7 @@
 services:
   nzbget:
     image: lscr.io/linuxserver/nzbget:${NZBGET_TAG}
-    container_name: mc-nzbget
+    container_name: kine-nzbget
     profiles: ["nzbget"]
     restart: unless-stopped
     depends_on:
@@ -13,7 +13,7 @@ services:
       PUID: ${PUID}
       PGID: ${PGID}
       UMASK: ${UMASK}
-      TZ: ${MC_TIMEZONE}
+      TZ: ${KINE_TIMEZONE}
     volumes:
       - ${STACK_ROOT}/config/nzbget:/config
       - ${DATA_ROOT}/downloads:/data/downloads

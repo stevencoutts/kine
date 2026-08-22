@@ -16,7 +16,7 @@ start. Anything added to tier 2 must claim a free port here first.
 | 9696 | Prowlarr | `gluetun:9696` |
 
 Inside the namespace, apps address each other as `127.0.0.1:<port>`.
-From `mc_internal` (Traefik, Helm, the provisioner, Emby) they are
+From `kine_internal` (Traefik, Helm, the provisioner, Emby) they are
 `gluetun:<port>`, because gluetun is the container that actually holds
 those sockets.
 

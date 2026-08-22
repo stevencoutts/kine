@@ -10,12 +10,12 @@
 #      labels. Every router for them hangs off this service, because
 #      this service is where their ports actually live.
 #   2. Inside the namespace they share one loopback, so they address
-#      each other as 127.0.0.1. From outside, on mc_internal, they are
+#      each other as 127.0.0.1. From outside, on kine_internal, they are
 #      reached as gluetun:<port>.
 #   3. Their published ports must not collide, because they are all the
 #      same network stack. The assignments below are the whole set.
 #   4. Restarting gluetun severs every one of them. The tunnel group
-#      restarts together or not at all: `./mc vpn restart`, and the GUI
+#      restarts together or not at all: `./kine vpn restart`, and the GUI
 #      refuses to restart gluetun on its own.
 #
 # The trade-off, stated plainly: with the whole acquisition tier inside
@@ -28,14 +28,14 @@
 services:
   gluetun:
     image: qmcgaw/gluetun:${GLUETUN_TAG}
-    container_name: mc-gluetun
+    container_name: kine-gluetun
     profiles: ["gluetun"]
     restart: unless-stopped
     cap_add: [NET_ADMIN]
     devices:
       - /dev/net/tun:/dev/net/tun
     environment:
-      TZ: ${MC_TIMEZONE}
+      TZ: ${KINE_TIMEZONE}
       VPN_SERVICE_PROVIDER: ${VPN_SERVICE_PROVIDER}
       VPN_TYPE: ${VPN_TYPE}
       WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY}
@@ -50,7 +50,7 @@ services:
       DOT: "off"
     volumes:
       - ${STACK_ROOT}/config/gluetun:/gluetun
-    networks: [mc_internal, mc_edge]
+    networks: [kine_internal, kine_edge]
     healthcheck:
       test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
       interval: 30s
@@ -60,27 +60,27 @@ services:
     labels:
       - traefik.enable=true
       # ── Every tier 2 app's router lives here ──────────────────
-      - traefik.http.routers.sonarr.rule=Host(`sonarr.${MC_DOMAIN}`)
+      - traefik.http.routers.sonarr.rule=Host(`sonarr.${KINE_DOMAIN}`)
       - traefik.http.routers.sonarr.service=sonarr
       - traefik.http.services.sonarr.loadbalancer.server.port=8989
 
-      - traefik.http.routers.radarr.rule=Host(`radarr.${MC_DOMAIN}`)
+      - traefik.http.routers.radarr.rule=Host(`radarr.${KINE_DOMAIN}`)
       - traefik.http.routers.radarr.service=radarr
       - traefik.http.services.radarr.loadbalancer.server.port=7878
 
-      - traefik.http.routers.prowlarr.rule=Host(`prowlarr.${MC_DOMAIN}`)
+      - traefik.http.routers.prowlarr.rule=Host(`prowlarr.${KINE_DOMAIN}`)
       - traefik.http.routers.prowlarr.service=prowlarr
       - traefik.http.services.prowlarr.loadbalancer.server.port=9696
 
-      - traefik.http.routers.bazarr.rule=Host(`bazarr.${MC_DOMAIN}`)
+      - traefik.http.routers.bazarr.rule=Host(`bazarr.${KINE_DOMAIN}`)
       - traefik.http.routers.bazarr.service=bazarr
       - traefik.http.services.bazarr.loadbalancer.server.port=6767
 
-      - traefik.http.routers.transmission.rule=Host(`transmission.${MC_DOMAIN}`)
+      - traefik.http.routers.transmission.rule=Host(`transmission.${KINE_DOMAIN}`)
       - traefik.http.routers.transmission.service=transmission
       - traefik.http.services.transmission.loadbalancer.server.port=9091
 
-      - traefik.http.routers.nzbget.rule=Host(`nzbget.${MC_DOMAIN}`)
+      - traefik.http.routers.nzbget.rule=Host(`nzbget.${KINE_DOMAIN}`)
       - traefik.http.routers.nzbget.service=nzbget
       - traefik.http.services.nzbget.loadbalancer.server.port=6789
 
@@ -88,7 +88,7 @@ services:
   # forwards, which rotates. Without this you get no incoming peers.
   vpn-portsync:
     image: alpine:${ALPINE_TAG}
-    container_name: mc-vpn-portsync
+    container_name: kine-vpn-portsync
     profiles: ["gluetun"]
     restart: unless-stopped
     depends_on:

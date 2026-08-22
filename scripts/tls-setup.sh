@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Writes Traefik's dynamic configuration for the chosen TLS mode.
-# Re-run after changing MC_TLS_MODE: ./mc tls
+# Re-run after changing KINE_TLS_MODE: ./kine tls
 set -Eeuo pipefail
 set -a; source .env; set +a
 
@@ -11,13 +11,13 @@ mkdir -p "$DYN" "${STACK_ROOT}/config/traefik/certs"
 cat > "${DYN}/middlewares.yml" <<EOF
 http:
   middlewares:
-    mc-auth:
+    kine-auth:
       forwardAuth:
         address: "http://helm:8600/api/auth/verify"
         trustForwardHeader: true
         authResponseHeaders:
-          - X-Mc-User
-    mc-headers:
+          - X-Kine-User
+    kine-headers:
       headers:
         stsSeconds: 31536000
         contentTypeNosniff: true
@@ -25,7 +25,7 @@ http:
         referrerPolicy: same-origin
 EOF
 
-case "${MC_TLS_MODE}" in
+case "${KINE_TLS_MODE}" in
   internal)
     cat > "${DYN}/tls.yml" <<EOF
 tls:
@@ -37,32 +37,32 @@ EOF
     # CA is trusted.
     ;;
   acme-dns)
-    [[ -n "${MC_ACME_EMAIL}" ]] || { echo "MC_ACME_EMAIL is required for acme-dns" >&2; exit 1; }
+    [[ -n "${KINE_ACME_EMAIL}" ]] || { echo "KINE_ACME_EMAIL is required for acme-dns" >&2; exit 1; }
     cat > "${DYN}/tls.yml" <<EOF
 tls:
   stores:
     default:
       defaultGeneratedCert:
-        resolver: mcresolver
+        resolver: kineresolver
         domain:
-          main: "${MC_DOMAIN}"
+          main: "${KINE_DOMAIN}"
           sans:
-            - "*.${MC_DOMAIN}"
+            - "*.${KINE_DOMAIN}"
 EOF
     # DNS-01 rather than HTTP-01 on purpose: this appliance should not
     # need an inbound hole in the firewall to renew a certificate.
     cat > "${STACK_ROOT}/config/traefik/acme-args.txt" <<EOF
---certificatesresolvers.mcresolver.acme.email=${MC_ACME_EMAIL}
---certificatesresolvers.mcresolver.acme.storage=/etc/traefik/acme.json
---certificatesresolvers.mcresolver.acme.caserver=${MC_ACME_CA}
---certificatesresolvers.mcresolver.acme.dnschallenge=true
---certificatesresolvers.mcresolver.acme.dnschallenge.provider=${MC_ACME_DNS_PROVIDER}
+--certificatesresolvers.kineresolver.acme.email=${KINE_ACME_EMAIL}
+--certificatesresolvers.kineresolver.acme.storage=/etc/traefik/acme.json
+--certificatesresolvers.kineresolver.acme.caserver=${KINE_ACME_CA}
+--certificatesresolvers.kineresolver.acme.dnschallenge=true
+--certificatesresolvers.kineresolver.acme.dnschallenge.provider=${KINE_ACME_DNS_PROVIDER}
 EOF
     touch "${STACK_ROOT}/config/traefik/acme.json"
     chmod 600 "${STACK_ROOT}/config/traefik/acme.json"
     echo "acme-dns selected: put your DNS provider credentials in"
     echo "  ${STACK_ROOT}/config/traefik/acme.env"
-    echo "then run ./mc restart traefik"
+    echo "then run ./kine restart traefik"
     ;;
   custom)
     cat > "${DYN}/tls.yml" <<EOF
@@ -75,5 +75,5 @@ EOF
     echo "  ${STACK_ROOT}/config/traefik/certs/"
     ;;
   *)
-    echo "unknown MC_TLS_MODE '${MC_TLS_MODE}'" >&2; exit 1 ;;
+    echo "unknown KINE_TLS_MODE '${KINE_TLS_MODE}'" >&2; exit 1 ;;
 esac

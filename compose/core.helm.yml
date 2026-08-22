@@ -1,18 +1,18 @@
 services:
   helm:
     build: ./helm
-    image: media-centre/helm:local
-    container_name: mc-helm
+    image: kine/helm:local
+    container_name: kine-helm
     restart: unless-stopped
     depends_on:
       dockerproxy:
         condition: service_started
     environment:
-      TZ: ${MC_TIMEZONE}
-      MC_ROOT: /stack
-      MC_REPO: /repo
-      MC_DOMAIN: ${MC_DOMAIN}
-      MC_SECRET: ${MC_SECRET}
+      TZ: ${KINE_TIMEZONE}
+      KINE_ROOT: /stack
+      KINE_REPO: /repo
+      KINE_DOMAIN: ${KINE_DOMAIN}
+      KINE_SECRET: ${KINE_SECRET}
       DOCKER_HOST: tcp://dockerproxy:2375
       HELM_SESSION_SECRET: ${HELM_SESSION_SECRET}
       HELM_ADMIN_USER: ${HELM_ADMIN_USER}
@@ -22,7 +22,7 @@ services:
       # The repo itself: Helm edits .env and runs docker compose here.
       - ./:/repo
       - ${STACK_ROOT}:/stack
-    networks: [mc_edge, mc_internal, mc_ctrl]
+    networks: [kine_edge, kine_internal, kine_ctrl]
     ports:
       # Bound directly as well as via Traefik, so the GUI stays
       # reachable if the reverse proxy is what you have broken.
@@ -35,12 +35,12 @@ services:
       start_period: 20s
     labels:
       - traefik.enable=true
-      - traefik.http.routers.helm.rule=Host(`admin.${MC_DOMAIN}`)
+      - traefik.http.routers.helm.rule=Host(`admin.${KINE_DOMAIN}`)
       - traefik.http.services.helm.loadbalancer.server.port=8600
 
   dockerproxy:
     image: tecnativa/docker-socket-proxy:${SOCKETPROXY_TAG}
-    container_name: mc-dockerproxy
+    container_name: kine-dockerproxy
     restart: unless-stopped
     security_opt: [no-new-privileges:true]
     environment:
@@ -63,4 +63,4 @@ services:
       PLUGINS: 0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks: [mc_ctrl]
+    networks: [kine_ctrl]

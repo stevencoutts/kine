@@ -1,4 +1,4 @@
-# Media Centre :: top level
+# Kine :: top level
 #
 # Each application lives in its own fragment under compose/ and declares
 # a Compose profile equal to its own name. Enabling an app therefore
@@ -25,10 +25,10 @@ include:
   - compose/live.teamarr.yml
 
 networks:
-  mc_edge:
-    name: mc_edge
-  mc_internal:
-    name: mc_internal
-  mc_ctrl:
-    name: mc_ctrl
+  kine_edge:
+    name: kine_edge
+  kine_internal:
+    name: kine_internal
+  kine_ctrl:
+    name: kine_ctrl
     internal: true

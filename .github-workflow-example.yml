@@ -12,7 +12,7 @@ jobs:
       - run: pip install pytest pyyaml httpx
       - run: python -m pytest tests -q
       - run: cp .env.example .env && docker compose config --quiet
-      - run: for s in install.sh mc scripts/*.sh; do bash -n "$s"; done
+      - run: for s in install.sh kine scripts/*.sh; do bash -n "$s"; done
 
   build-images:
     runs-on: ubuntu-latest

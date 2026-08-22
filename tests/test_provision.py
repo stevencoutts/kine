@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "provision"))
 
 @pytest.fixture()
 def stack(tmp_path, monkeypatch):
-    monkeypatch.setenv("MC_SECRET", "test-secret-value")
+    monkeypatch.setenv("KINE_SECRET", "test-secret-value")
     monkeypatch.setattr("seed.STACK", tmp_path, raising=False)
     import seed
     monkeypatch.setattr(seed, "STACK", tmp_path)
@@ -19,7 +19,7 @@ def stack(tmp_path, monkeypatch):
 
 
 def test_keys_are_deterministic_and_distinct(monkeypatch):
-    monkeypatch.setenv("MC_SECRET", "abc")
+    monkeypatch.setenv("KINE_SECRET", "abc")
     from keys import api_key
     assert api_key("sonarr") == api_key("sonarr")
     assert api_key("sonarr") != api_key("radarr")
@@ -28,14 +28,14 @@ def test_keys_are_deterministic_and_distinct(monkeypatch):
 
 def test_keys_change_with_the_secret(monkeypatch):
     from keys import api_key
-    monkeypatch.setenv("MC_SECRET", "one")
+    monkeypatch.setenv("KINE_SECRET", "one")
     first = api_key("sonarr")
-    monkeypatch.setenv("MC_SECRET", "two")
+    monkeypatch.setenv("KINE_SECRET", "two")
     assert api_key("sonarr") != first
 
 
 def test_empty_secret_is_refused_rather_than_hashed(monkeypatch):
-    monkeypatch.setenv("MC_SECRET", "")
+    monkeypatch.setenv("KINE_SECRET", "")
     from keys import api_key
     with pytest.raises(RuntimeError):
         api_key("sonarr")
@@ -118,7 +118,7 @@ class _FakeHTTP:
 
 def test_ensure_is_idempotent():
     """Every provisioning write goes through ensure(). If it were not
-    idempotent, `./mc enable <app>` would duplicate download clients
+    idempotent, `./kine enable <app>` would duplicate download clients
     each time it ran."""
     from arrclient import ArrClient
     c = ArrClient("http://x", "k")

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Media Centre installer. Idempotent: safe to re-run.
+# Kine installer. Idempotent: safe to re-run.
 set -Eeuo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -13,7 +13,7 @@ ok()   { printf '\033[32m+ %s\033[0m\n' "$*"; }
 
 [[ $EUID -eq 0 ]] || die "run with sudo"
 
-bold "Media Centre installer"
+bold "Kine installer"
 echo
 
 # ── 1. Preflight ────────────────────────────────────────────────
@@ -24,9 +24,9 @@ if [[ ! -f .env ]]; then
   cp .env.example .env
   ok "created .env"
 
-  # Secrets. MC_SECRET derives every internal API key, so it must be
+  # Secrets. KINE_SECRET derives every internal API key, so it must be
   # strong and must not change casually.
-  sedi "s|^MC_SECRET=.*|MC_SECRET=$(openssl rand -hex 32)|" .env
+  sedi "s|^KINE_SECRET=.*|KINE_SECRET=$(openssl rand -hex 32)|" .env
   sedi "s|^HELM_SESSION_SECRET=.*|HELM_SESSION_SECRET=$(openssl rand -hex 32)|" .env
   ok "generated secrets"
 else
@@ -45,12 +45,12 @@ if is_darwin; then
   PUID_ACTUAL=$(id -u "$target_user")
   PGID_ACTUAL=$(id -g "$target_user")
 else
-  if ! id -u mediacentre >/dev/null 2>&1; then
-    useradd --system --no-create-home --shell /usr/sbin/nologin mediacentre
-    ok "created mediacentre service user"
+  if ! id -u kine >/dev/null 2>&1; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin kine
+    ok "created kine service user"
   fi
-  PUID_ACTUAL=$(id -u mediacentre)
-  PGID_ACTUAL=$(id -g mediacentre)
+  PUID_ACTUAL=$(id -u kine)
+  PGID_ACTUAL=$(id -g kine)
 fi
 sedi "s|^PUID=.*|PUID=${PUID_ACTUAL}|" .env
 sedi "s|^PGID=.*|PGID=${PGID_ACTUAL}|" .env
@@ -79,16 +79,16 @@ ok "directory tree ready"
 
 # ── 4. TLS ──────────────────────────────────────────────────────
 ./scripts/tls-setup.sh
-ok "TLS mode: ${MC_TLS_MODE}"
+ok "TLS mode: ${KINE_TLS_MODE}"
 
 # ── 4b. Loopback resolution ──────────────────────────────────────
 # mDNS (the mdns profile, on by default) advertises the domain to other
 # devices on the LAN, but the host doesn't need multicast to reach
 # itself: a plain /etc/hosts entry is instant and doesn't depend on
 # avahi coming up cleanly. Re-run-safe: the old block is replaced.
-HOSTS_BLOCK=$(MC_DOMAIN="${MC_DOMAIN}" COMPOSE_PROFILES="${COMPOSE_PROFILES}" python3 - <<'PY'
+HOSTS_BLOCK=$(KINE_DOMAIN="${KINE_DOMAIN}" COMPOSE_PROFILES="${COMPOSE_PROFILES}" python3 - <<'PY'
 import os, yaml
-domain = os.environ.get("MC_DOMAIN", "media.local")
+domain = os.environ.get("KINE_DOMAIN", "kine.local")
 profiles = {p.strip() for p in os.environ.get("COMPOSE_PROFILES", "").split(",") if p.strip()}
 cat = yaml.safe_load(open("catalogue.yml"))["apps"]
 names = [domain] + [f"{v['subdomain']}.{domain}" for k, v in cat.items()
@@ -96,9 +96,9 @@ names = [domain] + [f"{v['subdomain']}.{domain}" for k, v in cat.items()
 print("127.0.0.1 " + " ".join(names))
 PY
 )
-sedi '/# BEGIN media-centre/,/# END media-centre/d' /etc/hosts
-{ echo "# BEGIN media-centre"; echo "$HOSTS_BLOCK"; echo "# END media-centre"; } >> /etc/hosts
-ok "loopback resolution for ${MC_DOMAIN} written to /etc/hosts"
+sedi '/# BEGIN kine/,/# END kine/d' /etc/hosts
+{ echo "# BEGIN kine"; echo "$HOSTS_BLOCK"; echo "# END kine"; } >> /etc/hosts
+ok "loopback resolution for ${KINE_DOMAIN} written to /etc/hosts"
 
 # ── 5. Seed application config before anything starts ───────────
 # The *arr apps mint a random API key on first run. Writing config.xml
@@ -122,14 +122,14 @@ docker compose run --rm provision wire
 # ── 8. Done ─────────────────────────────────────────────────────
 echo
 bold "Ready"
-echo "  Admin GUI   https://admin.${MC_DOMAIN}    (or http://$(local_ip):${HELM_PORT})"
-echo "  Emby        https://emby.${MC_DOMAIN}"
+echo "  Admin GUI   https://admin.${KINE_DOMAIN}    (or http://$(local_ip):${HELM_PORT})"
+echo "  Emby        https://emby.${KINE_DOMAIN}"
 echo
 echo "Finish setup in the admin GUI: set the admin password, then add"
 echo "your VPN key and indexer accounts. Everything else is already wired."
-if [[ "${MC_TLS_MODE}" == "internal" ]]; then
+if [[ "${KINE_TLS_MODE}" == "internal" ]]; then
   echo
   warn "TLS mode 'internal' uses Traefik's own CA. Browsers will warn until"
   warn "you trust ${STACK_ROOT}/config/traefik/certs/ca.crt, or switch"
-  warn "MC_TLS_MODE to acme-dns in the GUI."
+  warn "KINE_TLS_MODE to acme-dns in the GUI."
 fi

@@ -7,7 +7,7 @@
 services:
   radarr:
     image: lscr.io/linuxserver/radarr:${RADARR_TAG}
-    container_name: mc-radarr
+    container_name: kine-radarr
     profiles: ["radarr"]
     restart: unless-stopped
     depends_on:
@@ -18,7 +18,7 @@ services:
       PUID: ${PUID}
       PGID: ${PGID}
       UMASK: ${UMASK}
-      TZ: ${MC_TIMEZONE}
+      TZ: ${KINE_TIMEZONE}
     volumes:
       - ${STACK_ROOT}/config/radarr:/config
       # Single /data mount, not separate media and downloads mounts.

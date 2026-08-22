@@ -1,7 +1,7 @@
 services:
   unpackerr:
     image: golift/unpackerr:${UNPACKERR_TAG}
-    container_name: mc-unpackerr
+    container_name: kine-unpackerr
     profiles: ["unpackerr"]
     restart: unless-stopped
     depends_on:
@@ -10,7 +10,7 @@ services:
     network_mode: "service:gluetun"
     user: "${PUID}:${PGID}"
     environment:
-      TZ: ${MC_TIMEZONE}
+      TZ: ${KINE_TIMEZONE}
       UN_SONARR_0_URL: http://localhost:8989
       UN_SONARR_0_PATHS_0: /data/downloads
       UN_RADARR_0_URL: http://localhost:7878

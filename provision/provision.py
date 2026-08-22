@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Media Centre provisioner.
+"""Kine provisioner.
 
 Runs after `docker compose up` and wires the enabled applications to
 each other. Idempotent by construction: every write checks for an
@@ -68,7 +68,7 @@ def wire(enabled: set[str]) -> None:
     if "emby" in enabled:
         emby.configure(
             os.environ.get("HELM_ADMIN_USER", "admin"),
-            os.environ.get("MC_SECRET", "")[:16],
+            os.environ.get("KINE_SECRET", "")[:16],
             log,
         )
 

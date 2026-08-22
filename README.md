@@ -1,4 +1,4 @@
-# Media Centre
+# Kine
 
 A pre-built, portable media appliance. Clone it onto a Linux host, run
 one script, and you get Emby, the *arr stack, a VPN-tunnelled download
@@ -21,8 +21,8 @@ port forwarding that follows the provider's rotation.
 ## Install
 
 ```bash
-git clone <this repo> media-centre
-cd media-centre
+git clone <this repo> kine
+cd kine
 sudo ./install.sh
 ```
 
@@ -33,12 +33,12 @@ indexer accounts. That is the whole setup.
 ## Day to day
 
 ```bash
-./mc apps                 # what exists and what is on
-./mc enable bazarr        # add an app: profile, start, wire, done
-./mc updates              # what has a newer image
-./mc update sonarr        # snapshot, pull, recreate, roll back on failure
-./mc vpn leaktest         # prove the tunnel is carrying the traffic
-./mc backup               # config and env, never the media
+./kine apps                 # what exists and what is on
+./kine enable bazarr        # add an app: profile, start, wire, done
+./kine updates              # what has a newer image
+./kine update sonarr        # snapshot, pull, recreate, roll back on failure
+./kine vpn leaktest         # prove the tunnel is carrying the traffic
+./kine backup               # config and env, never the media
 ```
 
 Everything the GUI does is one of these commands. The GUI is a
@@ -53,7 +53,7 @@ declaring a profile equal to its own name, and `COMPOSE_PROFILES` in
 state, so the repo plus `.env` reproduces the appliance exactly.
 
 **Keys are derived, not discovered.** Every internal API key comes from
-`MC_SECRET` by SHA-256. That means the provisioner knows Sonarr's key
+`KINE_SECRET` by SHA-256. That means the provisioner knows Sonarr's key
 before Sonarr has ever started, which is what makes shipping a pre-wired
 stack possible at all: no chicken-and-egg where you must boot an app,
 log in, copy a key and paste it into another app.
@@ -86,9 +86,9 @@ on this:
   reason.
 
 **The domain is `.local` because that's the one mDNS actually
-resolves.** `MC_DOMAIN` defaults to `media.local`; the `mdns` profile
+resolves.** `KINE_DOMAIN` defaults to `kine.local`; the `mdns` profile
 (on by default) advertises it and every enabled app's subdomain over
-mDNS via avahi, so LAN devices reach `https://emby.media.local` with no
+mDNS via avahi, so LAN devices reach `https://emby.kine.local` with no
 DNS setup. Only `.local` gets this for free — RFC 6762 reserves it for
 mDNS, and stock macOS/Windows/iOS/Android resolvers don't look up
 anything else that way. The appliance host itself doesn't need
@@ -125,7 +125,7 @@ catalogue.yml   app metadata the GUI and provisioner both read
 ```
 
 Runtime state lives outside the repo, under `STACK_ROOT`
-(default `/srv/media-centre`) and `DATA_ROOT` (default `/srv/media-data`).
+(default `/srv/kine`) and `DATA_ROOT` (default `/srv/media-data`).
 
 ## Security
 

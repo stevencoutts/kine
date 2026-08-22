@@ -27,7 +27,7 @@ class ArrClient:
                     raise RuntimeError(
                         f"{self.base} rejected the derived API key. The app was "
                         f"started before it was seeded. Stop it, delete its "
-                        f"config.xml and re-run ./mc provision --force."
+                        f"config.xml and re-run ./kine provision --force."
                     )
             except httpx.HTTPError:
                 pass
@@ -53,7 +53,7 @@ class ArrClient:
         """Idempotent create. Returns True if something was created.
 
         Every recipe goes through this, which is what makes
-        `./mc provision` safe to run as many times as you like.
+        `./kine provision` safe to run as many times as you like.
         """
         existing = self.get(path)
         wanted = payload[match_on]

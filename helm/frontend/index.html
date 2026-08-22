@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Media Centre</title>
+<title>Kine</title>
 <style>
 :root{
   --bg:#1b1a19; --panel:#26241f; --panel-2:#302d27; --line:#3d3a33;
@@ -84,7 +84,7 @@ const render = {};
 render.shell = (body) => {
   $('#app').innerHTML = `
     <header>
-      <h1>Media Centre</h1>
+      <h1>Kine</h1>
       <nav>
         ${['apps','updates','vpn','status','settings'].map(t =>
           `<button class="${state.tab===t?'active':''}" data-tab="${t}">${t}</button>`
@@ -109,7 +109,7 @@ render.setup = () => {
         <label>Confirm</label>
         <input id="pw2" type="password">
         <label>Domain (advertised automatically on the LAN via mDNS if it ends in .local)</label>
-        <input id="domain" value="media.local">
+        <input id="domain" value="kine.local">
         <label>Certificates</label>
         <select id="tls">
           <option value="internal">internal &mdash; Traefik's own CA, no domain needed</option>
@@ -309,17 +309,17 @@ render.settings = async () => {
   const s = await api('/settings');
   render.shell(`
     <div class="section"><h2>settings</h2><div class="card">
-      <label>Domain</label><input id="MC_DOMAIN" value="${s.MC_DOMAIN}">
+      <label>Domain</label><input id="KINE_DOMAIN" value="${s.KINE_DOMAIN}">
       <label>TLS mode</label>
-      <select id="MC_TLS_MODE">
+      <select id="KINE_TLS_MODE">
         ${['internal','acme-dns','custom'].map(m =>
-          `<option ${s.MC_TLS_MODE===m?'selected':''}>${m}</option>`).join('')}
+          `<option ${s.KINE_TLS_MODE===m?'selected':''}>${m}</option>`).join('')}
       </select>
       <label>ACME email (acme-dns only)</label>
-      <input id="MC_ACME_EMAIL" value="${s.MC_ACME_EMAIL}">
+      <input id="KINE_ACME_EMAIL" value="${s.KINE_ACME_EMAIL}">
       <label>ACME DNS provider</label>
-      <input id="MC_ACME_DNS_PROVIDER" value="${s.MC_ACME_DNS_PROVIDER}">
-      <label>Timezone</label><input id="MC_TIMEZONE" value="${s.MC_TIMEZONE}">
+      <input id="KINE_ACME_DNS_PROVIDER" value="${s.KINE_ACME_DNS_PROVIDER}">
+      <label>Timezone</label><input id="KINE_TIMEZONE" value="${s.KINE_TIMEZONE}">
       <div class="row" style="margin-top:1rem">
         <button class="act primary" id="save">Save and reload Traefik</button>
         <button class="act" id="bk">Back up now</button>
@@ -327,7 +327,7 @@ render.settings = async () => {
       <div id="msg"></div>
     </div></div>`);
   $('#save').onclick = async () => {
-    const keys = ['MC_DOMAIN','MC_TLS_MODE','MC_ACME_EMAIL','MC_ACME_DNS_PROVIDER','MC_TIMEZONE'];
+    const keys = ['KINE_DOMAIN','KINE_TLS_MODE','KINE_ACME_EMAIL','KINE_ACME_DNS_PROVIDER','KINE_TIMEZONE'];
     await api('/settings', {method:'POST',
       body: JSON.stringify(Object.fromEntries(keys.map(k=>[k,$('#'+k).value])))});
     $('#msg').innerHTML = '<div class="banner ok">Saved. Certificates may take a minute.</div>';

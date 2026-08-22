@@ -8,6 +8,6 @@
 #     PUID: ${PUID}
 #     PGID: ${PGID}
 #     UMASK: ${UMASK}
-#     TZ: ${MC_TIMEZONE}
-#   networks: [mc_internal, mc_edge]
+#     TZ: ${KINE_TIMEZONE}
+#   networks: [kine_internal, kine_edge]
 #   security_opt: [no-new-privileges:true]

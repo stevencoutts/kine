@@ -26,7 +26,7 @@ def build_names(domain: str, profiles: set[str], catalogue: dict) -> list[str]:
 
 
 def main() -> None:
-    domain = os.environ.get("MC_DOMAIN", "media.local")
+    domain = os.environ.get("KINE_DOMAIN", "kine.local")
     profiles = {p.strip() for p in os.environ.get("COMPOSE_PROFILES", "").split(",") if p.strip()}
     catalogue = yaml.safe_load(pathlib.Path("/catalogue.yml").read_text())["apps"]
     for name in build_names(domain, profiles, catalogue):

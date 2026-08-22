@@ -1,14 +1,14 @@
 services:
   emby:
     image: emby/embyserver:${EMBY_TAG}
-    container_name: mc-emby
+    container_name: kine-emby
     profiles: ["emby"]
     restart: unless-stopped
     environment:
       UID: ${PUID}
       GID: ${PGID}
       GIDLIST: ${PGID},${RENDER_GID}
-      TZ: ${MC_TIMEZONE}
+      TZ: ${KINE_TIMEZONE}
     devices:
       # Intel QuickSync. install.sh detects the host render GID and
       # writes it to RENDER_GID; hardcoding it breaks across distros.
@@ -17,7 +17,7 @@ services:
       - ${STACK_ROOT}/config/emby:/config
       # Media read-only: Emby has no business writing to the library.
       - ${DATA_ROOT}/media:/data/media:ro
-    networks: [mc_internal, mc_edge]
+    networks: [kine_internal, kine_edge]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8096/System/Info/Public || exit 1"]
       interval: 30s
@@ -26,5 +26,5 @@ services:
       start_period: 60s
     labels:
       - traefik.enable=true
-      - traefik.http.routers.emby.rule=Host(`emby.${MC_DOMAIN}`)
+      - traefik.http.routers.emby.rule=Host(`emby.${KINE_DOMAIN}`)
       - traefik.http.services.emby.loadbalancer.server.port=8096
