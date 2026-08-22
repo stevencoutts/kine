@@ -344,6 +344,10 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
     if {"MC_TLS_MODE", "MC_DOMAIN", "MC_ACME_EMAIL"} & set(body):
         await compose.script("tls-setup.sh")
         await compose.run("restart", "traefik")
+    if "MC_DOMAIN" in body:
+        # Best-effort: mdns may not be enabled, and a missing container
+        # is not a settings-save failure.
+        await compose.run("restart", "mdns")
     return {"ok": True}
 
 

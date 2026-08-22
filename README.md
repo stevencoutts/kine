@@ -85,6 +85,16 @@ on this:
   CLI and GUI both refuse to restart gluetun on its own for that
   reason.
 
+**The domain is `.local` because that's the one mDNS actually
+resolves.** `MC_DOMAIN` defaults to `media.local`; the `mdns` profile
+(on by default) advertises it and every enabled app's subdomain over
+mDNS via avahi, so LAN devices reach `https://emby.media.local` with no
+DNS setup. Only `.local` gets this for free — RFC 6762 reserves it for
+mDNS, and stock macOS/Windows/iOS/Android resolvers don't look up
+anything else that way. The appliance host itself doesn't need
+multicast to reach its own domain; install.sh writes a loopback
+`/etc/hosts` entry for it regardless of the `mdns` profile.
+
 **Updates are opt-in and reversible.** Images are pinned by tag and
 digest. An update snapshots config, pulls, recreates, and watches the
 healthcheck for 90 seconds; if it does not come back, it reverts the

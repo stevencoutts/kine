@@ -9,6 +9,7 @@ include:
   - compose/core.traefik.yml
   - compose/core.helm.yml
   - compose/core.provision.yml
+  - compose/core.mdns.yml
   - compose/vpn.gluetun.yml
   - compose/media.emby.yml
   - compose/acq.sonarr.yml

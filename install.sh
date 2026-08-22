@@ -81,6 +81,25 @@ ok "directory tree ready"
 ./scripts/tls-setup.sh
 ok "TLS mode: ${MC_TLS_MODE}"
 
+# ── 4b. Loopback resolution ──────────────────────────────────────
+# mDNS (the mdns profile, on by default) advertises the domain to other
+# devices on the LAN, but the host doesn't need multicast to reach
+# itself: a plain /etc/hosts entry is instant and doesn't depend on
+# avahi coming up cleanly. Re-run-safe: the old block is replaced.
+HOSTS_BLOCK=$(MC_DOMAIN="${MC_DOMAIN}" COMPOSE_PROFILES="${COMPOSE_PROFILES}" python3 - <<'PY'
+import os, yaml
+domain = os.environ.get("MC_DOMAIN", "media.local")
+profiles = {p.strip() for p in os.environ.get("COMPOSE_PROFILES", "").split(",") if p.strip()}
+cat = yaml.safe_load(open("catalogue.yml"))["apps"]
+names = [domain] + [f"{v['subdomain']}.{domain}" for k, v in cat.items()
+                     if v.get("subdomain") and k in profiles]
+print("127.0.0.1 " + " ".join(names))
+PY
+)
+sedi '/# BEGIN media-centre/,/# END media-centre/d' /etc/hosts
+{ echo "# BEGIN media-centre"; echo "$HOSTS_BLOCK"; echo "# END media-centre"; } >> /etc/hosts
+ok "loopback resolution for ${MC_DOMAIN} written to /etc/hosts"
+
 # ── 5. Seed application config before anything starts ───────────
 # The *arr apps mint a random API key on first run. Writing config.xml
 # first makes them adopt ours instead, which is what allows the stack to

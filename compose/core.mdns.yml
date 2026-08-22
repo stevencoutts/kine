@@ -1,0 +1,20 @@
+# Advertises the appliance and every enabled app's subdomain over mDNS
+# (the .local TLD only -- that's the one clients actually resolve
+# without configuration; see MC_DOMAIN in .env.example). Needs the
+# host's real network, not a container's, because mDNS is multicast on
+# the LAN interface: hence network_mode: host instead of the usual
+# mc_edge/mc_internal networks, and no ports block -- there's no
+# separate namespace for one to belong to.
+services:
+  mdns:
+    build: ./mdns
+    image: media-centre/mdns:local
+    container_name: mc-mdns
+    profiles: ["mdns"]
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      MC_DOMAIN: ${MC_DOMAIN}
+      COMPOSE_PROFILES: ${COMPOSE_PROFILES}
+    volumes:
+      - ./catalogue.yml:/catalogue.yml:ro

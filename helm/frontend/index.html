@@ -108,8 +108,8 @@ render.setup = () => {
         <input id="pw" type="password">
         <label>Confirm</label>
         <input id="pw2" type="password">
-        <label>Domain</label>
-        <input id="domain" value="media.lan">
+        <label>Domain (advertised automatically on the LAN via mDNS if it ends in .local)</label>
+        <input id="domain" value="media.local">
         <label>Certificates</label>
         <select id="tls">
           <option value="internal">internal &mdash; Traefik's own CA, no domain needed</option>
