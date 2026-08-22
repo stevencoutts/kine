@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, catalogue, compose, config, scheduler
+from . import auth, catalogue, compose, config, launch, scheduler
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -28,6 +28,7 @@ COOKIE = "kine_session"
 
 @app.on_event("startup")
 async def _startup() -> None:
+    config.normalize()
     scheduler.start(app)
 
 
@@ -180,7 +181,7 @@ def _tier_section_enabled(tier: str, enabled: set[str]) -> bool:
 
 
 @app.get("/api/apps")
-async def apps(user: str = Depends(require_user)):
+async def apps(request: Request, user: str = Depends(require_user)):
     cat = catalogue.load()
     enabled = set(config.profiles())
     env = config.read()
@@ -196,8 +197,12 @@ async def apps(user: str = Depends(require_user)):
             "enabled": key in enabled,
             "default": meta.get("default", False),
             "running": f'"{key}"' in running or f"kine-{key}" in running,
-            "url": f"https://{meta['subdomain']}.{env.get('KINE_DOMAIN','')}"
-                   if meta.get("subdomain") else None,
+            "url": launch.app_url(
+                meta.get("subdomain"),
+                env.get("KINE_DOMAIN", ""),
+                request.url.hostname,
+                env.get("KINE_LOCAL_DOMAIN", "127.0.0.1.nip.io"),
+            ),
             "releases": meta.get("releases"),
             "requires": meta.get("requires", []),
             "tunnelled": meta.get("tunnelled"),
@@ -220,6 +225,7 @@ async def enable_tier(tier: str, user: str = Depends(require_user)):
     defaults = catalogue.tier_default_apps(tier)
     if not defaults:
         raise HTTPException(404, "no default apps in this section")
+    label = catalogue.TIER_LABELS.get(tier, tier.title())
     cat = catalogue.load()
     wanted = config.profiles()
     for app_id in defaults:
@@ -227,9 +233,14 @@ async def enable_tier(tier: str, user: str = Depends(require_user)):
         if app_id not in wanted:
             wanted.append(app_id)
     config.set_profiles(wanted)
-    code, out = await compose.run("up", "-d")
+    # Seed config.xml with derived API keys before first start so wire
+    # can authenticate. Safe no-op when configs already exist.
+    await compose.run("run", "--rm", "provision", "seed")
+    # Do not run an unscoped `up` from inside Helm: if Compose decides
+    # Helm itself needs recreation, it kills the request mid-deployment.
+    code, _ = await compose.run("up", "-d", *defaults)
     if code != 0:
-        raise HTTPException(500, out[-2000:])
+        raise HTTPException(500, f"Could not start {label} apps")
     await compose.run("run", "--rm", "provision", "wire")
     return {"ok": True, "enabled": defaults}
 
@@ -277,9 +288,11 @@ async def enable(app_id: str, user: str = Depends(require_user)):
         wanted.append(app_id)
     config.set_profiles(wanted)
 
-    code, out = await compose.run("up", "-d")
+    # Seed before start so *arr apps adopt derived keys on first run.
+    await compose.run("run", "--rm", "provision", "seed")
+    code, out = await compose.run("up", "-d", app_id)
     if code != 0:
-        raise HTTPException(500, out[-2000:])
+        raise HTTPException(500, f"Could not start {app_id}")
     # Wire it to whatever is already running.
     await compose.run("run", "--rm", "provision", "wire")
     return {"ok": True, "log": out[-2000:]}

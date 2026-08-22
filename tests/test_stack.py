@@ -44,6 +44,21 @@ def test_compose_project_name_is_stable_across_working_directories():
     assert top.get("name") == "kine"
 
 
+def test_fresh_profiles_contain_no_visible_apps():
+    env = {}
+    for line in (ROOT / ".env.example").read_text().splitlines():
+        if "=" in line and not line.startswith("#"):
+            key, value = line.split("=", 1)
+            env[key] = value
+    fresh = {p for p in env["COMPOSE_PROFILES"].split(",") if p}
+    visible = {
+        app_id for app_id, meta in CATALOGUE.items()
+        if not meta.get("hidden") and not meta.get("mandatory")
+    }
+    assert not fresh & visible
+    assert fresh == {"mdns"}
+
+
 def test_shell_env_loader_does_not_expand_password_hash(tmp_path):
     env_file = tmp_path / ".env"
     env_file.write_text(
@@ -169,6 +184,24 @@ def test_every_tunnelled_app_is_reachable():
             f"{app} has a router but no service definition"
 
 
+def test_vpn_restart_list_matches_tunnelled_catalogue():
+    env = {}
+    for line in (ROOT / ".env.example").read_text().splitlines():
+        if "=" in line and not line.startswith("#"):
+            key, value = line.split("=", 1)
+            env[key] = value
+    assert set(env["VPN_TUNNELLED_APPS"].split(",")) == TUNNELLED
+
+
+def test_jackett_uses_maintained_image_without_unused_downloads_mount():
+    _, jackett = SERVICES["jackett"]
+    assert jackett["image"] == "lscr.io/linuxserver/jackett:${JACKETT_TAG}"
+    assert jackett["volumes"] == ["${STACK_ROOT}/config/jackett:/config"]
+    _, gluetun = SERVICES["gluetun"]
+    labels = " ".join(str(label) for label in gluetun["labels"])
+    assert "services.jackett.loadbalancer.server.port=9117" in labels
+
+
 # ── everything else ─────────────────────────────────────────────
 def test_untunnelled_web_apps_have_routers():
     for app, meta in CATALOGUE.items():
@@ -177,6 +210,16 @@ def test_untunnelled_web_apps_have_routers():
         _, svc = SERVICES[app]
         labels = " ".join(str(l) for l in svc.get("labels", []))
         assert f"routers.{app}.rule" in labels, f"{app} has no Traefik router"
+
+
+def test_web_apps_have_local_traefik_aliases():
+    _, gluetun = SERVICES["gluetun"]
+    for app, meta in CATALOGUE.items():
+        if not meta.get("subdomain") or meta.get("hidden"):
+            continue
+        svc = gluetun if app in TUNNELLED else SERVICES[app][1]
+        labels = " ".join(str(label) for label in svc.get("labels", []))
+        assert f"{meta['subdomain']}.${{KINE_LOCAL_DOMAIN}}" in labels
 
 
 @pytest.mark.parametrize("name", sorted(SERVICES))
@@ -196,6 +239,16 @@ def test_env_example_defines_every_tag_referenced():
             assert var in declared, f"{fname}: {var} is used but not in .env.example"
 
 
+def test_traefik_supports_modern_docker_api_negotiation():
+    env = {}
+    for line in (ROOT / ".env.example").read_text().splitlines():
+        if "=" in line and not line.startswith("#"):
+            key, value = line.split("=", 1)
+            env[key] = value
+    version = tuple(int(part) for part in env["TRAEFIK_TAG"].lstrip("v").split("."))
+    assert version >= (3, 6, 1)
+
+
 def test_arr_apps_get_one_data_mount_not_two():
     """Split media and downloads mounts cost hardlinks silently: the
     import still succeeds, it is just a full copy every time."""
@@ -213,6 +266,17 @@ def test_helm_never_touches_the_raw_docker_socket():
     assert "docker.sock" not in mounts, \
         "Helm must reach Docker through the socket proxy, not the raw socket"
     assert helm["environment"]["DOCKER_HOST"].startswith("tcp://dockerproxy")
+
+
+def test_traefik_uses_socket_proxy_for_docker_discovery():
+    _, traefik = SERVICES["traefik"]
+    mounts = " ".join(traefik.get("volumes", []))
+    assert "docker.sock" not in mounts
+    assert "--providers.docker.endpoint=tcp://dockerproxy:2375" in traefik["command"]
+    assert "kine_ctrl" in traefik["networks"]
+    assert "dockerproxy" in traefik["depends_on"]
+    _, proxy = SERVICES["dockerproxy"]
+    assert str(proxy["environment"]["EVENTS"]) == "1"
 
 
 def test_helm_mounts_repository_root():

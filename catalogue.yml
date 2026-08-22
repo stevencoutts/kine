@@ -57,6 +57,17 @@ apps:
     tunnelled: forced
     default: true
 
+  jackett:
+    name: Jackett
+    tier: acquisition
+    summary: Tracker indexer proxy for manual configuration by compatible apps.
+    releases: https://github.com/Jackett/Jackett/releases
+    internal: http://gluetun:9117
+    subdomain: jackett
+    requires: [gluetun]
+    tunnelled: forced
+    default: true
+
   bazarr:
     name: Bazarr
     tier: acquisition

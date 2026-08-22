@@ -8,9 +8,17 @@ must start an app, log in, copy a key and paste it somewhere else.
 Consequence to be aware of: rotating KINE_SECRET re-keys the whole stack,
 and any external client holding an old key stops working. `./kine rekey`
 does it properly by re-seeding and re-provisioning together.
+
+If an app was started before seed (or retained a pre-existing config.xml),
+`resolve_key` reads the live key from disk so wiring still matches the
+process that is actually running.
 """
 import hashlib
 import os
+import pathlib
+import xml.etree.ElementTree as ET
+
+STACK = pathlib.Path("/stack")
 
 
 def api_key(app: str) -> str:
@@ -19,3 +27,20 @@ def api_key(app: str) -> str:
         raise RuntimeError("KINE_SECRET is empty; run install.sh")
     digest = hashlib.sha256(f"{secret}:{app}".encode()).hexdigest()
     return digest[:32]
+
+
+def resolve_key(app: str) -> str:
+    """Return the API key the running app will accept.
+
+    Prefer config.xml when present (seed adopts existing keys and never
+    overwrites them). Fall back to the derived key for first-time seed.
+    """
+    cfg = STACK / "config" / app / "config.xml"
+    if cfg.exists():
+        try:
+            existing = ET.parse(cfg).getroot().findtext("ApiKey")
+        except ET.ParseError:
+            existing = None
+        if existing:
+            return existing
+    return api_key(app)

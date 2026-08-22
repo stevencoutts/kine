@@ -17,6 +17,7 @@ include:
   - compose/acq.sonarr.yml
   - compose/acq.radarr.yml
   - compose/acq.prowlarr.yml
+  - compose/acq.jackett.yml
   - compose/acq.bazarr.yml
   - compose/acq.transmission.yml
   - compose/acq.nzbget.yml

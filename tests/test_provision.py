@@ -127,3 +127,61 @@ def test_ensure_is_idempotent():
     assert c.http.posted == []
     assert c.ensure("downloadclient", {"name": "NZBGet"}) is True
     assert len(c.http.posted) == 1
+
+
+def test_resolve_key_prefers_live_config_over_derived(stack, monkeypatch):
+    """Apps started before seed keep a random key in config.xml. Wire must
+    authenticate with that key, not the derived one, or download-client
+    registration never runs."""
+    import keys
+    monkeypatch.setattr(keys, "STACK", stack)
+    d = stack / "config" / "sonarr"
+    d.mkdir(parents=True)
+    (d / "config.xml").write_text(
+        '<?xml version="1.0"?><Config><ApiKey>live-key-from-running-app</ApiKey></Config>'
+    )
+    assert keys.resolve_key("sonarr") == "live-key-from-running-app"
+    assert keys.resolve_key("sonarr") != keys.api_key("sonarr")
+
+
+def test_resolve_key_falls_back_to_derived_when_unseeded(stack, monkeypatch):
+    import keys
+    monkeypatch.setattr(keys, "STACK", stack)
+    assert keys.resolve_key("radarr") == keys.api_key("radarr")
+
+
+def test_arr_wiring_registers_transmission_for_sonarr_and_radarr(monkeypatch):
+    """Both PVRs share the same download-client ensure path."""
+    import recipes.arr as arr
+
+    posted = []
+
+    class FakeClient:
+        def __init__(self, base, key):
+            self.base, self.key = base, key
+
+        def wait(self):
+            return True
+
+        def ensure(self, path, payload, match_on="name"):
+            posted.append((path, payload.get(match_on), payload.get("implementation")))
+            return True
+
+        def get(self, path):
+            return {"id": 1}
+
+        def put(self, path, payload):
+            return payload
+
+    monkeypatch.setattr(arr, "ArrClient", FakeClient)
+    monkeypatch.setattr(arr, "resolve_key", lambda app: f"key-{app}")
+    logs = []
+    enabled = {"sonarr", "radarr", "transmission"}
+    arr.configure("sonarr", enabled, logs.append)
+    arr.configure("radarr", enabled, logs.append)
+
+    clients = [(p, name, impl) for p, name, impl in posted if p == "downloadclient"]
+    assert ("downloadclient", "Transmission", "Transmission") in clients
+    assert clients.count(("downloadclient", "Transmission", "Transmission")) == 2
+    assert any("sonarr: download client Transmission" in m for m in logs)
+    assert any("radarr: download client Transmission" in m for m in logs)

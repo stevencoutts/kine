@@ -22,5 +22,5 @@ services:
     networks: [kine_internal, kine_edge]
     labels:
       - traefik.enable=true
-      - traefik.http.routers.ecm.rule=Host(`channels.${KINE_DOMAIN}`)
+      - traefik.http.routers.ecm.rule=Host(`channels.${KINE_DOMAIN}`) || Host(`channels.${KINE_LOCAL_DOMAIN}`)
       - traefik.http.services.ecm.loadbalancer.server.port=8080

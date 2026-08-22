@@ -19,7 +19,7 @@ def load() -> dict:
 
 
 def defaults() -> list[str]:
-    """Apps enabled on a fresh install."""
+    """Catalogue defaults selected when their sections are enabled."""
     return [k for k, v in load().items() if v.get("default") or v.get("mandatory")]
 
 

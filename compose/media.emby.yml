@@ -26,5 +26,5 @@ services:
       start_period: 60s
     labels:
       - traefik.enable=true
-      - traefik.http.routers.emby.rule=Host(`emby.${KINE_DOMAIN}`)
+      - traefik.http.routers.emby.rule=Host(`emby.${KINE_DOMAIN}`) || Host(`emby.${KINE_LOCAL_DOMAIN}`)
       - traefik.http.services.emby.loadbalancer.server.port=8096

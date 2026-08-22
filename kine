@@ -77,6 +77,8 @@ case "$cmd" in
     app="${1:?app}"
     profiles_add "$app"
     load_env .env
+    # Seed before start so *arr apps adopt derived keys on first run.
+    docker compose run --rm provision seed
     docker compose up -d
     docker compose run --rm provision wire ;;
   disable)

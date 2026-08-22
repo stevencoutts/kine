@@ -30,10 +30,7 @@ def test_defaults_match_catalogue_flags():
 
 def test_acquisition_defaults_exclude_optional_extras():
     acq = catalogue.tier_default_apps("acquisition")
-    assert "sonarr" in acq
-    assert "transmission" in acq
-    assert "nzbget" not in acq
-    assert "bazarr" not in acq
+    assert acq == ["sonarr", "radarr", "prowlarr", "jackett", "transmission"]
 
 
 def test_resolve_deps_pulls_in_gluetun():

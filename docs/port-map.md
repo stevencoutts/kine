@@ -13,6 +13,7 @@ start. Anything added to tier 2 must claim a free port here first.
 | 8000 | gluetun control server | `gluetun:8000` (internal only) |
 | 8989 | Sonarr | `gluetun:8989` |
 | 9091 | Transmission | `gluetun:9091` |
+| 9117 | Jackett | `gluetun:9117` |
 | 9696 | Prowlarr | `gluetun:9696` |
 
 Inside the namespace, apps address each other as `127.0.0.1:<port>`.

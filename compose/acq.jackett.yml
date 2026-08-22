@@ -1,0 +1,25 @@
+# Tunnelled. Jackett shares gluetun's network namespace and is configured
+# manually; Kine does not assume which trackers or consuming apps to wire.
+services:
+  jackett:
+    image: lscr.io/linuxserver/jackett:${JACKETT_TAG}
+    container_name: kine-jackett
+    profiles: ["jackett"]
+    restart: unless-stopped
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    network_mode: "service:gluetun"
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+      TZ: ${KINE_TIMEZONE}
+    volumes:
+      - ${STACK_ROOT}/config/jackett:/config
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9117/UI/Dashboard || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s

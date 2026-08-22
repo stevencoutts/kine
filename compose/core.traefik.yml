@@ -3,9 +3,13 @@ services:
     image: traefik:${TRAEFIK_TAG}
     container_name: kine-traefik
     restart: unless-stopped
+    depends_on:
+      dockerproxy:
+        condition: service_started
     security_opt: [no-new-privileges:true]
     command:
       - --providers.docker=true
+      - --providers.docker.endpoint=tcp://dockerproxy:2375
       - --providers.docker.exposedbydefault=false
       - --providers.docker.network=kine_edge
       - --providers.file.directory=/etc/traefik/dynamic
@@ -23,9 +27,8 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${STACK_ROOT}/config/traefik:/etc/traefik
-    networks: [kine_edge]
+    networks: [kine_edge, kine_ctrl]
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 20s

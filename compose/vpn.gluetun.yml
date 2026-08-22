@@ -60,27 +60,31 @@ services:
     labels:
       - traefik.enable=true
       # ── Every tier 2 app's router lives here ──────────────────
-      - traefik.http.routers.sonarr.rule=Host(`sonarr.${KINE_DOMAIN}`)
+      - traefik.http.routers.sonarr.rule=Host(`sonarr.${KINE_DOMAIN}`) || Host(`sonarr.${KINE_LOCAL_DOMAIN}`)
       - traefik.http.routers.sonarr.service=sonarr
       - traefik.http.services.sonarr.loadbalancer.server.port=8989
 
-      - traefik.http.routers.radarr.rule=Host(`radarr.${KINE_DOMAIN}`)
+      - traefik.http.routers.radarr.rule=Host(`radarr.${KINE_DOMAIN}`) || Host(`radarr.${KINE_LOCAL_DOMAIN}`)
       - traefik.http.routers.radarr.service=radarr
       - traefik.http.services.radarr.loadbalancer.server.port=7878
 
-      - traefik.http.routers.prowlarr.rule=Host(`prowlarr.${KINE_DOMAIN}`)
+      - traefik.http.routers.prowlarr.rule=Host(`prowlarr.${KINE_DOMAIN}`) || Host(`prowlarr.${KINE_LOCAL_DOMAIN}`)
       - traefik.http.routers.prowlarr.service=prowlarr
       - traefik.http.services.prowlarr.loadbalancer.server.port=9696
 
-      - traefik.http.routers.bazarr.rule=Host(`bazarr.${KINE_DOMAIN}`)
+      - traefik.http.routers.jackett.rule=Host(`jackett.${KINE_DOMAIN}`) || Host(`jackett.${KINE_LOCAL_DOMAIN}`)
+      - traefik.http.routers.jackett.service=jackett
+      - traefik.http.services.jackett.loadbalancer.server.port=9117
+
+      - traefik.http.routers.bazarr.rule=Host(`bazarr.${KINE_DOMAIN}`) || Host(`bazarr.${KINE_LOCAL_DOMAIN}`)
       - traefik.http.routers.bazarr.service=bazarr
       - traefik.http.services.bazarr.loadbalancer.server.port=6767
 
-      - traefik.http.routers.transmission.rule=Host(`transmission.${KINE_DOMAIN}`)
+      - traefik.http.routers.transmission.rule=Host(`transmission.${KINE_DOMAIN}`) || Host(`transmission.${KINE_LOCAL_DOMAIN}`)
       - traefik.http.routers.transmission.service=transmission
       - traefik.http.services.transmission.loadbalancer.server.port=9091
 
-      - traefik.http.routers.nzbget.rule=Host(`nzbget.${KINE_DOMAIN}`)
+      - traefik.http.routers.nzbget.rule=Host(`nzbget.${KINE_DOMAIN}`) || Host(`nzbget.${KINE_LOCAL_DOMAIN}`)
       - traefik.http.routers.nzbget.service=nzbget
       - traefik.http.services.nzbget.loadbalancer.server.port=6789
 

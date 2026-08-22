@@ -5,7 +5,7 @@ both *arr apps automatically. It is the single highest-value piece of
 pre-wiring in the stack.
 """
 from arrclient import ArrClient
-from keys import api_key
+from keys import resolve_key
 
 TARGETS = {
     "sonarr": ("Sonarr", "SonarrSettings", "http://localhost:8989"),
@@ -14,7 +14,7 @@ TARGETS = {
 
 
 def configure(enabled: set[str], log) -> None:
-    client = ArrClient("http://gluetun:9696", api_key("prowlarr"), api="v1")
+    client = ArrClient("http://gluetun:9696", resolve_key("prowlarr"), api="v1")
     if not client.wait():
         log("prowlarr: no API response, skipping wiring")
         return
@@ -32,7 +32,7 @@ def configure(enabled: set[str], log) -> None:
                 # from inside the tunnel, so they are loopback.
                 {"name": "prowlarrUrl", "value": "http://localhost:9696"},
                 {"name": "baseUrl", "value": url},
-                {"name": "apiKey", "value": api_key(app)},
+                {"name": "apiKey", "value": resolve_key(app)},
             ],
         }
         if client.ensure("applications", payload):

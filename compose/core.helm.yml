@@ -50,6 +50,7 @@ services:
       # Helm needs to inspect, start, stop and recreate containers.
       # Everything else stays shut.
       CONTAINERS: 1
+      EVENTS: 1
       IMAGES: 1
       NETWORKS: 1
       VOLUMES: 1

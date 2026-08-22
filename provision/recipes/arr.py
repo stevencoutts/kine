@@ -7,7 +7,7 @@ indexers into Sonarr and Radarr. The user adds their indexer accounts
 and nothing else.
 """
 from arrclient import ArrClient
-from keys import api_key
+from keys import resolve_key
 
 # The *arr apps see the shared volume as /data. Transmission and NZBGet
 # see the same files at /data/downloads. Because both mounts come from
@@ -70,7 +70,7 @@ def configure(app: str, enabled: set[str], log) -> None:
         # reaches the tier 2 apps at gluetun's address: that container is
         # the one that actually holds their sockets.
         {"sonarr": "http://gluetun:8989", "radarr": "http://gluetun:7878"}[app],
-        api_key(app),
+        resolve_key(app),
     )
     if not client.wait():
         log(f"{app}: no API response, skipping wiring")

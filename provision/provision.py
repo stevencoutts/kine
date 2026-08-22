@@ -60,10 +60,16 @@ def wire(enabled: set[str]) -> None:
 
     for app in ("sonarr", "radarr"):
         if app in enabled:
-            arr.configure(app, enabled, log)
+            try:
+                arr.configure(app, enabled, log)
+            except Exception as exc:  # noqa: BLE001 — one app must not abort the rest
+                log(f"{app}: wiring failed ({exc})")
 
     if "prowlarr" in enabled:
-        prowlarr.configure(enabled, log)
+        try:
+            prowlarr.configure(enabled, log)
+        except Exception as exc:  # noqa: BLE001
+            log(f"prowlarr: wiring failed ({exc})")
 
     if "emby" in enabled:
         emby.configure(

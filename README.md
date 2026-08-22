@@ -1,7 +1,7 @@
 # Kine
 
 Kine is a self-hosted media appliance built from Docker Compose. It combines
-Emby, the Sonarr/Radarr/Prowlarr acquisition stack, VPN-routed download tools,
+Emby, the Sonarr/Radarr/Prowlarr/Jackett acquisition stack, VPN-routed download tools,
 and IPTV/sports services behind one Traefik HTTPS entry point.
 
 The provisioner does more than start containers:
@@ -77,21 +77,19 @@ Traefik; do not rely on that mode for production yet.
 
 ## Application defaults
 
-The defaults are defined by `.env.example` and `catalogue.yml`.
+Fresh installs start every visible application section disabled. Core platform
+services and mDNS start immediately; onboarding may also start the hidden
+Gluetun gateway when VPN is selected.
 
-Enabled initially:
+Enabling a section selects its catalogue defaults:
 
-- platform: Traefik, Helm, Docker socket proxy, provisioner, gluetun, and mDNS
 - media: Emby
-- acquisition: Sonarr, Radarr, Prowlarr, and Transmission
+- acquisition: Sonarr, Radarr, Prowlarr, Jackett, and Transmission
 - live TV: Dispatcharr, Enhanced Channel Manager (ECM), and Teamarr
 
-Available but disabled:
-
-- Bazarr
-- NZBGet
-- Unpackerr
-- Recyclarr
+Optional acquisition apps remain individually available: Bazarr, NZBGet,
+Unpackerr, and Recyclarr. Jackett is not pre-wired because its trackers and
+consuming applications require user-specific configuration.
 
 Important defaults:
 
@@ -161,7 +159,10 @@ docker compose pull --ignore-buildable
 The override removes Emby's `/dev/dri` device mapping. `.env` and `.local/`
 are ignored by Git. mDNS uses host networking, whose LAN behavior differs
 under Docker Desktop; `http://localhost:8600` is the dependable Helm URL for
-local testing.
+local testing. When Helm is opened on loopback, app launch buttons use
+`<app>.127.0.0.1.nip.io`; these names resolve to loopback but still traverse
+Traefik rather than exposing application ports. Internal TLS may show the same
+certificate warning as the production-domain URLs until its CA is trusted.
 
 ## NFS storage
 

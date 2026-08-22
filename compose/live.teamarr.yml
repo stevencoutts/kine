@@ -20,5 +20,5 @@ services:
     networks: [kine_internal, kine_edge]
     labels:
       - traefik.enable=true
-      - traefik.http.routers.teamarr.rule=Host(`sports.${KINE_DOMAIN}`)
+      - traefik.http.routers.teamarr.rule=Host(`sports.${KINE_DOMAIN}`) || Host(`sports.${KINE_LOCAL_DOMAIN}`)
       - traefik.http.services.teamarr.loadbalancer.server.port=8080

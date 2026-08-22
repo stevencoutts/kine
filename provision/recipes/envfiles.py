@@ -7,7 +7,7 @@ must exist before the container starts even if they are empty.
 """
 import pathlib
 
-from keys import api_key
+from keys import resolve_key
 
 STACK = pathlib.Path("/stack")
 
@@ -26,8 +26,8 @@ def _write(app: str, lines: dict[str, str], log) -> None:
 def configure(enabled: set[str], log) -> None:
     if "unpackerr" in enabled:
         _write("unpackerr", {
-            "UN_SONARR_0_API_KEY": api_key("sonarr"),
-            "UN_RADARR_0_API_KEY": api_key("radarr"),
+            "UN_SONARR_0_API_KEY": resolve_key("sonarr"),
+            "UN_RADARR_0_API_KEY": resolve_key("radarr"),
         }, log)
 
     for app in ("ecm", "teamarr"):

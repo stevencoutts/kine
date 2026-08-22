@@ -94,7 +94,8 @@ const api = async (path, opts={}) => {
   return data;
 };
 
-const state = { tab:'apps', apps:[], tiers:{}, collapsed:{} };
+const state = { tab:'apps', apps:[], tiers:{},
+  collapsed:{media:true,acquisition:true,live:true,platform:true} };
 const TAB_LABELS = {apps:'Apps', updates:'Updates', vpn:'VPN', status:'Status', settings:'Settings'};
 const TIER_ORDER = ['media','acquisition','live','platform'];
 
@@ -233,7 +234,7 @@ render.apps = async () => {
   const data = await api('/apps');
   state.apps = data.apps;
   state.tiers = data.tiers;
-  const body = TIER_ORDER.map(tier => {
+  const body = '<div id="tier-msg"></div>' + TIER_ORDER.map(tier => {
     const meta = state.tiers[tier];
     if (!meta) return '';
     const items = state.apps.filter(a => a.tier===tier && !a.hidden);
@@ -258,7 +259,7 @@ render.apps = async () => {
               ? `<button class="act" data-act="disable" data-id="${a.id}">Disable</button>
                  <button class="act" data-act="restart" data-id="${a.id}">Restart</button>`
               : `<button class="act primary" data-act="enable" data-id="${a.id}">Enable</button>`}
-            ${a.url && a.enabled ? `<a class="link" href="${a.url}" target="_blank">Open</a>`:''}
+            ${a.url && a.enabled ? `<button class="act" data-open="${a.id}">Open</button>`:''}
           </div>
         </div>`).join('') + '</div></div>';
   }).join('');
@@ -272,7 +273,9 @@ render.apps = async () => {
           render.apps();
         } catch (e) {
           el.checked = !el.checked;
-          alert(e.message || 'Could not update section');
+          const tierMsg = $('#tier-msg');
+          tierMsg.className = 'banner bad';
+          tierMsg.textContent = e.message || 'Could not update section';
           el.disabled = false;
         }
       };
@@ -287,6 +290,17 @@ render.apps = async () => {
     b.disabled = true; b.textContent = 'Working...';
     await api(`/apps/${b.dataset.id}/${b.dataset.act}`, {method:'POST'});
     render.apps();
+  });
+  document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
+    const app = state.apps.find(a => a.id === b.dataset.open);
+    const opened = app?.url && window.open(app.url, '_blank', 'noopener');
+    if (opened) {
+      opened.opener = null;
+      return;
+    }
+    const tierMsg = $('#tier-msg');
+    tierMsg.className = 'banner bad';
+    tierMsg.textContent = `Could not open ${app?.name || 'application'}. Check browser pop-up and certificate settings.`;
   });
 };
 
