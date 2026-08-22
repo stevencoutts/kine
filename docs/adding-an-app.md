@@ -34,13 +34,14 @@ refuse to disable something that is still depended on.
 ## 3. A provisioning recipe (only if it needs wiring)
 
 `provision/recipes/<name>.py` with a `configure(...)` function, called
-from `provision.py`. Every write must go through `ArrClient.ensure()` or
-an equivalent existence check: `./kine provision` runs on every enable and
-must stay safe to repeat.
+from `provision.py`. Every write must go through `ArrClient.ensure()`,
+`JackettClient.ensure_indexer()`, or an equivalent existence check:
+`./kine provision` runs on every enable and must stay safe to repeat.
 
 If the app takes an API key, derive it with `keys.api_key("<app>")`
 rather than generating one, and seed its config file in `seed.py` so it
-adopts that key on first start.
+adopts that key on first start (`config.xml` for *arr apps;
+`config/jackett/Jackett/ServerConfig.json` for Jackett).
 
 ## Then
 

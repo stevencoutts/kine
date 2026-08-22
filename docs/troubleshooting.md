@@ -18,7 +18,8 @@ The container started before it was seeded, so it minted its own key.
 
 ```bash
 ./kine down
-rm /srv/kine/config/<app>/config.xml
+rm /srv/kine/config/<app>/config.xml   # Sonarr, Radarr, Prowlarr
+# Jackett: rm /srv/kine/config/jackett/Jackett/ServerConfig.json
 ./kine seed && ./kine up && ./kine provision
 ```
 

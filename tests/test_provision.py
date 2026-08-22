@@ -150,6 +150,80 @@ def test_resolve_key_falls_back_to_derived_when_unseeded(stack, monkeypatch):
     assert keys.resolve_key("radarr") == keys.api_key("radarr")
 
 
+def test_resolve_key_prefers_jackett_server_config(stack, monkeypatch):
+    import keys
+    monkeypatch.setattr(keys, "STACK", stack)
+    cfg_dir = stack / "config" / "jackett" / "Jackett"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "ServerConfig.json").write_text(
+        '{"APIKey": "live-jackett-key-from-running-app"}'
+    )
+    assert keys.resolve_key("jackett") == "live-jackett-key-from-running-app"
+    assert keys.resolve_key("jackett") != keys.api_key("jackett")
+
+
+def test_jackett_seed_writes_derived_api_key(stack):
+    import json
+    import seed
+    from keys import api_key
+    seed.seed_jackett()
+    cfg = stack / "config" / "jackett" / "Jackett" / "ServerConfig.json"
+    assert json.loads(cfg.read_text())["APIKey"] == api_key("jackett")
+
+
+def test_jackett_seed_never_overwrites_an_existing_key(stack):
+    import json
+    import seed
+    cfg_dir = stack / "config" / "jackett" / "Jackett"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "ServerConfig.json").write_text(
+        '{"APIKey": "preexisting-jackett-key-do-not-touch"}'
+    )
+    seed.seed_jackett()
+    assert (
+        json.loads((cfg_dir / "ServerConfig.json").read_text())["APIKey"]
+        == "preexisting-jackett-key-do-not-touch"
+    )
+
+
+def test_jackett_public_indexers_match_screenshot_settings():
+    from recipes.jackett import INDEXERS
+    assert INDEXERS["kickasstorrents-ws"]["sitelink"] == "https://kattracker.com/"
+    assert INDEXERS["kickasstorrents-ws"]["sortrequestedfromsite"] == "time_add"
+    assert INDEXERS["kickasstorrents-ws"]["orderrequestedfromsite"] == "desc"
+    assert INDEXERS["thepiratebay"]["sitelink"] == "https://thepiratebay.org/"
+    assert INDEXERS["thepiratebay"]["apiurl"] == "apibay.org"
+    assert INDEXERS["thepiratebay"]["top100"] == "recent"
+    assert "1337x" in INDEXERS
+
+
+def test_jackett_ensure_indexer_is_idempotent():
+    from jackettclient import JackettClient
+
+    class FakeClient(JackettClient):
+        def __init__(self):
+            self.configured = set()
+            self.values = {}
+            self.posted = []
+
+        def configured_ids(self):
+            return set(self.configured)
+
+        def config_values(self, indexer_id):
+            return dict(self.values)
+
+        def apply_config(self, indexer_id, settings):
+            self.posted.append((indexer_id, settings))
+            self.configured.add(indexer_id)
+            self.values.update(settings)
+
+    client = FakeClient()
+    settings = {"sitelink": "https://kattracker.com/", "tags": ""}
+    assert client.ensure_indexer("kickasstorrents-ws", settings) is True
+    assert client.ensure_indexer("kickasstorrents-ws", settings) is False
+    assert len(client.posted) == 1
+
+
 def test_arr_wiring_registers_transmission_for_sonarr_and_radarr(monkeypatch):
     """Both PVRs share the same download-client ensure path."""
     import recipes.arr as arr

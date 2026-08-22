@@ -121,6 +121,7 @@ WARN
     for a in sonarr radarr prowlarr; do
       rm -f "${STACK_ROOT}/config/${a}/config.xml"
     done
+    rm -f "${STACK_ROOT}/config/jackett/Jackett/ServerConfig.json"
     docker compose run --rm provision seed
     docker compose up -d
     docker compose run --rm provision wire

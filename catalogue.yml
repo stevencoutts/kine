@@ -60,10 +60,11 @@ apps:
   jackett:
     name: Jackett
     tier: acquisition
-    summary: Tracker indexer proxy for manual configuration by compatible apps.
+    summary: Tracker indexer proxy with public indexers preconfigured.
     releases: https://github.com/Jackett/Jackett/releases
     internal: http://gluetun:9117
     subdomain: jackett
+    provides: [indexer-proxy]
     requires: [gluetun]
     tunnelled: forced
     default: true

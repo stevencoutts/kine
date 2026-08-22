@@ -14,6 +14,7 @@ If an app was started before seed (or retained a pre-existing config.xml),
 process that is actually running.
 """
 import hashlib
+import json
 import os
 import pathlib
 import xml.etree.ElementTree as ET
@@ -32,9 +33,20 @@ def api_key(app: str) -> str:
 def resolve_key(app: str) -> str:
     """Return the API key the running app will accept.
 
-    Prefer config.xml when present (seed adopts existing keys and never
+    Prefer on-disk config when present (seed adopts existing keys and never
     overwrites them). Fall back to the derived key for first-time seed.
     """
+    if app == "jackett":
+        cfg = STACK / "config" / "jackett" / "Jackett" / "ServerConfig.json"
+        if cfg.exists():
+            try:
+                existing = json.loads(cfg.read_text()).get("APIKey")
+            except (OSError, json.JSONDecodeError):
+                existing = None
+            if existing:
+                return existing
+        return api_key("jackett")
+
     cfg = STACK / "config" / app / "config.xml"
     if cfg.exists():
         try:

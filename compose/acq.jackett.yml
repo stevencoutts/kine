@@ -1,5 +1,6 @@
-# Tunnelled. Jackett shares gluetun's network namespace and is configured
-# manually; Kine does not assume which trackers or consuming apps to wire.
+# Tunnelled. Jackett shares gluetun's network namespace. The provisioner
+# seeds a derived API key and three public indexers; Sonarr/Radarr feeds
+# are still manual because Prowlarr is the wired indexer proxy.
 services:
   jackett:
     image: lscr.io/linuxserver/jackett:${JACKETT_TAG}

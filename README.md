@@ -8,6 +8,9 @@ The provisioner does more than start containers:
 
 - Sonarr and Radarr receive their root folders and enabled download clients.
 - Prowlarr is linked to Sonarr and Radarr.
+- Jackett receives a derived API key and three public indexers (KickassTorrents,
+  The Pirate Bay, and 1337x); Torznab feeds into Sonarr/Radarr stay manual
+  because Prowlarr is the wired indexer proxy.
 - Emby's first-run wizard is completed with Movies, TV, and Sports libraries.
 - Transmission runs in gluetun's WireGuard namespace; ProtonVPN port changes
   are copied into Transmission by the `vpn-portsync` sidecar.
@@ -88,8 +91,9 @@ Enabling a section selects its catalogue defaults:
 - live TV: Dispatcharr, Enhanced Channel Manager (ECM), and Teamarr
 
 Optional acquisition apps remain individually available: Bazarr, NZBGet,
-Unpackerr, and Recyclarr. Jackett is not pre-wired because its trackers and
-consuming applications require user-specific configuration.
+Unpackerr, and Recyclarr. Jackett ships with three public indexers
+preconfigured; Prowlarr remains the indexer proxy wired into Sonarr and
+Radarr, so Jackett Torznab feeds are copied manually when needed.
 
 Important defaults:
 
@@ -239,8 +243,9 @@ make the result inconclusive.
 one fragment per service from `compose/`. Each optional application has a
 same-named profile, and `.env`'s `COMPOSE_PROFILES` selects what runs.
 
-**Provisioning is deterministic.** `KINE_SECRET` derives the Sonarr, Radarr,
-and Prowlarr API keys before first boot. The seeder never overwrites an
+**Provisioning is deterministic.** `KINE_SECRET` derives API keys for
+Sonarr, Radarr, Prowlarr, and Jackett before first boot (`config.xml` for the
+*arr apps, `ServerConfig.json` for Jackett). The seeder never overwrites an
 existing key. The provisioner then performs idempotent API wiring.
 
 **A single `/data` preserves imports.** Sonarr and Radarr receive one
