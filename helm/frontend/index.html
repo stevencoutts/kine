@@ -56,8 +56,9 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
 .section h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;
   color:var(--muted);margin:0 0 .75rem}
 label{display:block;font-size:.8rem;color:var(--muted);margin:.75rem 0 .25rem}
-input,select{width:100%;background:var(--panel-2);border:1px solid var(--line);
+input,select,textarea{width:100%;background:var(--panel-2);border:1px solid var(--line);
   color:var(--text);padding:.5rem;border-radius:6px;font:inherit}
+textarea{font-family:ui-monospace,monospace;font-size:.8rem;resize:vertical}
 .login{max-width:340px;margin:12vh auto}
 .banner{padding:.6rem .9rem;border-radius:var(--radius);font-size:.85rem;margin-bottom:1rem}
 .banner.ok{background:rgba(63,185,80,.12);border:1px solid var(--ok)}
@@ -125,8 +126,10 @@ render.setup = () => {
           Enable VPN (recommended &mdash; tunnels the whole acquisition tier)
         </label>
         <div id="vpn_conf_wrap">
-          <label>WireGuard config file (optional &mdash; add the key later from the VPN page if you skip this)</label>
+          <label>WireGuard config file</label>
           <input id="vpn_conf" type="file" accept=".conf,.txt">
+          <label>&hellip;or paste it here</label>
+          <textarea id="vpn_conf_text" rows="5" placeholder="[Interface]&#10;PrivateKey = ...&#10;Address = ..."></textarea>
         </div>
         <div class="row" style="margin-top:1rem">
           <button class="act primary" id="go">Finish setup</button>
@@ -148,7 +151,11 @@ render.setup = () => {
       return $('#msg').innerHTML = '<div class="banner bad">Needs at least 12 characters</div>';
     const vpnEnabled = $('#vpn_enable').checked;
     const vpnFile = $('#vpn_conf').files[0];
-    const wireguardConf = vpnEnabled && vpnFile ? await vpnFile.text() : '';
+    const wireguardConf = vpnEnabled
+      ? (vpnFile ? await vpnFile.text() : $('#vpn_conf_text').value)
+      : '';
+    if (vpnEnabled && !wireguardConf.trim())
+      return $('#msg').innerHTML = '<div class="banner bad">VPN is enabled: provide a WireGuard config file or paste one in</div>';
     const r = await fetch('/api/setup', {method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({password:pw, domain:$('#domain').value,

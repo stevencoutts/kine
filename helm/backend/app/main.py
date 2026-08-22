@@ -118,6 +118,14 @@ async def first_run(request: Request):
     pw = body.get("password", "")
     if len(pw) < 12:
         raise HTTPException(400, "password must be at least 12 characters")
+
+    vpn_enabled = bool(body.get("vpn_enabled", True))
+    vpn_fields = {}
+    if vpn_enabled:
+        vpn_fields = _parse_wireguard_conf(body.get("wireguard_conf", ""))
+        if "WIREGUARD_PRIVATE_KEY" not in vpn_fields:
+            raise HTTPException(400, "VPN is enabled: a valid WireGuard config is required")
+
     auth.set_password(pw)
     updates = {
         k: str(body[v])
@@ -134,18 +142,13 @@ async def first_run(request: Request):
         config.write(updates)
         await compose.script("tls-setup.sh")
 
-    vpn_enabled = bool(body.get("vpn_enabled", True))
     cat = catalogue.load()
     tunnelled = [k for k, v in cat.items() if "gluetun" in v.get("requires", [])]
     wanted = config.profiles()
     if vpn_enabled:
         if "gluetun" not in wanted:
             wanted.append("gluetun")
-        conf = body.get("wireguard_conf", "")
-        vpn_updates = {"VPN_ENABLED": "true"}
-        if conf.strip():
-            vpn_updates.update(_parse_wireguard_conf(conf))
-        config.write(vpn_updates)
+        config.write({"VPN_ENABLED": "true", **vpn_fields})
     else:
         # Nothing tunnelled-forced can run without it, so switching VPN
         # off at setup drops them too rather than leaving them enabled
