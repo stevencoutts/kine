@@ -1,0 +1,15 @@
+# Not wired up (the repo is local-only for now). Drop this at
+# .github/workflows/ci.yml if it ever gets a remote.
+name: ci
+on: [push, pull_request]
+jobs:
+  invariants:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: pip install pytest pyyaml
+      - run: python -m pytest tests -q
+      - run: cp .env.example .env && docker compose config --quiet
+      - run: for s in install.sh mc scripts/*.sh; do bash -n "$s"; done

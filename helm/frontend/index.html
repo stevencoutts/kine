@@ -73,7 +73,7 @@ render.shell = (body) => {
     <header>
       <h1>Media Centre</h1>
       <nav>
-        ${['apps','updates','vpn','settings'].map(t =>
+        ${['apps','updates','vpn','status','settings'].map(t =>
           `<button class="${state.tab===t?'active':''}" data-tab="${t}">${t}</button>`
         ).join('')}
       </nav>
@@ -81,6 +81,59 @@ render.shell = (body) => {
     <main>${body}</main>`;
   document.querySelectorAll('nav button').forEach(b =>
     b.onclick = () => { state.tab = b.dataset.tab; render[state.tab](); });
+};
+
+
+render.setup = () => {
+  $('#app').innerHTML = `
+    <main class="login" style="max-width:460px">
+      <div class="card">
+        <h3>First run</h3>
+        <p>Set the admin password and how this appliance is reached. Both
+           can be changed later from Settings.</p>
+        <label>Admin password (12 characters minimum)</label>
+        <input id="pw" type="password">
+        <label>Confirm</label>
+        <input id="pw2" type="password">
+        <label>Domain</label>
+        <input id="domain" value="media.lan">
+        <label>Certificates</label>
+        <select id="tls">
+          <option value="internal">internal &mdash; Traefik's own CA, no domain needed</option>
+          <option value="acme-dns">acme-dns &mdash; Let's Encrypt over DNS-01</option>
+          <option value="custom">custom &mdash; supply your own PEM files</option>
+        </select>
+        <div id="acme" style="display:none">
+          <label>ACME email</label><input id="email">
+          <label>DNS provider code</label><input id="prov" value="cloudflare">
+        </div>
+        <label>Timezone</label><input id="tz" value="Europe/London">
+        <div class="row" style="margin-top:1rem">
+          <button class="act primary" id="go">Finish setup</button>
+        </div>
+        <div id="msg"></div>
+      </div>
+    </main>`;
+  $('#tls').onchange = e => {
+    $('#acme').style.display = e.target.value === 'acme-dns' ? 'block' : 'none';
+  };
+  $('#go').onclick = async () => {
+    const pw = $('#pw').value;
+    if (pw !== $('#pw2').value)
+      return $('#msg').innerHTML = '<div class="banner bad">Passwords do not match</div>';
+    if (pw.length < 12)
+      return $('#msg').innerHTML = '<div class="banner bad">Needs at least 12 characters</div>';
+    const r = await fetch('/api/setup', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({password:pw, domain:$('#domain').value,
+        tls_mode:$('#tls').value, acme_email:$('#email')?.value||'',
+        acme_provider:$('#prov')?.value||'', timezone:$('#tz').value})});
+    if (r.ok) render.login();
+    else {
+      const e = await r.json();
+      $('#msg').innerHTML = `<div class="banner bad">${e.detail||'setup failed'}</div>`;
+    }
+  };
 };
 
 render.login = () => {
@@ -134,13 +187,30 @@ render.apps = async () => {
   });
 };
 
-render.updates = async () => {
-  render.shell('<div class="section"><h2>image updates</h2>' +
-    '<p style="color:var(--muted);font-size:.85rem">Nothing updates on its own. ' +
-    'Each update snapshots config first and rolls back if the app does not come ' +
-    'back healthy.</p><pre id="rep">checking...</pre></div>');
-  const r = await api('/updates');
+render.updates = async (refresh=false) => {
+  render.shell(`<div class="section"><h2>image updates</h2>
+    <p style="color:var(--muted);font-size:.85rem">Nothing updates on its own.
+    The overnight job only checks digests; applying an update snapshots
+    config first and rolls back if the app does not come back healthy.</p>
+    <div class="row" style="margin-bottom:1rem">
+      <button class="act" id="refresh">Check now</button>
+      <span id="age" style="color:var(--muted);font-size:.8rem"></span>
+    </div>
+    <pre id="rep">${refresh?'checking registries...':'loading...'}</pre>
+    <div id="acts" class="row" style="margin-top:1rem"></div></div>`);
+  $('#refresh').onclick = () => render.updates(true);
+  const r = await api('/updates' + (refresh ? '?refresh=true' : ''));
   $('#rep').textContent = r.report || 'no report';
+  $('#age').textContent = r.cached ? `cached, checked ${r.checked}` : 'just checked';
+  $('#acts').innerHTML = (r.pending||[]).map(a =>
+    `<button class="act primary" data-up="${a}">Update ${a}</button>`).join('');
+  document.querySelectorAll('[data-up]').forEach(b => b.onclick = async () => {
+    b.disabled = true; b.textContent = 'updating...';
+    const res = await api('/updates/'+b.dataset.up, {method:'POST'});
+    $('#rep').textContent = res.log;
+    if (res.rolled_back)
+      $('#rep').textContent = 'ROLLED BACK\n\n' + res.log;
+  });
 };
 
 render.vpn = async () => {
@@ -168,6 +238,37 @@ render.vpn = async () => {
     const r = await api('/vpn/restart', {method:'POST'});
     $('#out').textContent = r.log;
   };
+};
+
+
+render.status = async () => {
+  const s = await api('/status');
+  const disk = (label, d) => d.error
+    ? `<div class="card"><h3>${label}</h3><p>${d.path}</p><p style="color:var(--warn)">${d.error}</p></div>`
+    : `<div class="card">
+         <h3>${label}</h3><p>${d.path}</p>
+         <p style="font-size:1.4rem;color:${d.used_pct>90?'var(--bad)':d.used_pct>75?'var(--warn)':'var(--text)'}">
+           ${d.used_pct}% used</p>
+         <p>${d.free_gb} GB free of ${d.total_gb} GB</p>
+       </div>`;
+  const jobs = s.jobs || {};
+  const pending = (jobs.updates?.pending || []);
+  render.shell(`
+    <div class="section"><h2>storage</h2><div class="grid">
+      ${disk('Stack', s.disks.stack)}${disk('Media and downloads', s.disks.data)}
+    </div></div>
+    <div class="section"><h2>background jobs</h2><div class="grid">
+      <div class="card"><h3>Update check</h3>
+        <p>Last run: ${jobs.updates?.checked || 'never'}</p>
+        <p>${pending.length ? pending.length + ' app(s) with a newer image: ' + pending.join(', ')
+                            : 'Everything is on its pinned image'}</p></div>
+      <div class="card"><h3>Config backup</h3>
+        <p>Last run: ${jobs.backup?.ran || 'never'}</p>
+        <p>${jobs.backup?.path || 'no snapshot recorded'}</p></div>
+    </div></div>
+    ${Object.keys(jobs.errors||{}).length ? `<div class="banner bad">
+      Job errors: ${Object.entries(jobs.errors).map(([k,v])=>k+': '+v).join(' | ')}</div>`:''}
+  `);
 };
 
 render.settings = async () => {
@@ -205,6 +306,7 @@ render.settings = async () => {
 
 (async () => {
   const h = await (await fetch('/api/health')).json();
+  if (!h.configured) return render.setup();
   render.apps().catch(() => render.login());
 })();
 </script>

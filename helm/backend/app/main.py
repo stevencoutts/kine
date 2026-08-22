@@ -14,12 +14,22 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, catalogue, compose, config
+from . import auth, catalogue, compose, config, scheduler
 
 FRONTEND = pathlib.Path(__file__).resolve().parents[2] / "frontend"
 app = FastAPI(title="Media Centre Helm", docs_url=None, redoc_url=None)
 
 COOKIE = "mc_session"
+
+
+@app.on_event("startup")
+async def _startup() -> None:
+    scheduler.start(app)
+
+
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    await scheduler.stop(app)
 
 
 # ── auth ────────────────────────────────────────────────────────
@@ -32,7 +42,40 @@ def require_user(request: Request) -> str:
 
 @app.get("/api/health")
 async def health():
+    """Unauthenticated on purpose: the container healthcheck calls it.
+
+    It deliberately leaks nothing beyond whether setup has happened,
+    which the login page needs in order to decide what to render.
+    """
     return {"ok": True, "configured": auth.is_configured()}
+
+
+@app.get("/api/status")
+async def status(user: str = Depends(require_user)):
+    env = config.read()
+    disks = {}
+    for label, key in (("stack", "STACK_ROOT"), ("data", "DATA_ROOT")):
+        mount = "/stack" if key == "STACK_ROOT" else "/data"
+        try:
+            st = os.statvfs(mount)
+            total = st.f_blocks * st.f_frsize
+            free = st.f_bavail * st.f_frsize
+            disks[label] = {
+                "path": env.get(key, ""),
+                "total_gb": round(total / 1e9, 1),
+                "free_gb": round(free / 1e9, 1),
+                "used_pct": round(100 * (1 - free / total), 1) if total else None,
+            }
+        except OSError:
+            disks[label] = {"path": env.get(key, ""), "error": "not mounted"}
+
+    code, ps = await compose.run("ps", "--format", "json", timeout=60)
+    return {
+        "disks": disks,
+        "jobs": scheduler.status(),
+        "compose_ok": code == 0,
+        "raw_ps": ps if code == 0 else "",
+    }
 
 
 @app.get("/api/auth/verify")
@@ -183,9 +226,19 @@ async def logs(ws: WebSocket, app_id: str):
 
 # ── updates ─────────────────────────────────────────────────────
 @app.get("/api/updates")
-async def updates(user: str = Depends(require_user)):
+async def updates(refresh: bool = False, user: str = Depends(require_user)):
+    """Cached by default; the scheduled check refreshes it overnight.
+
+    A digest check hits every image's registry, so doing it on every
+    page load is both slow and rude to the registries.
+    """
+    cached = scheduler.status().get("updates")
+    if cached and not refresh:
+        return {"ok": cached["ok"], "report": cached["report"],
+                "pending": cached["pending"], "checked": cached["checked"],
+                "cached": True}
     code, out = await compose.script("updates.sh", "check", timeout=300)
-    return {"ok": code == 0, "report": out}
+    return {"ok": code == 0, "report": out, "cached": False}
 
 
 @app.post("/api/updates/{app_id}")

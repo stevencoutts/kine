@@ -20,6 +20,7 @@ mc <command>
 
   provision [--force]   re-run the wiring (idempotent)
   seed                  write app config before first start
+  rekey                 rotate MC_SECRET and re-key every app
 
   updates               check for newer images (no pull)
   update <app>          snapshot, pull, recreate, roll back on failure
@@ -94,6 +95,33 @@ PY
     ;;
 
   seed)      docker compose run --rm provision seed ;;
+  rekey)
+    # Every internal API key is derived from MC_SECRET, so rotating it
+    # re-keys the whole stack at once. Anything outside the stack that
+    # holds an old key (a phone app, a script, Tautulli) stops working
+    # until it is given the new one.
+    cat <<'WARN'
+This rotates MC_SECRET and every derived API key.
+
+  - all stack-internal wiring is rebuilt automatically
+  - any EXTERNAL client holding an old API key will break
+  - a config snapshot is taken first
+
+WARN
+    read -r -p "Type 'rekey' to continue: " confirm
+    [[ "$confirm" == "rekey" ]] || { echo "aborted"; exit 1; }
+    ./scripts/backup.sh
+    sed -i "s|^MC_SECRET=.*|MC_SECRET=$(openssl rand -hex 32)|" .env
+    docker compose down
+    # Existing config.xml files hold the old key and are never
+    # overwritten by the seeder, so they have to go first.
+    for a in sonarr radarr prowlarr; do
+      rm -f "${STACK_ROOT}/config/${a}/config.xml"
+    done
+    docker compose run --rm provision seed
+    docker compose up -d
+    docker compose run --rm provision wire
+    echo "rekeyed" ;;
   provision) docker compose run --rm provision wire ;;
 
   updates)   ./scripts/updates.sh check ;;

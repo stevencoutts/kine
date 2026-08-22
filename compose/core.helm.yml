@@ -39,7 +39,7 @@ services:
       - traefik.http.services.helm.loadbalancer.server.port=8600
 
   dockerproxy:
-    image: tecnativa/docker-socket-proxy:latest
+    image: tecnativa/docker-socket-proxy:${SOCKETPROXY_TAG}
     container_name: mc-dockerproxy
     restart: unless-stopped
     security_opt: [no-new-privileges:true]

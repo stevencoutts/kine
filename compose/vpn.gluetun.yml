@@ -87,7 +87,7 @@ services:
   # Keeps Transmission's listening port in step with the port Proton
   # forwards, which rotates. Without this you get no incoming peers.
   vpn-portsync:
-    image: alpine:3.20
+    image: alpine:${ALPINE_TAG}
     container_name: mc-vpn-portsync
     profiles: ["gluetun"]
     restart: unless-stopped

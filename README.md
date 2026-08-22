@@ -90,6 +90,19 @@ digest. An update snapshots config, pulls, recreates, and watches the
 healthcheck for 90 seconds; if it does not come back, it reverts the
 digest and restores the snapshot.
 
+## Tests
+
+```bash
+python -m pytest tests -q
+```
+
+104 checks over the structural invariants Compose will not enforce for
+you: port collisions inside the shared VPN namespace, tunnelled apps
+that still carry their own ports or labels, apps starting before the
+tunnel is healthy, unpinned images, split `/data` mounts, and the
+seeder overwriting a key something else already holds. Two of them
+caught real mistakes in this repo before it was ever installed.
+
 ## Layout
 
 ```
@@ -97,6 +110,7 @@ compose/        one fragment per app
 provision/      the wiring: derived keys, seeding, API recipes
 helm/           the admin GUI (FastAPI + a single-file front end)
 scripts/        preflight, TLS, backup, restore, updates, VPN
+tests/          structural invariants, run before every commit
 catalogue.yml   app metadata the GUI and provisioner both read
 ```
 
