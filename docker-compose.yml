@@ -1,0 +1,33 @@
+# Media Centre :: top level
+#
+# Each application lives in its own fragment under compose/ and declares
+# a Compose profile equal to its own name. Enabling an app therefore
+# means adding one word to COMPOSE_PROFILES in .env. Nothing is
+# templated or generated: the repo plus .env is the whole truth.
+
+include:
+  - compose/core.traefik.yml
+  - compose/core.helm.yml
+  - compose/core.provision.yml
+  - compose/vpn.gluetun.yml
+  - compose/media.emby.yml
+  - compose/acq.sonarr.yml
+  - compose/acq.radarr.yml
+  - compose/acq.prowlarr.yml
+  - compose/acq.bazarr.yml
+  - compose/acq.transmission.yml
+  - compose/acq.nzbget.yml
+  - compose/acq.unpackerr.yml
+  - compose/acq.recyclarr.yml
+  - compose/live.dispatcharr.yml
+  - compose/live.ecm.yml
+  - compose/live.teamarr.yml
+
+networks:
+  mc_edge:
+    name: mc_edge
+  mc_internal:
+    name: mc_internal
+  mc_ctrl:
+    name: mc_ctrl
+    internal: true

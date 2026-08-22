@@ -1,0 +1,20 @@
+services:
+  provision:
+    build: ./provision
+    image: media-centre/provision:local
+    container_name: mc-provision
+    # Runs to completion then exits. Re-run on demand:
+    #   ./mc provision            (idempotent, safe to repeat)
+    restart: "no"
+    environment:
+      TZ: ${MC_TIMEZONE}
+      MC_SECRET: ${MC_SECRET}
+      MC_DOMAIN: ${MC_DOMAIN}
+      COMPOSE_PROFILES: ${COMPOSE_PROFILES}
+      VPN_TUNNELLED_APPS: ${VPN_TUNNELLED_APPS}
+      PUID: ${PUID}
+      PGID: ${PGID}
+    volumes:
+      - ${STACK_ROOT}:/stack
+      - ${DATA_ROOT}:/data
+    networks: [mc_internal]

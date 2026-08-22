@@ -1,0 +1,28 @@
+services:
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:${SONARR_TAG}
+    container_name: mc-sonarr
+    profiles: ["sonarr"]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+      TZ: ${MC_TIMEZONE}
+    volumes:
+      - ${STACK_ROOT}/config/sonarr:/config
+      # Single /data mount, not separate media and downloads mounts.
+      # Anything else costs you hardlinks and atomic moves.
+      - ${DATA_ROOT}:/data
+    networks: [mc_internal, mc_edge]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8989/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.sonarr.rule=Host(`sonarr.${MC_DOMAIN}`)
+      - traefik.http.services.sonarr.loadbalancer.server.port=8989

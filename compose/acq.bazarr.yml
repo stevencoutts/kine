@@ -1,0 +1,28 @@
+services:
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:${BAZARR_TAG}
+    container_name: mc-bazarr
+    profiles: ["bazarr"]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+      TZ: ${MC_TIMEZONE}
+    volumes:
+      - ${STACK_ROOT}/config/bazarr:/config
+      # Single /data mount, not separate media and downloads mounts.
+      # Anything else costs you hardlinks and atomic moves.
+      - ${DATA_ROOT}:/data
+    networks: [mc_internal, mc_edge]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:6767/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.bazarr.rule=Host(`bazarr.${MC_DOMAIN}`)
+      - traefik.http.services.bazarr.loadbalancer.server.port=6767

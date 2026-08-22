@@ -1,0 +1,13 @@
+# Not included directly. Anchors are duplicated per fragment because
+# Compose `include:` does not share anchors across files. Kept here as
+# the canonical reference for what every app fragment should look like.
+#
+# x-app: &app
+#   restart: unless-stopped
+#   environment:
+#     PUID: ${PUID}
+#     PGID: ${PGID}
+#     UMASK: ${UMASK}
+#     TZ: ${MC_TIMEZONE}
+#   networks: [mc_internal, mc_edge]
+#   security_opt: [no-new-privileges:true]

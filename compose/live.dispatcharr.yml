@@ -1,0 +1,25 @@
+services:
+  dispatcharr:
+    image: ghcr.io/dispatcharr/dispatcharr:${DISPATCHARR_TAG}
+    container_name: mc-dispatcharr
+    profiles: ["dispatcharr"]
+    restart: unless-stopped
+    environment:
+      TZ: ${MC_TIMEZONE}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      DISPATCHARR_ENV: prod
+    volumes:
+      - ${STACK_ROOT}/config/dispatcharr:/data
+      - ${DATA_ROOT}/media/recordings:/data/recordings
+    networks: [mc_internal, mc_edge]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9191/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.dispatcharr.rule=Host(`tv.${MC_DOMAIN}`)
+      - traefik.http.services.dispatcharr.loadbalancer.server.port=9191

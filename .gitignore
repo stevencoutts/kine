@@ -1,0 +1,5 @@
+.env
+*.tar.gz
+__pycache__/
+*.pyc
+helm/frontend/node_modules/

@@ -1,0 +1,26 @@
+# Tunnelled. No ports, no networks, no Traefik labels here: all three
+# live on the gluetun service, which owns this container's namespace.
+services:
+  transmission:
+    image: lscr.io/linuxserver/transmission:${TRANSMISSION_TAG}
+    container_name: mc-transmission
+    profiles: ["transmission"]
+    restart: unless-stopped
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    network_mode: "service:gluetun"
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+      TZ: ${MC_TIMEZONE}
+    volumes:
+      - ${STACK_ROOT}/config/transmission:/config
+      - ${DATA_ROOT}/downloads:/data/downloads
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9091/transmission/web/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s

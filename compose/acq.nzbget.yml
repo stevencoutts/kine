@@ -1,0 +1,25 @@
+# Tunnelled. See the note in acq.transmission.yml.
+services:
+  nzbget:
+    image: lscr.io/linuxserver/nzbget:${NZBGET_TAG}
+    container_name: mc-nzbget
+    profiles: ["nzbget"]
+    restart: unless-stopped
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    network_mode: "service:gluetun"
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+      TZ: ${MC_TIMEZONE}
+    volumes:
+      - ${STACK_ROOT}/config/nzbget:/config
+      - ${DATA_ROOT}/downloads:/data/downloads
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:6789/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s

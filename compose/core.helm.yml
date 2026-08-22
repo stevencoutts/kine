@@ -1,0 +1,66 @@
+services:
+  helm:
+    build: ./helm
+    image: media-centre/helm:local
+    container_name: mc-helm
+    restart: unless-stopped
+    depends_on:
+      dockerproxy:
+        condition: service_started
+    environment:
+      TZ: ${MC_TIMEZONE}
+      MC_ROOT: /stack
+      MC_REPO: /repo
+      MC_DOMAIN: ${MC_DOMAIN}
+      MC_SECRET: ${MC_SECRET}
+      DOCKER_HOST: tcp://dockerproxy:2375
+      HELM_SESSION_SECRET: ${HELM_SESSION_SECRET}
+      HELM_ADMIN_USER: ${HELM_ADMIN_USER}
+      HELM_ADMIN_HASH: ${HELM_ADMIN_HASH}
+      HELM_UPDATE_CHECK_CRON: ${HELM_UPDATE_CHECK_CRON}
+    volumes:
+      # The repo itself: Helm edits .env and runs docker compose here.
+      - ./:/repo
+      - ${STACK_ROOT}:/stack
+    networks: [mc_edge, mc_internal, mc_ctrl]
+    ports:
+      # Bound directly as well as via Traefik, so the GUI stays
+      # reachable if the reverse proxy is what you have broken.
+      - "${HELM_BIND}:${HELM_PORT}:8600"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8600/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.helm.rule=Host(`admin.${MC_DOMAIN}`)
+      - traefik.http.services.helm.loadbalancer.server.port=8600
+
+  dockerproxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: mc-dockerproxy
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    environment:
+      # Helm needs to inspect, start, stop and recreate containers.
+      # Everything else stays shut.
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      EXEC: 1
+      POST: 1
+      INFO: 1
+      # Explicitly denied
+      SECRETS: 0
+      SWARM: 0
+      NODES: 0
+      SERVICES: 0
+      CONFIGS: 0
+      SYSTEM: 0
+      PLUGINS: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [mc_ctrl]

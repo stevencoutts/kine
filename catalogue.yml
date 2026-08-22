@@ -1,0 +1,144 @@
+# The app catalogue. Helm renders this; the provisioner uses the
+# `provides` and `wires` keys to decide what to configure and in what
+# order. Adding an app to the system means adding a compose fragment,
+# an entry here, and (if it needs wiring) a recipe under provision/.
+
+apps:
+  emby:
+    name: Emby
+    tier: media
+    summary: Media server. Transcodes with Intel QuickSync where available.
+    url: https://emby.media
+    releases: https://github.com/MediaBrowser/Emby.Releases/releases
+    internal: http://emby:8096
+    subdomain: emby
+    provides: [library]
+    default: true
+
+  sonarr:
+    name: Sonarr
+    tier: acquisition
+    summary: TV series management and automatic downloading.
+    releases: https://github.com/Sonarr/Sonarr/releases
+    internal: http://sonarr:8989
+    subdomain: sonarr
+    api: v3
+    provides: [tv-pvr]
+    wires: [download-client, indexer-proxy, root-folder]
+    default: true
+
+  radarr:
+    name: Radarr
+    tier: acquisition
+    summary: Film management and automatic downloading.
+    releases: https://github.com/Radarr/Radarr/releases
+    internal: http://radarr:7878
+    subdomain: radarr
+    api: v3
+    provides: [film-pvr]
+    wires: [download-client, indexer-proxy, root-folder]
+    default: true
+
+  prowlarr:
+    name: Prowlarr
+    tier: acquisition
+    summary: Indexer manager. Pushes indexers to Sonarr and Radarr.
+    releases: https://github.com/Prowlarr/Prowlarr/releases
+    internal: http://prowlarr:9696
+    subdomain: prowlarr
+    api: v1
+    provides: [indexer-proxy]
+    wires: [pvr-applications]
+    default: true
+
+  bazarr:
+    name: Bazarr
+    tier: acquisition
+    summary: Subtitle management for Sonarr and Radarr libraries.
+    releases: https://github.com/morpheus65535/bazarr/releases
+    internal: http://bazarr:6767
+    subdomain: bazarr
+    provides: [subtitles]
+    wires: [pvr-link]
+    default: false
+
+  transmission:
+    name: Transmission
+    tier: acquisition
+    summary: BitTorrent client. Always tunnelled through the VPN.
+    releases: https://github.com/transmission/transmission/releases
+    internal: http://gluetun:9091
+    subdomain: transmission
+    provides: [download-client]
+    requires: [gluetun]
+    tunnelled: forced
+    default: true
+
+  nzbget:
+    name: NZBGet
+    tier: acquisition
+    summary: Usenet downloader.
+    releases: https://github.com/nzbgetcom/nzbget/releases
+    internal: http://gluetun:6789
+    subdomain: nzbget
+    provides: [download-client]
+    requires: [gluetun]
+    tunnelled: default
+    default: true
+
+  unpackerr:
+    name: Unpackerr
+    tier: acquisition
+    summary: Extracts archives the *arr apps cannot import.
+    releases: https://github.com/Unpackerr/unpackerr/releases
+    wires: [pvr-link]
+    default: false
+
+  recyclarr:
+    name: Recyclarr
+    tier: acquisition
+    summary: Syncs TRaSH-guide quality profiles into Sonarr and Radarr.
+    releases: https://github.com/recyclarr/recyclarr/releases
+    wires: [pvr-link]
+    default: false
+
+  dispatcharr:
+    name: Dispatcharr
+    tier: live
+    summary: IPTV, EPG, VOD and DVR manager. Proxies streams to Emby.
+    releases: https://github.com/Dispatcharr/Dispatcharr/releases
+    internal: http://dispatcharr:9191
+    subdomain: tv
+    provides: [iptv]
+    wires: [emby-tuner]
+    default: true
+
+  ecm:
+    name: Enhanced Channel Manager
+    tier: live
+    summary: Channel management front end for Dispatcharr.
+    releases: https://github.com/MotWakorb/enhancedchannelmanager/releases
+    internal: http://ecm:8080
+    subdomain: channels
+    requires: [dispatcharr]
+    wires: [dispatcharr-link]
+    default: true
+
+  teamarr:
+    name: Teamarr
+    tier: live
+    summary: Generates per-team sports EPG channels for Dispatcharr.
+    releases: https://github.com/Pharaoh-Labs/teamarr/releases
+    internal: http://teamarr:8080
+    subdomain: sports
+    requires: [dispatcharr]
+    wires: [dispatcharr-link]
+    default: true
+
+  gluetun:
+    name: VPN gateway
+    tier: platform
+    summary: WireGuard tunnel and kill switch for the download clients.
+    releases: https://github.com/qdm12/gluetun/releases
+    default: true
+    hidden: true

@@ -1,0 +1,24 @@
+# Generates per-team sports EPG and feeds the result to Dispatcharr.
+services:
+  teamarr:
+    image: ghcr.io/pharaoh-labs/teamarr:${TEAMARR_TAG}
+    container_name: mc-teamarr
+    profiles: ["teamarr"]
+    restart: unless-stopped
+    depends_on:
+      dispatcharr:
+        condition: service_started
+    environment:
+      TZ: ${MC_TIMEZONE}
+      PUID: ${PUID}
+      PGID: ${PGID}
+      DISPATCHARR_URL: http://dispatcharr:9191
+    env_file:
+      - ${STACK_ROOT}/config/teamarr/teamarr.env
+    volumes:
+      - ${STACK_ROOT}/config/teamarr:/config
+    networks: [mc_internal, mc_edge]
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.teamarr.rule=Host(`sports.${MC_DOMAIN}`)
+      - traefik.http.services.teamarr.loadbalancer.server.port=8080

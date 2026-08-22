@@ -1,0 +1,70 @@
+# gluetun owns a network namespace. Tunnelled apps join it with
+# network_mode: service:gluetun, so they have no interface of their own
+# and no path to the internet except wg0. gluetun's firewall drops
+# everything else, which is what makes this a kill switch rather than a
+# routing preference.
+#
+# Two consequences, both handled here:
+#   1. Tunnelled apps cannot carry their own ports or Traefik labels.
+#      Those live on this service instead.
+#   2. Restarting gluetun severs its dependants' networking, so they
+#      must be restarted with it. `./mc vpn restart` does this, and the
+#      GUI refuses to restart gluetun alone.
+
+services:
+  gluetun:
+    image: qmcgaw/gluetun:${GLUETUN_TAG}
+    container_name: mc-gluetun
+    profiles: ["gluetun"]
+    restart: unless-stopped
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      TZ: ${MC_TIMEZONE}
+      VPN_SERVICE_PROVIDER: ${VPN_SERVICE_PROVIDER}
+      VPN_TYPE: ${VPN_TYPE}
+      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY}
+      WIREGUARD_ADDRESSES: ${WIREGUARD_ADDRESSES}
+      SERVER_COUNTRIES: ${VPN_SERVER_COUNTRIES}
+      VPN_PORT_FORWARDING: ${VPN_PORT_FORWARDING}
+      VPN_PORT_FORWARDING_PROVIDER: ${VPN_PORT_FORWARDING_PROVIDER}
+      FIREWALL_OUTBOUND_SUBNETS: ${FIREWALL_OUTBOUND_SUBNETS}
+      HTTP_CONTROL_SERVER_ADDRESS: ":8000"
+      DOT: "off"
+    volumes:
+      - ${STACK_ROOT}/config/gluetun:/gluetun
+    networks: [mc_internal, mc_edge]
+    healthcheck:
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      # Routers for every tunnelled app hang off this service, because
+      # the apps themselves have no network identity of their own.
+      - traefik.http.routers.transmission.rule=Host(`transmission.${MC_DOMAIN}`)
+      - traefik.http.routers.transmission.service=transmission
+      - traefik.http.services.transmission.loadbalancer.server.port=9091
+      - traefik.http.routers.nzbget.rule=Host(`nzbget.${MC_DOMAIN}`)
+      - traefik.http.routers.nzbget.service=nzbget
+      - traefik.http.services.nzbget.loadbalancer.server.port=6789
+
+  # Keeps Transmission's listening port in step with the port Proton
+  # forwards, which rotates. Without this you get no incoming peers.
+  vpn-portsync:
+    image: alpine:3.20
+    container_name: mc-vpn-portsync
+    profiles: ["gluetun"]
+    restart: unless-stopped
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    network_mode: "service:gluetun"
+    environment:
+      TRANSMISSION_RPC: http://127.0.0.1:9091/transmission/rpc
+    volumes:
+      - ./scripts/vpn-portsync.sh:/portsync.sh:ro
+    entrypoint: ["/bin/sh", "/portsync.sh"]

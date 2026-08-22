@@ -1,0 +1,12 @@
+services:
+  recyclarr:
+    image: ghcr.io/recyclarr/recyclarr:${RECYCLARR_TAG}
+    container_name: mc-recyclarr
+    profiles: ["recyclarr"]
+    restart: unless-stopped
+    user: "${PUID}:${PGID}"
+    environment:
+      TZ: ${MC_TIMEZONE}
+    volumes:
+      - ${STACK_ROOT}/config/recyclarr:/config
+    networks: [mc_internal]

@@ -1,0 +1,97 @@
+# Media Centre
+
+A pre-built, portable media appliance. Clone it onto a Linux host, run
+one script, and you get Emby, the *arr stack, a VPN-tunnelled download
+client, IPTV and sports EPG, all already configured to talk to each
+other, behind a single sign-on and a single HTTPS front door.
+
+The apps are not just installed side by side. Sonarr and Radarr come up
+with their root folders set and their download clients registered.
+Prowlarr comes up already linked to both, so every indexer you add
+appears in them automatically. Emby comes up with its libraries created.
+Transmission comes up inside a WireGuard tunnel with a kill switch and
+port forwarding that follows the provider's rotation.
+
+## Requirements
+
+- Linux x86_64, Docker Engine, Docker Compose **2.20 or newer**
+- One filesystem holding both your media and your downloads
+- Optional: `/dev/dri` for Intel QuickSync transcoding
+
+## Install
+
+```bash
+git clone <this repo> media-centre
+cd media-centre
+sudo ./install.sh
+```
+
+Then open the admin GUI (printed at the end of the install) and set your
+admin password, domain and certificate mode. Add your VPN key and your
+indexer accounts. That is the whole setup.
+
+## Day to day
+
+```bash
+./mc apps                 # what exists and what is on
+./mc enable bazarr        # add an app: profile, start, wire, done
+./mc updates              # what has a newer image
+./mc update sonarr        # snapshot, pull, recreate, roll back on failure
+./mc vpn leaktest         # prove the tunnel is carrying the traffic
+./mc backup               # config and env, never the media
+```
+
+Everything the GUI does is one of these commands. The GUI is a
+convenience, not a second source of truth.
+
+## How it holds together
+
+**One file decides what runs.** Each app is a Compose fragment
+declaring a profile equal to its own name, and `COMPOSE_PROFILES` in
+`.env` lists what is on. Enabling an app is a one-word edit followed by
+`docker compose up -d`. There is no template rendering and no generated
+state, so the repo plus `.env` reproduces the appliance exactly.
+
+**Keys are derived, not discovered.** Every internal API key comes from
+`MC_SECRET` by SHA-256. That means the provisioner knows Sonarr's key
+before Sonarr has ever started, which is what makes shipping a pre-wired
+stack possible at all: no chicken-and-egg where you must boot an app,
+log in, copy a key and paste it into another app.
+
+**One `/data` mount, not two.** Media and downloads are mounted into
+the *arr containers under a single parent. Split them and you lose
+hardlinks and atomic moves, and every import becomes a full copy. The
+preflight check refuses to install if they straddle a filesystem.
+
+**The VPN is a namespace, not a route.** Tunnelled apps join gluetun's
+network namespace. They have no interface of their own and no path out
+except `wg0`, and gluetun's firewall drops the rest. If the tunnel
+drops, the traffic stops. The consequence is that those apps cannot
+carry their own ports or Traefik labels, and cannot be restarted
+independently of the tunnel; the CLI and GUI both enforce that.
+
+**Updates are opt-in and reversible.** Images are pinned by tag and
+digest. An update snapshots config, pulls, recreates, and watches the
+healthcheck for 90 seconds; if it does not come back, it reverts the
+digest and restores the snapshot.
+
+## Layout
+
+```
+compose/        one fragment per app
+provision/      the wiring: derived keys, seeding, API recipes
+helm/           the admin GUI (FastAPI + a single-file front end)
+scripts/        preflight, TLS, backup, restore, updates, VPN
+catalogue.yml   app metadata the GUI and provisioner both read
+```
+
+Runtime state lives outside the repo, under `STACK_ROOT`
+(default `/srv/media-centre`) and `DATA_ROOT` (default `/srv/media-data`).
+
+## Security
+
+Helm can create containers, which makes it root-equivalent on the host.
+The socket proxy narrows what a bug in it can reach; it does not make a
+compromise of it survivable. Helm sits behind forward-auth, binds to the
+LAN, and should not be exposed to the internet. Nothing in this design
+assumes otherwise.
