@@ -2,6 +2,7 @@
 # Media Centre CLI. Everything the GUI does, you can do here.
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
+source ./scripts/lib.sh
 set -a; source .env 2>/dev/null || true; set +a
 
 usage() {
@@ -40,14 +41,14 @@ profiles_add() {
   grep -q "^COMPOSE_PROFILES=" .env || echo "COMPOSE_PROFILES=" >> .env
   local cur; cur=$(grep '^COMPOSE_PROFILES=' .env | cut -d= -f2-)
   [[ ",$cur," == *",$app,"* ]] && return 0
-  sed -i "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${cur:+$cur,}${app}|" .env
+  sedi "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${cur:+$cur,}${app}|" .env
 }
 
 profiles_remove() {
   local app="$1"
   local cur; cur=$(grep '^COMPOSE_PROFILES=' .env | cut -d= -f2-)
   local new; new=$(echo "$cur" | tr ',' '\n' | grep -vx "$app" | paste -sd,)
-  sed -i "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${new}|" .env
+  sedi "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${new}|" .env
 }
 
 # gluetun's dependants lose their networking when it restarts, so the
@@ -111,7 +112,7 @@ WARN
     read -r -p "Type 'rekey' to continue: " confirm
     [[ "$confirm" == "rekey" ]] || { echo "aborted"; exit 1; }
     ./scripts/backup.sh
-    sed -i "s|^MC_SECRET=.*|MC_SECRET=$(openssl rand -hex 32)|" .env
+    sedi "s|^MC_SECRET=.*|MC_SECRET=$(openssl rand -hex 32)|" .env
     docker compose down
     # Existing config.xml files hold the old key and are never
     # overwritten by the seeder, so they have to go first.

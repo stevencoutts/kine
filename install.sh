@@ -4,6 +4,7 @@ set -Eeuo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO"
+source ./scripts/lib.sh
 
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 warn() { printf '\033[33m! %s\033[0m\n' "$*"; }
@@ -25,8 +26,8 @@ if [[ ! -f .env ]]; then
 
   # Secrets. MC_SECRET derives every internal API key, so it must be
   # strong and must not change casually.
-  sed -i "s|^MC_SECRET=.*|MC_SECRET=$(openssl rand -hex 32)|" .env
-  sed -i "s|^HELM_SESSION_SECRET=.*|HELM_SESSION_SECRET=$(openssl rand -hex 32)|" .env
+  sedi "s|^MC_SECRET=.*|MC_SECRET=$(openssl rand -hex 32)|" .env
+  sedi "s|^HELM_SESSION_SECRET=.*|HELM_SESSION_SECRET=$(openssl rand -hex 32)|" .env
   ok "generated secrets"
 else
   ok ".env already present, leaving it alone"
@@ -36,21 +37,33 @@ fi
 set -a; source .env; set +a
 
 # ── 3. Service user and directories ─────────────────────────────
-if ! id -u mediacentre >/dev/null 2>&1; then
-  useradd --system --no-create-home --shell /usr/sbin/nologin mediacentre
-  ok "created mediacentre service user"
+if is_darwin; then
+  # No useradd, no systemd-style service accounts, and Docker Desktop's
+  # VM already isolates container UIDs from the host — run as whoever
+  # invoked sudo instead of minting a dedicated user.
+  target_user="${SUDO_USER:-$(id -un)}"
+  PUID_ACTUAL=$(id -u "$target_user")
+  PGID_ACTUAL=$(id -g "$target_user")
+else
+  if ! id -u mediacentre >/dev/null 2>&1; then
+    useradd --system --no-create-home --shell /usr/sbin/nologin mediacentre
+    ok "created mediacentre service user"
+  fi
+  PUID_ACTUAL=$(id -u mediacentre)
+  PGID_ACTUAL=$(id -g mediacentre)
 fi
-PUID_ACTUAL=$(id -u mediacentre)
-PGID_ACTUAL=$(id -g mediacentre)
-sed -i "s|^PUID=.*|PUID=${PUID_ACTUAL}|" .env
-sed -i "s|^PGID=.*|PGID=${PGID_ACTUAL}|" .env
+sedi "s|^PUID=.*|PUID=${PUID_ACTUAL}|" .env
+sedi "s|^PGID=.*|PGID=${PGID_ACTUAL}|" .env
 
 # Intel QSV: the render group GID differs across distributions, so it is
 # detected rather than assumed. Getting this wrong is the usual cause of
-# "hardware transcoding silently falls back to software".
-if [[ -e /dev/dri/renderD128 ]]; then
+# "hardware transcoding silently falls back to software". Not applicable
+# on macOS at all — Docker Desktop's VM has no /dev/dri passthrough.
+if is_darwin; then
+  warn "macOS: hardware transcoding is unavailable under Docker Desktop"
+elif [[ -e /dev/dri/renderD128 ]]; then
   RGID=$(stat -c '%g' /dev/dri/renderD128)
-  sed -i "s|^RENDER_GID=.*|RENDER_GID=${RGID}|" .env
+  sedi "s|^RENDER_GID=.*|RENDER_GID=${RGID}|" .env
   ok "detected render group GID ${RGID}"
 else
   warn "no /dev/dri/renderD128; hardware transcoding will be unavailable"
@@ -90,7 +103,7 @@ docker compose run --rm provision wire
 # ── 8. Done ─────────────────────────────────────────────────────
 echo
 bold "Ready"
-echo "  Admin GUI   https://admin.${MC_DOMAIN}    (or http://$(hostname -I | awk '{print $1}'):${HELM_PORT})"
+echo "  Admin GUI   https://admin.${MC_DOMAIN}    (or http://$(local_ip):${HELM_PORT})"
 echo "  Emby        https://emby.${MC_DOMAIN}"
 echo
 echo "Finish setup in the admin GUI: set the admin password, then add"

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Refuses to let you build a system that will disappoint you later.
 set -uo pipefail
+source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 fail=0
 ok()   { printf '\033[32m+ %s\033[0m\n' "$*"; }
 bad()  { printf '\033[31mx %s\033[0m\n' "$*"; fail=1; }
@@ -27,8 +28,8 @@ fi
 if [[ -f .env ]]; then
   set -a; source .env; set +a
   mkdir -p "${DATA_ROOT}/media" "${DATA_ROOT}/downloads" 2>/dev/null
-  fs_media=$(stat -c '%d' "${DATA_ROOT}/media" 2>/dev/null || echo x)
-  fs_dl=$(stat -c '%d' "${DATA_ROOT}/downloads" 2>/dev/null || echo y)
+  fs_media=$(dev_id "${DATA_ROOT}/media" || echo x)
+  fs_dl=$(dev_id "${DATA_ROOT}/downloads" || echo y)
   if [[ "$fs_media" == "$fs_dl" ]]; then
     ok "media and downloads share a filesystem (hardlinks will work)"
   else
@@ -38,17 +39,21 @@ if [[ -f .env ]]; then
 fi
 
 for p in 80 443; do
-  if ss -ltn "( sport = :$p )" 2>/dev/null | grep -q LISTEN; then
+  if port_busy "$p"; then
     bad "port $p already in use"
   else
     ok "port $p free"
   fi
 done
 
-[[ -e /dev/net/tun ]] || warn "/dev/net/tun missing; the VPN container will not start"
-[[ -e /dev/dri/renderD128 ]] || warn "no /dev/dri; hardware transcoding unavailable"
+if is_darwin; then
+  warn "macOS: no /dev/net/tun or /dev/dri passthrough under Docker Desktop; VPN and hardware transcoding are unavailable"
+else
+  [[ -e /dev/net/tun ]] || warn "/dev/net/tun missing; the VPN container will not start"
+  [[ -e /dev/dri/renderD128 ]] || warn "no /dev/dri; hardware transcoding unavailable"
+fi
 
-avail=$(df -BG --output=avail / | tail -1 | tr -dc '0-9')
+avail=$(avail_gb /)
 (( avail >= 20 )) && ok "root filesystem has ${avail}G free" || warn "only ${avail}G free on /"
 
 exit $fail

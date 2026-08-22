@@ -6,6 +6,7 @@
 # you are asleep and something is mid-import.
 set -Eeuo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
+source ./scripts/lib.sh
 set -a; source .env; set +a
 
 var_for() { echo "$(echo "$1" | tr 'a-z-' 'A-Z_')"; }
@@ -17,9 +18,9 @@ check() {
             | python3 -c "import json,sys;print(json.load(sys.stdin)['services'].get('$svc',{}).get('image',''))")
     [[ -z "$image" || "$image" == *local* ]] && continue
     remote=$(docker manifest inspect "$image" 2>/dev/null \
-             | sha256sum | cut -c1-12) || remote="?"
+             | sha256_hex | cut -c1-12) || remote="?"
     local_d=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null \
-             | sha256sum | cut -c1-12) || local_d="none"
+             | sha256_hex | cut -c1-12) || local_d="none"
     if [[ "$remote" == "$local_d" ]]; then
       printf '%-14s %-12s %s\n' "$svc" "current" "$image"
     else
@@ -56,7 +57,7 @@ apply() {
   docker compose logs --tail=50 "$svc" || true
   if [[ -n "$prev" ]]; then
     var="$(var_for "$svc")_DIGEST"
-    sed -i "s|^${var}=.*|${var}=${prev#*@}|" .env
+    sedi "s|^${var}=.*|${var}=${prev#*@}|" .env
     docker compose up -d "$svc"
   fi
   ./scripts/restore.sh "$snap" "$svc"

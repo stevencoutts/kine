@@ -12,4 +12,6 @@ tar czf "$out" \
   -C "$(pwd)" .env docker-compose.yml compose catalogue.yml
 echo "$out"
 # Keep the last 10
-ls -1t "${STACK_ROOT}"/backups/media-centre-*.tar.gz | tail -n +11 | xargs -r rm --
+# `-r`/`--no-run-if-empty` is GNU-only; `rm -f` with no args is a no-op
+# on BSD/macOS xargs too, so it's portable without the flag.
+ls -1t "${STACK_ROOT}"/backups/media-centre-*.tar.gz 2>/dev/null | tail -n +11 | xargs rm -f --
