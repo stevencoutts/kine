@@ -242,16 +242,33 @@ render.setup = () => {
       : '';
     if (vpnEnabled && !wireguardConf.trim())
       return $('#msg').innerHTML = '<div class="banner bad">VPN is enabled: provide a WireGuard config file or paste one in</div>';
-    const r = await fetch('/api/setup', {method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({password:pw, domain:$('#domain').value,
-        tls_mode:$('#tls').value, acme_email:$('#email')?.value||'',
-        acme_provider:$('#prov')?.value||'', timezone:$('#tz').value,
-        vpn_enabled:vpnEnabled, wireguard_conf:wireguardConf})});
-    if (r.ok) render.login();
-    else {
-      const e = await r.json();
-      $('#msg').innerHTML = `<div class="banner bad">${e.detail||'setup failed'}</div>`;
+    const btn = $('#go');
+    btn.disabled = true;
+    $('#msg').innerHTML = vpnEnabled
+      ? '<div class="banner">Setting up&hellip; starting VPN (may take a minute).</div>'
+      : '<div class="banner">Setting up&hellip;</div>';
+    try {
+      const r = await fetch('/api/setup', {method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({password:pw, domain:$('#domain').value,
+          tls_mode:$('#tls').value, acme_email:$('#email')?.value||'',
+          acme_provider:$('#prov')?.value||'', timezone:$('#tz').value,
+          vpn_enabled:vpnEnabled, wireguard_conf:wireguardConf})});
+      if (r.ok) render.login();
+      else {
+        let detail = 'setup failed';
+        try {
+          const e = await r.json();
+          detail = e.detail || detail;
+        } catch (_) {
+          detail = `${r.status} ${r.statusText}`.trim();
+        }
+        $('#msg').innerHTML = `<div class="banner bad">${detail}</div>`;
+      }
+    } catch (e) {
+      $('#msg').innerHTML = `<div class="banner bad">${e.message||'setup failed'}</div>`;
+    } finally {
+      btn.disabled = false;
     }
   };
 };

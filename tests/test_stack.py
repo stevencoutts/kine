@@ -443,7 +443,7 @@ def test_first_run_starts_newly_enabled_profiles():
         and node.func.value.id == "compose"
         and node.func.attr == "run"
     ]
-    assert ("up", "-d", "--wait", "gluetun") in compose_calls
+    assert ("up", "-d", "--force-recreate", "gluetun") in compose_calls
 
     password_write = next(
         node.lineno for node in ast.walk(first_run)

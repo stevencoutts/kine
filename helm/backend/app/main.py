@@ -156,8 +156,13 @@ async def first_run(request: Request):
         if v in body
     }
     if updates:
+        env_before = config.read()
+        changed = any(
+            str(updates.get(k, "")) != env_before.get(k, "") for k in updates
+        )
         config.write(updates)
-        await compose.script("tls-setup.sh")
+        if changed:
+            await compose.script("tls-setup.sh", timeout=60)
 
     cat = catalogue.load()
     tunnelled = [k for k, v in cat.items() if "gluetun" in v.get("requires", [])]
@@ -182,39 +187,16 @@ async def first_run(request: Request):
     config.set_profiles(wanted)
 
     if vpn_enabled:
-        code, _ = await compose.run(
-            "up", "-d", "--force-recreate", "gluetun", timeout=120
+        code, out = await compose.run(
+            "up", "-d", "--force-recreate", "gluetun", timeout=90
         )
         if code != 0:
-            _, logs = await compose.run("logs", "--tail", "30", "gluetun")
-            detail = (logs or "").strip().splitlines()
-            tail = " | ".join(detail[-5:]) if detail else "no gluetun logs"
-            raise HTTPException(500, f"VPN could not start ({tail})")
-        healthy = False
-        for _ in range(30):
-            _, status = await compose.run(
-                "inspect", "--format", "{{.State.Health.Status}}", "kine-gluetun"
-            )
-            status = (status or "").strip()
-            if status == "healthy":
-                healthy = True
-                break
-            if status == "unhealthy":
-                break
-            await asyncio.sleep(6)
-        if not healthy:
             _, logs = await compose.run("logs", "--tail", "40", "gluetun")
-            detail = (logs or "").strip().splitlines()
+            detail = (logs or out or "").strip().splitlines()
             tail = " | ".join(detail[-6:]) if detail else "no gluetun logs"
-            endpoint = vpn_fields.get("WIREGUARD_ENDPOINT_IP", "")
-            hint = (
-                f"Expected endpoint {endpoint}; if logs show different IPs, "
-                "update Helm and retry setup. "
-            ) if endpoint else ""
             raise HTTPException(
                 500,
-                f"VPN health check failed ({hint}{tail}). "
-                "Check: docker logs kine-gluetun",
+                f"VPN could not start ({tail}). Check: docker logs kine-gluetun",
             )
 
     # Only lock onboarding after every requested prerequisite succeeded,
