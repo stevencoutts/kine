@@ -37,9 +37,17 @@ def test_helm_applies_nfs_mounts_via_agent():
 
 def test_helm_recreates_media_apps_after_nfs_mount():
     assert "_recreate_media_volume_apps" in MAIN
-    assert "_stop_media_volume_apps" in MAIN
-    assert "await _stop_media_volume_apps()" in MAIN
+    assert "_ensure_nfs_mounted" in MAIN
+    assert "_nfs_configured" in MAIN
+    assert "await _ensure_nfs_mounted()" in MAIN
     assert "await _recreate_media_volume_apps()" in MAIN
+
+
+def test_enable_tier_mounts_nfs_before_starting_apps():
+    tier = MAIN.split('@app.post("/api/tiers/{tier}/enable")', 1)[1]
+    tier = tier.split("@app.post(", 1)[0]
+    assert "await _ensure_nfs_mounted()" in tier
+    assert tier.index("_ensure_nfs_mounted") < tier.index('up", "-d", *defaults')
 
 
 def test_mount_script_supports_host_root_for_agent():
@@ -68,7 +76,7 @@ def test_nfs_mounts_are_persisted_for_reboot():
 
 
 def test_changed_export_replaces_existing_mount():
-    assert 'findmnt -n -o SOURCE --target "$mount_point" --direct' in MOUNT_SCRIPT
+    assert 'findmnt -n -o SOURCE -M "$mount_point"' in MOUNT_SCRIPT
     assert 'umount "$mount_point"' in MOUNT_SCRIPT
 
 

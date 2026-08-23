@@ -67,6 +67,29 @@ _MEDIA_VOLUME_APPS = (
     "sonarr", "radarr", "prowlarr", "transmission", "bazarr",
     "nzbget", "unpackerr", "emby", "tdarr", "dispatcharr",
 )
+_NFS_KEYS = ("NFS_SERVER", "NFS_MEDIA", "NFS_TV", "NFS_MOVIES", "NFS_DOWNLOADS", "NFS_CACHE")
+_NFS_EXPORT_KEYS = _NFS_KEYS[1:]
+
+
+def _nfs_configured(env: dict | None = None) -> bool:
+    env = env or config.read()
+    if not env.get("NFS_SERVER", "").strip():
+        return False
+    return any(env.get(k, "").strip() for k in _NFS_EXPORT_KEYS)
+
+
+async def _ensure_nfs_mounted() -> dict | None:
+    """Mount NFS on the host when configured. Returns None if NFS is not set up."""
+    if not _nfs_configured():
+        return None
+    await _stop_media_volume_apps()
+    return await asyncio.to_thread(nfs_exports.apply_mounts_via_agent)
+
+
+def _nfs_mount_error(mount: dict | None) -> str | None:
+    if mount is None or mount.get("ok"):
+        return None
+    return (mount.get("log") or "NFS mount failed")[-500:]
 
 
 async def _stop_media_volume_apps() -> None:
@@ -375,6 +398,9 @@ async def enable_tier(tier: str, user: str = Depends(require_user)):
     # Seed config.xml with derived API keys before first start so wire
     # can authenticate. Safe no-op when configs already exist.
     await compose.run("run", "--rm", "provision", "seed")
+    mount = await _ensure_nfs_mounted()
+    if err := _nfs_mount_error(mount):
+        raise HTTPException(500, f"NFS mount failed: {err}")
     # Do not run an unscoped `up` from inside Helm: if Compose decides
     # Helm itself needs recreation, it kills the request mid-deployment.
     code, _ = await compose.run("up", "-d", *defaults)
@@ -382,6 +408,8 @@ async def enable_tier(tier: str, user: str = Depends(require_user)):
         raise HTTPException(500, f"Could not start {label} apps")
     await compose.run("run", "--rm", "provision", "wire")
     await _sync_recyclarr()
+    if _nfs_configured() and set(defaults) & {"sonarr", "radarr"}:
+        await _queue_library_sync({"NFS_MEDIA", "NFS_TV", "NFS_MOVIES"})
     return {"ok": True, "enabled": defaults}
 
 
@@ -432,6 +460,10 @@ async def enable(app_id: str, user: str = Depends(require_user)):
 
     # Seed before start so *arr apps adopt derived keys on first run.
     await compose.run("run", "--rm", "provision", "seed")
+    if app_id in _MEDIA_VOLUME_APPS:
+        mount = await _ensure_nfs_mounted()
+        if err := _nfs_mount_error(mount):
+            raise HTTPException(500, f"NFS mount failed: {err}")
     code, out = await compose.run("up", "-d", app_id)
     if code != 0:
         raise HTTPException(500, f"Could not start {app_id}")
@@ -598,7 +630,6 @@ async def vpn_leaktest(user: str = Depends(require_user)):
 
 
 # ── settings, backup, provisioning ──────────────────────────────
-_NFS_KEYS = ("NFS_SERVER", "NFS_MEDIA", "NFS_TV", "NFS_MOVIES", "NFS_DOWNLOADS", "NFS_CACHE")
 
 
 @app.get("/api/nfs/exports")
@@ -636,10 +667,11 @@ async def nfs_browse(server: str = "", path: str = "", user: str = Depends(requi
 @app.post("/api/nfs/apply")
 async def nfs_apply_mounts(user: str = Depends(require_user)):
     try:
-        await _stop_media_volume_apps()
-        result = await asyncio.to_thread(nfs_exports.apply_mounts_via_agent)
+        result = await _ensure_nfs_mounted()
     except RuntimeError as exc:
         raise HTTPException(502, str(exc)) from exc
+    if result is None:
+        return {"ok": True, "log": "No NFS exports configured"}
     if result.get("ok"):
         await _recreate_media_volume_apps()
         result["rescan"] = await _queue_library_sync()
@@ -673,8 +705,7 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
     nfs_mount = None
     if nfs_changed:
         try:
-            await _stop_media_volume_apps()
-            nfs_mount = await asyncio.to_thread(nfs_exports.apply_mounts_via_agent)
+            nfs_mount = await _ensure_nfs_mounted()
         except RuntimeError as exc:
             nfs_mount = {"ok": False, "log": str(exc)}
         if nfs_mount and nfs_mount.get("ok"):
