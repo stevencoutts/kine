@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, catalogue, channels, compose, config, launch, library_rescan, metrics, nfs_exports, provision_lock, scheduler, updates_info, watching
+from . import auth, catalogue, channels, compose, config, launch, library_rescan, metrics, nfs_exports, promquery, provision_lock, scheduler, updates_info, watching
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -569,6 +569,12 @@ async def logs(ws: WebSocket, app_id: str):
 
 
 # ── metrics ─────────────────────────────────────────────────────
+@app.get("/api/stats/cards")
+async def stats_cards(user: str = Depends(require_user)):
+    """Sparkline series for the Apps page. Empty when metrics are off."""
+    return await promquery.card_series()
+
+
 @app.get("/api/metrics")
 async def prometheus_metrics():
     """Scraped by Prometheus, which cannot log in.
