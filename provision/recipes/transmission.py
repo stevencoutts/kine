@@ -4,11 +4,35 @@ Linuxserver's image ships with /downloads/* defaults, but Sonarr and
 Radarr see the same files at /data/downloads/*. Both must agree or
 Sonarr's health check fails and imports copy instead of hardlink.
 """
+import json
+import pathlib
+
 import httpx
 
 RPC = "http://gluetun:9091/transmission/rpc"
+SETTINGS = pathlib.Path("/stack/config/transmission/settings.json")
 DOWNLOAD_DIR = "/data/downloads/complete"
 INCOMPLETE_DIR = "/data/downloads/incomplete"
+WANTED = {
+    "download-dir": DOWNLOAD_DIR,
+    "incomplete-dir": INCOMPLETE_DIR,
+    "incomplete-dir-enabled": True,
+}
+
+
+def _persist_settings(log) -> bool:
+    if not SETTINGS.exists():
+        return False
+    try:
+        settings = json.loads(SETTINGS.read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    if all(settings.get(k) == v for k, v in WANTED.items()):
+        return False
+    settings.update(WANTED)
+    SETTINGS.write_text(json.dumps(settings, indent=4) + "\n")
+    log(f"transmission: settings.json -> {DOWNLOAD_DIR}")
+    return True
 
 
 def _rpc(client: httpx.Client, method: str, arguments: dict | None = None) -> dict:
@@ -24,18 +48,16 @@ def _rpc(client: httpx.Client, method: str, arguments: dict | None = None) -> di
 
 
 def configure(log) -> None:
+    changed = _persist_settings(log)
     try:
         with httpx.Client(timeout=30.0) as client:
             session = _rpc(client, "session-get").get("arguments", {})
-            wanted = {
-                "download-dir": DOWNLOAD_DIR,
-                "incomplete-dir": INCOMPLETE_DIR,
-                "incomplete-dir-enabled": True,
-            }
-            if all(session.get(k) == v for k, v in wanted.items()):
-                log("transmission: download paths already aligned")
+            if all(session.get(k) == v for k, v in WANTED.items()):
+                if not changed:
+                    log("transmission: download paths already aligned")
                 return
-            _rpc(client, "session-set", wanted)
+            _rpc(client, "session-set", WANTED)
             log(f"transmission: download-dir -> {DOWNLOAD_DIR}")
     except httpx.HTTPError as exc:
-        log(f"transmission: wiring failed ({exc})")
+        if not changed:
+            log(f"transmission: wiring failed ({exc})")
