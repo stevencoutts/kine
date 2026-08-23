@@ -105,12 +105,28 @@ def filter_pickable_exports(exports: list[str]) -> list[str]:
     shared = [export for export in ordered if "/var/nfs/shared" in export.lower()]
     if shared:
         return shared
-    return [
+    inferred = infer_unifi_shared_exports(ordered)
+    if inferred:
+        return inferred
+    without_unifi = [
         export
         for export in ordered
         if ".unifi-drive" not in export.lower()
         and not export.rstrip("/").endswith("/.data")
     ]
+    return without_unifi or ordered
+
+
+def infer_unifi_shared_exports(exports: list[str]) -> list[str]:
+    """Map UniFi ``.data`` exports to the ``/var/nfs/shared/*`` paths used for mounts."""
+    names: list[str] = []
+    for export in exports:
+        parts = [part for part in export.rstrip("/").split("/") if part]
+        if len(parts) >= 2 and parts[-1] == ".data":
+            names.append(parts[-2])
+    if not names:
+        return []
+    return [f"/var/nfs/shared/{name}" for name in dict.fromkeys(names)]
 
 
 def suggest_assignments(exports: list[str]) -> dict[str, str]:

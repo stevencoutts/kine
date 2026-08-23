@@ -166,6 +166,19 @@ def test_filter_pickable_exports_prefers_var_nfs_shared():
     ])
 
 
+def test_filter_pickable_exports_infers_unifi_shared_paths():
+    exports = [
+        "/volume/x/.srv/.unifi-drive/media/.data",
+        "/volume/x/.srv/.unifi-drive/Downloads/.data",
+        "/volume/x/.srv/.unifi-drive/cache/.data",
+    ]
+    assert nfs_exports.filter_pickable_exports(exports) == sorted([
+        "/var/nfs/shared/media",
+        "/var/nfs/shared/Downloads",
+        "/var/nfs/shared/cache",
+    ])
+
+
 def test_suggest_assignments_maps_share_names():
     exports = [
         "/var/nfs/shared/media",

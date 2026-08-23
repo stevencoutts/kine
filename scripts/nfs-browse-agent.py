@@ -122,17 +122,32 @@ def sort_exports(exports: list[str]) -> list[str]:
     return sorted(exports, key=rank)
 
 
+def infer_unifi_shared_exports(exports: list[str]) -> list[str]:
+    names: list[str] = []
+    for export in exports:
+        parts = [part for part in export.rstrip("/").split("/") if part]
+        if len(parts) >= 2 and parts[-1] == ".data":
+            names.append(parts[-2])
+    if not names:
+        return []
+    return [f"/var/nfs/shared/{name}" for name in dict.fromkeys(names)]
+
+
 def filter_pickable_exports(exports: list[str]) -> list[str]:
     ordered = sort_exports(exports)
     shared = [export for export in ordered if "/var/nfs/shared" in export.lower()]
     if shared:
         return shared
-    return [
+    inferred = infer_unifi_shared_exports(ordered)
+    if inferred:
+        return inferred
+    without_unifi = [
         export
         for export in ordered
         if ".unifi-drive" not in export.lower()
         and not export.rstrip("/").endswith("/.data")
     ]
+    return without_unifi or ordered
 
 
 def export_root_for(path: str, exports: list[str]) -> str:
