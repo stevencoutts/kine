@@ -196,3 +196,20 @@ def test_collection_records_its_own_duration(monkeypatch):
     asyncio.run(metrics.collect_once())
     durations = [s for s in metrics.CACHE if s.name == "kine_collect_duration_seconds"]
     assert {s.labels["app"] for s in durations} >= {"good", "total"}
+
+
+def test_update_samples_come_from_the_cache_not_a_live_check(monkeypatch):
+    """A live digest check queries every registry and outlasts the
+    collection interval, so the collector must only read the cache.
+
+    scheduler pulls in croniter, which is a container-only dependency,
+    so it is stubbed rather than imported.
+    """
+    import types
+    stub = types.ModuleType("app.scheduler")
+    stub.status = lambda: {
+        "updates": {"containers": [{"id": "sonarr", "update_available": True}]}
+    }
+    monkeypatch.setitem(sys.modules, "app.scheduler", stub)
+    out = asyncio.run(metrics._collect_updates("updates"))
+    assert [(s.labels["app"], s.value) for s in out] == [("sonarr", 1)]

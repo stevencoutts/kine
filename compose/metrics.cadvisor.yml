@@ -19,6 +19,11 @@ services:
       - /:/rootfs:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
+      # Without containerd's socket cAdvisor cannot register its docker
+      # factory, and every container metric loses its `name` label —
+      # which is what every per-container panel groups by. Read-only,
+      # and no wider than the privileged host mounts above.
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
     devices:
       - /dev/kmsg:/dev/kmsg
     privileged: true

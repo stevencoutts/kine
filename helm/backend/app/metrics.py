@@ -12,7 +12,7 @@ from typing import NamedTuple
 
 import httpx
 
-from . import appkeys, catalogue, compose, config, updates_info, watching
+from . import appkeys, catalogue, config, watching
 
 
 class Sample(NamedTuple):
@@ -275,7 +275,15 @@ async def _collect_streams(_label: str) -> list[Sample]:
 
 
 async def _collect_updates(_label: str) -> list[Sample]:
-    return parse_updates(await updates_info.fetch(compose, refresh=False))
+    """Read the overnight job's cache and nothing else.
+
+    updates_info.fetch falls back to a live digest check when the cache
+    is cold, which queries every registry and took 67 seconds on the
+    appliance — longer than the collection interval itself.
+    """
+    from . import scheduler
+
+    return parse_updates(scheduler.status().get("updates") or {})
 
 
 async def _probe(app: str) -> list[Sample]:

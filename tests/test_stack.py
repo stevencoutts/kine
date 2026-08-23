@@ -551,3 +551,10 @@ def test_every_compose_dependency_is_mirrored_in_the_catalogue():
             if dep not in requires:
                 missing.append(f"{name} depends_on {dep} but does not require it")
     assert not missing, "; ".join(missing)
+
+
+def test_cadvisor_can_reach_containerd():
+    """Without it the docker factory never registers and every
+    container metric arrives with no `name` label to group by."""
+    volumes = " ".join(SERVICES["cadvisor"][1].get("volumes") or [])
+    assert "containerd.sock" in volumes
