@@ -1,4 +1,5 @@
 """Provisioner behaviour that the appliance's pre-wiring depends on."""
+import json
 import pathlib
 import sys
 import xml.etree.ElementTree as ET
@@ -493,3 +494,348 @@ def test_prowlarr_configure_wires_indexers_and_transmission(monkeypatch):
     assert ("downloadclient", "Transmission", "Transmission") in posted
     assert any("prowlarr: configured indexer thepiratebay" in m for m in logs)
     assert any("prowlarr: download client Transmission" in m for m in logs)
+
+
+def test_recyclarr_seed_writes_trash_guide_config(stack, monkeypatch):
+    import keys
+    import seed
+    from keys import api_key
+    from recipes import recyclarr
+
+    monkeypatch.setenv("KINE_SECRET", "test-secret-value")
+    monkeypatch.setattr(keys, "STACK", stack)
+    seed.seed_all({"recyclarr"})
+    cfg = stack / "config" / "recyclarr" / "recyclarr.yml"
+    secrets = stack / "config" / "recyclarr" / "secrets.yml"
+    body = cfg.read_text()
+    assert recyclarr.SONARR_PROFILE in body
+    assert recyclarr.RADARR_PROFILE in body
+    assert "127.0.0.1:8989" in secrets.read_text()
+    assert api_key("sonarr") in secrets.read_text()
+    assert api_key("radarr") in secrets.read_text()
+
+
+def test_recyclarr_seed_never_overwrites_existing_config(stack, monkeypatch):
+    import keys
+    import seed
+
+    monkeypatch.setenv("KINE_SECRET", "test-secret-value")
+    monkeypatch.setattr(keys, "STACK", stack)
+    cfg_dir = stack / "config" / "recyclarr"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "recyclarr.yml").write_text("custom: true\n")
+    seed.seed_all({"recyclarr"})
+    assert (cfg_dir / "recyclarr.yml").read_text() == "custom: true\n"
+
+
+def test_recyclarr_configure_uses_resolve_key(stack, monkeypatch):
+    import keys
+    from recipes import recyclarr
+
+    monkeypatch.setattr(keys, "STACK", stack)
+    logs = []
+    monkeypatch.setattr(recyclarr, "resolve_key", lambda app: f"live-{app}")
+    recyclarr.configure(logs.append)
+    secrets = (stack / "config" / "recyclarr" / "secrets.yml").read_text()
+    assert "live-sonarr" in secrets
+    assert "live-radarr" in secrets
+    assert any("recyclarr: wrote secrets.yml" in m for m in logs)
+
+
+def test_seerr_servers_use_gluetun_and_kine_paths():
+    from recipes.seerr import SERVERS
+
+    assert SERVERS["sonarr"]["hostname"] == "gluetun"
+    assert SERVERS["sonarr"]["port"] == 8989
+    assert SERVERS["sonarr"]["directory"] == "/data/media/tv"
+    assert SERVERS["radarr"]["hostname"] == "gluetun"
+    assert SERVERS["radarr"]["port"] == 7878
+    assert SERVERS["radarr"]["directory"] == "/data/media/movies"
+
+
+def test_seerr_picks_1080p_profiles_preferring_trash_names():
+    from recipes.seerr import SERVERS, _pick_profile
+
+    profiles = [
+        {"id": 1, "name": "Any"},
+        {"id": 4, "name": "HD-1080p"},
+        {"id": 7, "name": "WEB-1080p"},
+        {"id": 8, "name": "HD Bluray + WEB"},
+    ]
+    assert (
+        _pick_profile(profiles, SERVERS["sonarr"]["profiles"])["name"] == "WEB-1080p"
+    )
+    assert (
+        _pick_profile(profiles, SERVERS["radarr"]["profiles"])["name"]
+        == "HD Bluray + WEB"
+    )
+    # Recyclarr name wins when both Recyclarr and stock HD-1080p exist
+    both = [
+        {"id": 4, "name": "HD-1080p"},
+        {"id": 7, "name": "WEB-1080p"},
+    ]
+    assert _pick_profile(both, SERVERS["sonarr"]["profiles"])["id"] == 7
+    # Alias without space around +
+    assert (
+        _pick_profile(
+            [{"id": 9, "name": "HD Bluray+WEB"}, {"id": 4, "name": "HD-1080p"}],
+            SERVERS["radarr"]["profiles"],
+        )["id"]
+        == 9
+    )
+    # Fallback when Recyclarr profile is absent
+    assert (
+        _pick_profile(
+            [{"id": 1, "name": "Any"}, {"id": 4, "name": "HD-1080p"}],
+            SERVERS["radarr"]["profiles"],
+        )["name"]
+        == "HD-1080p"
+    )
+
+
+def test_seerr_already_linked_matches_non_4k_gluetun():
+    from recipes.seerr import _already_linked, _find_linked
+
+    existing = [
+        {"hostname": "gluetun", "port": 7878, "is4k": False, "id": 0},
+        {"hostname": "gluetun", "port": 7878, "is4k": True, "id": 1},
+    ]
+    assert _already_linked(existing, "gluetun", 7878) is True
+    assert _find_linked(existing, "gluetun", 7878)["id"] == 0
+    assert _already_linked([], "gluetun", 7878) is False
+
+
+def test_seerr_configure_posts_radarr_and_sonarr(stack, monkeypatch):
+    import keys
+    from recipes import seerr
+
+    monkeypatch.setattr(keys, "STACK", stack)
+    monkeypatch.setenv("KINE_DOMAIN", "example.test")
+    cfg = stack / "config" / "seerr"
+    cfg.mkdir(parents=True)
+    (cfg / "settings.json").write_text(
+        json.dumps({"main": {"apiKey": "seerr-test-key"}})
+    )
+
+    posted = []
+    putted = []
+    existing = {"radarr": [], "sonarr": []}
+
+    class FakeResp:
+        def __init__(self, status_code=200, payload=None):
+            self.status_code = status_code
+            self._payload = payload if payload is not None else {}
+
+        def json(self):
+            return self._payload
+
+    def _test_payload(app):
+        directory = "/data/media/movies" if app == "radarr" else "/data/media/tv"
+        recyclarr = "HD Bluray + WEB" if app == "radarr" else "WEB-1080p"
+        return {
+            "profiles": [
+                {"id": 1, "name": "Any"},
+                {"id": 4, "name": "HD-1080p"},
+                {"id": 7, "name": recyclarr},
+            ],
+            "rootFolders": [{"id": 1, "path": directory}],
+            "languageProfiles": None,
+            "urlBase": "",
+        }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            assert kwargs["headers"]["X-Api-Key"] == "seerr-test-key"
+
+        def get(self, path):
+            if path == "/api/v1/settings/public":
+                return FakeResp(200, {"initialized": False})
+            if path == "/api/v1/auth/me":
+                return FakeResp(200, {"id": 1})
+            if path.endswith("/settings/radarr"):
+                return FakeResp(200, existing["radarr"])
+            if path.endswith("/settings/sonarr"):
+                return FakeResp(200, existing["sonarr"])
+            raise AssertionError(path)
+
+        def post(self, path, json=None):
+            if path.endswith("/test"):
+                app = "radarr" if "radarr" in path else "sonarr"
+                return FakeResp(200, _test_payload(app))
+            posted.append((path, json))
+            app = "radarr" if "radarr" in path else "sonarr"
+            existing[app].append({**json, "id": 0})
+            return FakeResp(201, {**json, "id": 0})
+
+        def put(self, path, json=None):
+            putted.append((path, json))
+            app = "radarr" if "radarr" in path else "sonarr"
+            existing[app] = [{**json, "id": json["id"]}]
+            return FakeResp(200, json)
+
+    monkeypatch.setattr(seerr.httpx, "Client", FakeClient)
+    monkeypatch.setattr(seerr, "resolve_key", lambda app: f"key-{app}")
+    monkeypatch.setattr(seerr, "_wait", lambda http, timeout=300: True)
+
+    logs = []
+    seerr.configure({"seerr", "sonarr", "radarr"}, logs.append)
+
+    assert any(p[0].endswith("/settings/radarr") for p in posted)
+    assert any(p[0].endswith("/settings/sonarr") for p in posted)
+    radarr = next(p[1] for p in posted if p[0].endswith("/settings/radarr"))
+    sonarr = next(p[1] for p in posted if p[0].endswith("/settings/sonarr"))
+    assert radarr["hostname"] == "gluetun"
+    assert radarr["port"] == 7878
+    assert radarr["apiKey"] == "key-radarr"
+    assert radarr["activeDirectory"] == "/data/media/movies"
+    assert radarr["isDefault"] is True
+    assert radarr["is4k"] is False
+    assert radarr["activeProfileId"] == 7
+    assert radarr["activeProfileName"] == "HD Bluray + WEB"
+    assert sonarr["hostname"] == "gluetun"
+    assert sonarr["port"] == 8989
+    assert sonarr["apiKey"] == "key-sonarr"
+    assert sonarr["activeDirectory"] == "/data/media/tv"
+    assert sonarr["enableSeasonFolders"] is True
+    assert sonarr["activeProfileId"] == 7
+    assert sonarr["activeProfileName"] == "WEB-1080p"
+    assert any("seerr: linked Radarr" in m for m in logs)
+    assert any("seerr: linked Sonarr" in m for m in logs)
+
+    # Idempotent when profiles already match
+    logs2 = []
+    seerr.configure({"seerr", "sonarr", "radarr"}, logs2.append)
+    assert putted == []
+    assert not any("linked" in m or "updated" in m for m in logs2)
+
+
+def test_seerr_configure_updates_wrong_profile(stack, monkeypatch):
+    import keys
+    from recipes import seerr
+
+    monkeypatch.setattr(keys, "STACK", stack)
+    cfg = stack / "config" / "seerr"
+    cfg.mkdir(parents=True)
+    (cfg / "settings.json").write_text(
+        json.dumps({"main": {"apiKey": "seerr-test-key"}})
+    )
+
+    existing = {
+        "radarr": [
+            {
+                "id": 0,
+                "hostname": "gluetun",
+                "port": 7878,
+                "is4k": False,
+                "activeProfileId": 4,
+                "activeProfileName": "HD-1080p",
+            }
+        ],
+        "sonarr": [
+            {
+                "id": 0,
+                "hostname": "gluetun",
+                "port": 8989,
+                "is4k": False,
+                "activeProfileId": 4,
+                "activeProfileName": "HD-1080p",
+            }
+        ],
+    }
+    putted = []
+
+    class FakeResp:
+        def __init__(self, status_code=200, payload=None):
+            self.status_code = status_code
+            self._payload = payload if payload is not None else {}
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def get(self, path):
+            if path == "/api/v1/auth/me":
+                return FakeResp(200, {"id": 1})
+            if path.endswith("/settings/radarr"):
+                return FakeResp(200, existing["radarr"])
+            if path.endswith("/settings/sonarr"):
+                return FakeResp(200, existing["sonarr"])
+            return FakeResp(200, {})
+
+        def post(self, path, json=None):
+            assert path.endswith("/test")
+            app = "radarr" if "radarr" in path else "sonarr"
+            directory = "/data/media/movies" if app == "radarr" else "/data/media/tv"
+            recyclarr = "HD Bluray + WEB" if app == "radarr" else "WEB-1080p"
+            return FakeResp(
+                200,
+                {
+                    "profiles": [
+                        {"id": 4, "name": "HD-1080p"},
+                        {"id": 7, "name": recyclarr},
+                    ],
+                    "rootFolders": [{"id": 1, "path": directory}],
+                    "urlBase": "",
+                },
+            )
+
+        def put(self, path, json=None):
+            putted.append((path, json))
+            return FakeResp(200, json)
+
+    monkeypatch.setattr(seerr.httpx, "Client", FakeClient)
+    monkeypatch.setattr(seerr, "resolve_key", lambda app: f"key-{app}")
+    monkeypatch.setattr(seerr, "_wait", lambda http, timeout=300: True)
+
+    logs = []
+    seerr.configure({"seerr", "sonarr", "radarr"}, logs.append)
+
+    assert len(putted) == 2
+    by_app = {("radarr" if "radarr" in p else "sonarr"): b for p, b in putted}
+    assert by_app["radarr"]["activeProfileName"] == "HD Bluray + WEB"
+    assert by_app["radarr"]["activeProfileId"] == 7
+    assert by_app["sonarr"]["activeProfileName"] == "WEB-1080p"
+    assert by_app["sonarr"]["activeProfileId"] == 7
+    assert any("updated Radarr profile to HD Bluray + WEB" in m for m in logs)
+    assert any("updated Sonarr profile to WEB-1080p" in m for m in logs)
+
+
+def test_seerr_configure_skips_until_admin_exists(stack, monkeypatch):
+    import keys
+    from recipes import seerr
+
+    monkeypatch.setattr(keys, "STACK", stack)
+    cfg = stack / "config" / "seerr"
+    cfg.mkdir(parents=True)
+    (cfg / "settings.json").write_text(
+        json.dumps({"main": {"apiKey": "seerr-test-key"}})
+    )
+
+    class FakeResp:
+        def __init__(self, status_code=200, payload=None):
+            self.status_code = status_code
+            self._payload = payload or {}
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def get(self, path):
+            if path == "/api/v1/auth/me":
+                return FakeResp(403, {"error": "denied"})
+            return FakeResp(200, {})
+
+        def post(self, path, json=None):
+            raise AssertionError("should not post services before admin")
+
+    monkeypatch.setattr(seerr.httpx, "Client", FakeClient)
+    monkeypatch.setattr(seerr, "_wait", lambda http, timeout=300: True)
+    logs = []
+    seerr.configure({"seerr", "sonarr"}, logs.append)
+    assert any("admin user not ready" in m for m in logs)

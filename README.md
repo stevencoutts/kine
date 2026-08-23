@@ -14,6 +14,8 @@ The provisioner does more than start containers:
   indexers when enabled; Torznab feeds into Sonarr/Radarr stay manual
   because Prowlarr is the wired indexer proxy.
 - Emby's first-run wizard is completed with Movies, TV, and Sports libraries.
+- Seerr (optional) is linked to Sonarr and Radarr over `gluetun` once its
+  wizard Sign In has created the admin user; re-run provision after that.
 - Transmission runs in gluetun's WireGuard namespace; ProtonVPN port changes
   are copied into Transmission by the `vpn-portsync` sidecar.
 
@@ -97,11 +99,20 @@ NZBGet, Unpackerr, Recyclarr, and Seerr. Prowlarr remains the indexer
 proxy wired into Sonarr and Radarr. Jackett ships with the same three
 public indexers when enabled; its Torznab feeds are copied manually.
 
+Recyclarr is off by default. When enabled it syncs TRaSH Guide 1080p
+quality profiles and custom formats into Sonarr (`WEB-1080p`) and Radarr
+(`HD Bluray + WEB`) on a daily cron schedule. Config is seeded under
+`${STACK_ROOT}/config/recyclarr/` before first start; `./kine provision`
+refreshes API keys from the live *arr configs.
+
 Seerr is not VPN-tunnelled. After enabling it, complete its setup wizard
-(point it at Emby), then add Sonarr and Radarr under Settings using host
-`gluetun` with ports `8989` / `7878` and the API keys from each app's
-config (or Helm). The provisioner does not wire Seerr automatically
-because its API requires that interactive first-run.
+through Sign In (and media-server setup). `./kine provision` then registers
+Sonarr and Radarr at host `gluetun` ports `8989` / `7878` with the Recyclarr
+quality profiles (`WEB-1080p` / `HD Bluray + WEB`, falling back to stock
+`HD-1080p` if those are missing) and the live API keys. Re-running provision
+updates an existing Seerr server entry when its active profile is wrong.
+Finish the wizard Configure Services step (or skip it if provision already
+filled it) when prompted.
 
 Important defaults:
 

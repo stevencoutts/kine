@@ -136,3 +136,7 @@ def seed_all(enabled: set[str]) -> None:
         seed_jackett()
     if "transmission" in enabled:
         seed_transmission()
+    if "recyclarr" in enabled:
+        from recipes import recyclarr
+
+        recyclarr.seed(print)

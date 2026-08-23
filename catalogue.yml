@@ -140,7 +140,7 @@ apps:
   seerr:
     name: Seerr
     tier: acquisition
-    summary: Media request and discovery UI. Links to Sonarr and Radarr over the Docker network; not VPN-tunnelled.
+    summary: Media request and discovery UI. Provision links Sonarr/Radarr via gluetun on kine_internal after wizard Sign In; not VPN-tunnelled.
     url: https://docs.seerr.dev
     releases: https://github.com/seerr-team/seerr/releases
     internal: http://seerr:5055

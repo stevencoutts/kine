@@ -216,6 +216,24 @@ def test_seerr_is_untunnelled_with_official_image_and_traefik():
     assert "seerr" not in TUNNELLED
 
 
+def test_recyclarr_image_uses_published_tag():
+    """GHCR publishes major-version tags (8), not latest."""
+    env = {}
+    for line in (ROOT / ".env.example").read_text().splitlines():
+        if "=" in line and not line.startswith("#"):
+            key, value = line.split("=", 1)
+            env[key] = value
+    assert env["RECYCLARR_TAG"] == "8"
+
+
+def test_recyclarr_is_tunnelled_with_config_healthcheck():
+    _, recyclarr = SERVICES["recyclarr"]
+    assert recyclarr.get("network_mode") == "service:gluetun"
+    assert recyclarr["volumes"] == ["${STACK_ROOT}/config/recyclarr:/config"]
+    health = recyclarr.get("healthcheck", {})
+    assert "recyclarr.yml" in str(health.get("test", ""))
+
+
 # ── everything else ─────────────────────────────────────────────
 def test_untunnelled_web_apps_have_routers():
     for app, meta in CATALOGUE.items():

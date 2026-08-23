@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
-from recipes import arr, emby, envfiles, jackett, prowlarr, transmission  # noqa: E402
+from recipes import arr, emby, envfiles, jackett, prowlarr, recyclarr, seerr, transmission  # noqa: E402
 from seed import seed_all  # noqa: E402
 
 STATE = pathlib.Path("/stack/provision.log")
@@ -84,6 +84,18 @@ def wire(enabled: set[str]) -> None:
             jackett.configure(log)
         except Exception as exc:  # noqa: BLE001
             log(f"jackett: wiring failed ({exc})")
+
+    if "recyclarr" in enabled:
+        try:
+            recyclarr.configure(log)
+        except Exception as exc:  # noqa: BLE001
+            log(f"recyclarr: wiring failed ({exc})")
+
+    if "seerr" in enabled:
+        try:
+            seerr.configure(enabled, log)
+        except Exception as exc:  # noqa: BLE001
+            log(f"seerr: wiring failed ({exc})")
 
     if "emby" in enabled:
         emby.configure(

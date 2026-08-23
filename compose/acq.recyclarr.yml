@@ -13,3 +13,9 @@ services:
       TZ: ${KINE_TIMEZONE}
     volumes:
       - ${STACK_ROOT}/config/recyclarr:/config
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /config/recyclarr.yml && test -f /config/secrets.yml"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

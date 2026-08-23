@@ -69,7 +69,7 @@ else
 fi
 
 mkdir -p "${STACK_ROOT}"/{config,backups} "${DATA_ROOT}"/{media,downloads}
-mkdir -p "${STACK_ROOT}"/config/{traefik/dynamic,traefik/certs,unpackerr,ecm,teamarr}
+mkdir -p "${STACK_ROOT}"/config/{traefik/dynamic,traefik/certs,unpackerr,recyclarr,ecm,teamarr}
 mkdir -p "${DATA_ROOT}"/media/{movies,tv,sports,recordings}
 mkdir -p "${DATA_ROOT}"/downloads/{incomplete,complete/{tv-sonarr,radarr}}
 chown -R "${PUID_ACTUAL}:${PGID_ACTUAL}" "${STACK_ROOT}" "${DATA_ROOT}"
