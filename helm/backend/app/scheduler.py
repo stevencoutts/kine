@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 import httpx
 from croniter import croniter
 
-from . import compose, config, provision_lock, updates_info
+from . import compose, config, metrics, provision_lock, updates_info
 
 STATE = pathlib.Path("/stack/helm-jobs.json")
 SEERR_SETTINGS = pathlib.Path("/stack/config/seerr/settings.json")
@@ -165,6 +165,7 @@ def start(app) -> None:
             _loop("backup", "HELM_BACKUP_CRON", "30 3 * * *", _backup)
         ),
         asyncio.create_task(_seerr_wire_loop()),
+        asyncio.create_task(metrics.collector_loop()),
     ]
 
 

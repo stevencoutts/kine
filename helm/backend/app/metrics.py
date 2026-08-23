@@ -6,7 +6,13 @@ hung Sonarr must never stall a scrape or punch a hole in the graphs.
 """
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import NamedTuple
+
+import httpx
+
+from . import appkeys, catalogue, compose, config, updates_info, watching
 
 
 class Sample(NamedTuple):
@@ -177,3 +183,170 @@ def render(samples: list[Sample]) -> str:
             else:
                 lines.append(f"{name} {_format_value(sample.value)}")
     return "\n".join(lines) + "\n"
+
+
+CACHE: list[Sample] = []
+COLLECT_INTERVAL = 60.0
+ERRORS: dict[str, int] = {}
+ARR_API = {"sonarr": "v3", "radarr": "v3", "prowlarr": "v1"}
+
+
+def _enabled_apps() -> list[str]:
+    return list(config.profiles())
+
+
+async def _get_json(url: str, headers: dict, params: dict | None = None) -> dict | list:
+    async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+        response = await client.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        return response.json() if response.content else {}
+
+
+def _base(app: str) -> str:
+    return (catalogue.load().get(app, {}).get("internal") or "").rstrip("/")
+
+
+async def _collect_arr(app: str) -> list[Sample]:
+    key, base = appkeys.key_for(app), _base(app)
+    if not key or not base:
+        return []
+    api = ARR_API[app]
+    headers = {"X-Api-Key": key}
+    resource = "series" if app == "sonarr" else "movie"
+    items = await _get_json(f"{base}/api/{api}/{resource}", headers)
+    queue = await _get_json(f"{base}/api/{api}/queue", headers, {"pageSize": 1})
+    missing = await _get_json(f"{base}/api/{api}/wanted/missing", headers, {"pageSize": 1})
+    counts = {"items": items if isinstance(items, list) else []}
+    return parse_arr(
+        app,
+        counts=counts,
+        queue=queue if isinstance(queue, dict) else {},
+        missing=missing if isinstance(missing, dict) else {},
+    )
+
+
+async def _collect_bazarr(_app: str) -> list[Sample]:
+    key, base = appkeys.bazarr_key(), _base("bazarr")
+    if not key or not base:
+        return []
+    headers = {"X-API-KEY": key}
+    series = await _get_json(f"{base}/api/episodes/wanted", headers)
+    movies = await _get_json(f"{base}/api/movies/wanted", headers)
+    return parse_bazarr(
+        series if isinstance(series, dict) else {},
+        movies if isinstance(movies, dict) else {},
+    )
+
+
+async def _collect_prowlarr(_app: str) -> list[Sample]:
+    key, base = appkeys.arr_key("prowlarr"), _base("prowlarr")
+    if not key or not base:
+        return []
+    headers = {"X-Api-Key": key}
+    indexers = await _get_json(f"{base}/api/v1/indexer", headers)
+    stats = await _get_json(f"{base}/api/v1/indexerstats", headers)
+    return parse_prowlarr(
+        indexers if isinstance(indexers, list) else [],
+        stats if isinstance(stats, dict) else {},
+    )
+
+
+async def _collect_transmission(_app: str) -> list[Sample]:
+    base = _base("transmission")
+    if not base:
+        return []
+    url = f"{base}/transmission/rpc"
+    body = {"method": "session-stats"}
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        # Transmission answers the first call with 409 and the session id
+        # it wants echoed back. There is no way to skip the handshake.
+        response = await client.post(url, json=body)
+        if response.status_code == 409:
+            token = response.headers.get("X-Transmission-Session-Id", "")
+            response = await client.post(
+                url, json=body, headers={"X-Transmission-Session-Id": token}
+            )
+        response.raise_for_status()
+        return parse_transmission(response.json())
+
+
+async def _collect_streams(_label: str) -> list[Sample]:
+    return parse_streams(await watching.snapshot())
+
+
+async def _collect_updates(_label: str) -> list[Sample]:
+    return parse_updates(await updates_info.fetch(compose, refresh=False))
+
+
+async def _probe(app: str) -> list[Sample]:
+    base = _base(app)
+    if not base:
+        return []
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(base, follow_redirects=True)
+        up = 1 if response.status_code < 500 else 0
+    except httpx.HTTPError:
+        up = 0
+    return [Sample("kine_app_up", {"app": app}, up)]
+
+
+COLLECTORS = {
+    "sonarr": _collect_arr,
+    "radarr": _collect_arr,
+    "prowlarr": _collect_prowlarr,
+    "bazarr": _collect_bazarr,
+    "transmission": _collect_transmission,
+}
+
+# Run regardless of which apps are enabled.
+GLOBAL_COLLECTORS = {"streams": _collect_streams, "updates": _collect_updates}
+
+
+async def collect_once() -> None:
+    started = time.monotonic()
+    samples: list[Sample] = []
+    enabled = _enabled_apps()
+
+    jobs = [(name, fn) for name, fn in GLOBAL_COLLECTORS.items()]
+    jobs += [(app, COLLECTORS[app]) for app in enabled if app in COLLECTORS]
+
+    for label, fn in jobs:
+        job_started = time.monotonic()
+        try:
+            samples.extend(await fn(label))
+        except Exception:  # noqa: BLE001 — one bad app must not lose the rest
+            ERRORS[label] = ERRORS.get(label, 0) + 1
+        samples.append(
+            Sample("kine_collect_duration_seconds", {"app": label},
+                   round(time.monotonic() - job_started, 3))
+        )
+
+    for app in enabled:
+        try:
+            samples.extend(await _probe(app))
+        except Exception:  # noqa: BLE001
+            ERRORS[app] = ERRORS.get(app, 0) + 1
+
+    samples.extend(
+        Sample("kine_collect_errors_total", {"app": app}, count)
+        for app, count in ERRORS.items()
+    )
+    samples.append(
+        Sample("kine_collect_duration_seconds", {"app": "total"},
+               round(time.monotonic() - started, 3))
+    )
+    CACHE[:] = samples
+
+
+def export() -> str:
+    return render(CACHE)
+
+
+async def collector_loop() -> None:
+    while True:
+        try:
+            await collect_once()
+        except Exception:  # noqa: BLE001 — the loop must outlive any failure
+            pass
+        await asyncio.sleep(COLLECT_INTERVAL)

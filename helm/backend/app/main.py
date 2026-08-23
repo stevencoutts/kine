@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, catalogue, channels, compose, config, launch, library_rescan, nfs_exports, provision_lock, scheduler, updates_info, watching
+from . import auth, catalogue, channels, compose, config, launch, library_rescan, metrics, nfs_exports, provision_lock, scheduler, updates_info, watching
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -566,6 +566,21 @@ async def logs(ws: WebSocket, app_id: str):
             await ws.send_text(line)
     except Exception:
         await ws.close()
+
+
+# ── metrics ─────────────────────────────────────────────────────
+@app.get("/api/metrics")
+async def prometheus_metrics():
+    """Scraped by Prometheus, which cannot log in.
+
+    Deliberately has no auth dependency: no Traefik router points here,
+    so it is reachable only from inside the stack. It renders a cache,
+    so a wedged app cannot stall the scrape.
+    """
+    return Response(
+        content=metrics.export(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
 
 
 # ── updates ─────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 """Exporter rendering and parsing, with no network anywhere."""
+import asyncio
 import pathlib
 import sys
 
@@ -147,3 +148,51 @@ def test_parse_updates_flags_pending_containers():
     ]}
     by = {s.labels["app"]: s.value for s in metrics.parse_updates(payload)}
     assert by == {"sonarr": 1, "radarr": 0}
+
+
+def test_export_renders_whatever_is_cached(monkeypatch):
+    monkeypatch.setattr(metrics, "CACHE", [metrics.Sample("kine_app_up", {"app": "x"}, 1)])
+    assert 'kine_app_up{app="x"} 1' in metrics.export()
+
+
+def test_export_never_raises_on_an_empty_cache(monkeypatch):
+    monkeypatch.setattr(metrics, "CACHE", [])
+    assert metrics.export() == "\n"
+
+
+def test_a_failing_app_does_not_lose_the_other_samples(monkeypatch):
+    async def ok(_app):
+        return [metrics.Sample("kine_app_up", {"app": "good"}, 1)]
+
+    async def boom(_app):
+        raise RuntimeError("sonarr is wedged")
+
+    monkeypatch.setattr(metrics, "GLOBAL_COLLECTORS", {})
+    monkeypatch.setattr(metrics, "COLLECTORS", {"good": ok, "bad": boom})
+    monkeypatch.setattr(metrics, "_enabled_apps", lambda: ["good", "bad"])
+    monkeypatch.setattr(metrics, "_probe", ok)
+    monkeypatch.setattr(metrics, "ERRORS", {})
+    monkeypatch.setattr(metrics, "CACHE", [])
+    asyncio.run(metrics.collect_once())
+    assert any(
+        s.name == "kine_app_up" and s.labels["app"] == "good" for s in metrics.CACHE
+    )
+    assert any(
+        s.name == "kine_collect_errors_total" and s.labels["app"] == "bad"
+        for s in metrics.CACHE
+    )
+
+
+def test_collection_records_its_own_duration(monkeypatch):
+    async def ok(_app):
+        return []
+
+    monkeypatch.setattr(metrics, "GLOBAL_COLLECTORS", {})
+    monkeypatch.setattr(metrics, "COLLECTORS", {"good": ok})
+    monkeypatch.setattr(metrics, "_enabled_apps", lambda: ["good"])
+    monkeypatch.setattr(metrics, "_probe", ok)
+    monkeypatch.setattr(metrics, "ERRORS", {})
+    monkeypatch.setattr(metrics, "CACHE", [])
+    asyncio.run(metrics.collect_once())
+    durations = [s for s in metrics.CACHE if s.name == "kine_collect_duration_seconds"]
+    assert {s.labels["app"] for s in durations} >= {"good", "total"}
