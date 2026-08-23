@@ -530,3 +530,24 @@ def test_starting_grafana_pulls_in_the_whole_metrics_chain():
         _, svc = SERVICES[name]
         queue.extend(svc.get("depends_on") or [])
     assert chain == {"grafana", "prometheus", "cadvisor", "node-exporter"}
+
+
+def test_every_compose_dependency_is_mirrored_in_the_catalogue():
+    """A depends_on across profiles makes the whole project invalid when
+    the dependency's profile is off, so enabling an app must always
+    enable what it depends on. resolve_deps reads `requires`, which is
+    therefore not documentation: it is what keeps compose parseable."""
+    missing = []
+    for name, meta in CATALOGUE.items():
+        if name not in SERVICES:
+            continue
+        _, svc = SERVICES[name]
+        requires = set(meta.get("requires") or [])
+        for dep in (svc.get("depends_on") or []):
+            # Hidden platform services are always running, so they need
+            # no catalogue edge to stay enabled.
+            if dep not in CATALOGUE:
+                continue
+            if dep not in requires:
+                missing.append(f"{name} depends_on {dep} but does not require it")
+    assert not missing, "; ".join(missing)
