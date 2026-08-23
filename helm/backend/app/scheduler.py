@@ -10,6 +10,10 @@ Two of them, and both are deliberately conservative:
 
   backup         a scheduled config snapshot, so the rollback path the
                  updater depends on is never more than a day stale.
+
+  seerr-wire     re-runs provision wire when Seerr's wizard has finished
+                 but Sonarr/Radarr are not linked yet (enable runs wire
+                 before Sign In, so the first link needs a later pass).
 """
 import asyncio
 import contextlib
@@ -18,11 +22,13 @@ import pathlib
 import time
 from datetime import datetime, timezone
 
+import httpx
 from croniter import croniter
 
 from . import compose, config
 
 STATE = pathlib.Path("/stack/helm-jobs.json")
+SEERR_SETTINGS = pathlib.Path("/stack/config/seerr/settings.json")
 
 
 def _load() -> dict:
@@ -69,6 +75,64 @@ async def _backup() -> None:
     _save(data)
 
 
+def _seerr_api_key() -> str | None:
+    if not SEERR_SETTINGS.is_file():
+        return None
+    try:
+        return json.loads(SEERR_SETTINGS.read_text()).get("main", {}).get("apiKey") or None
+    except (OSError, json.JSONDecodeError, AttributeError):
+        return None
+
+
+async def _seerr_needs_wire() -> bool:
+    if "seerr" not in config.profiles():
+        return False
+    api_key = _seerr_api_key()
+    if not api_key:
+        return False
+    headers = {"X-Api-Key": api_key}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            me = await client.get("http://seerr:5055/api/v1/auth/me", headers=headers)
+            if me.status_code != 200:
+                return False
+            for path in ("radarr", "sonarr"):
+                resp = await client.get(
+                    f"http://seerr:5055/api/v1/settings/{path}",
+                    headers=headers,
+                )
+                if resp.status_code != 200 or not resp.json():
+                    return True
+    except httpx.HTTPError:
+        return False
+    return False
+
+
+async def wire_seerr_if_ready() -> None:
+    if not await _seerr_needs_wire():
+        return
+    code, out = await compose.run("run", "--rm", "provision", "wire", timeout=900)
+    data = _load()
+    data["seerr_wire"] = {
+        "ran": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "ok": code == 0,
+        "log": out[-500:] if out else "",
+    }
+    _save(data)
+
+
+async def _seerr_wire_loop() -> None:
+    await asyncio.sleep(45)
+    while True:
+        try:
+            await wire_seerr_if_ready()
+        except Exception as exc:  # noqa: BLE001 — must not kill the loop
+            data = _load()
+            data.setdefault("errors", {})["seerr_wire"] = str(exc)
+            _save(data)
+        await asyncio.sleep(120)
+
+
 async def _loop(name: str, cron_key: str, default: str, job) -> None:
     while True:
         expr = config.read().get(cron_key, default) or default
@@ -98,6 +162,7 @@ def start(app) -> None:
         asyncio.create_task(
             _loop("backup", "HELM_BACKUP_CRON", "30 3 * * *", _backup)
         ),
+        asyncio.create_task(_seerr_wire_loop()),
     ]
 
 
