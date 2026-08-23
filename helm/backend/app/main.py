@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, catalogue, compose, config, launch, scheduler
+from . import auth, catalogue, channels, compose, config, launch, scheduler
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -187,6 +187,7 @@ async def apps(request: Request, user: str = Depends(require_user)):
     env = config.read()
     code, out = await compose.run("ps", "--format", "json")
     running = out if code == 0 else ""
+    dev_on = set(channels.channels())
     result = []
     for key, meta in cat.items():
         result.append({
@@ -207,6 +208,9 @@ async def apps(request: Request, user: str = Depends(require_user)):
             "requires": meta.get("requires", []),
             "tunnelled": meta.get("tunnelled"),
             "hidden": meta.get("hidden", False),
+            "dev_supported": channels.supported(meta),
+            "dev_enabled": key in dev_on,
+            "dev_tag": meta.get("dev_tag"),
         })
     tiers = {}
     for tier in catalogue.TIER_LABELS:
@@ -321,6 +325,40 @@ async def restart(app_id: str, user: str = Depends(require_user)):
         )
     code, out = await compose.run("restart", app_id)
     return {"ok": code == 0, "log": out[-2000:]}
+
+
+@app.post("/api/apps/{app_id}/dev/enable")
+async def enable_dev(app_id: str, user: str = Depends(require_user)):
+    return await _set_dev_channel(app_id, enabled=True)
+
+
+@app.post("/api/apps/{app_id}/dev/disable")
+async def disable_dev(app_id: str, user: str = Depends(require_user)):
+    return await _set_dev_channel(app_id, enabled=False)
+
+
+async def _set_dev_channel(app_id: str, *, enabled: bool) -> dict:
+    cat = catalogue.load()
+    if app_id not in cat:
+        raise HTTPException(404, "unknown app")
+    meta = cat[app_id]
+    if not channels.supported(meta):
+        raise HTTPException(400, f"{app_id} has no development image channel")
+    try:
+        updates = channels.apply(app_id, meta, enabled=enabled)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    # Only recreate when the profile is already selected; otherwise the
+    # next enable/up picks up the new tag.
+    if app_id in config.profiles():
+        await compose.run("pull", app_id)
+        code, out = await compose.run("up", "-d", "--force-recreate", app_id)
+        if code != 0:
+            raise HTTPException(500, f"Could not recreate {app_id} on the new channel")
+        return {"ok": True, "dev_enabled": enabled, "tag": updates.get(channels.tag_key(app_id)),
+                "log": out[-2000:]}
+    return {"ok": True, "dev_enabled": enabled, "tag": updates.get(channels.tag_key(app_id))}
 
 
 @app.websocket("/api/apps/{app_id}/logs")

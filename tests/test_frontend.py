@@ -75,7 +75,25 @@ def test_enabled_apps_use_real_open_buttons():
     assert '<a class="link" href="${a.url}"' not in FRONTEND
 
 
+def test_dev_version_checkbox_only_when_supported():
+    assert "a.dev_supported" in FRONTEND
+    assert 'data-dev="${a.id}"' in FRONTEND
+    assert "Dev Version" in FRONTEND
+    assert "/apps/${el.dataset.dev}/dev/" in FRONTEND
+
+
+def test_dev_channel_api_recreates_when_profile_enabled():
+    assert '@app.post("/api/apps/{app_id}/dev/enable")' in BACKEND
+    assert '@app.post("/api/apps/{app_id}/dev/disable")' in BACKEND
+    assert 'compose.run("pull", app_id)' in BACKEND
+    assert 'compose.run("up", "-d", "--force-recreate", app_id)' in BACKEND
+
+
 def test_open_button_uses_safe_new_window_and_inline_error():
-    assert "window.open(app.url, '_blank', 'noopener')" in FRONTEND
-    assert "opened.opener = null" in FRONTEND
+    assert "const launchApp = (app) =>" in FRONTEND
+    assert "window.open(app.url, '_blank', 'noopener')" not in FRONTEND
+    assert "w.opener = null" in FRONTEND
+    assert "window.location.assign(app.url)" in FRONTEND
+    assert "launchApp(state.apps.find" in FRONTEND
     assert "Could not open" in FRONTEND
+    assert 'target="_blank" rel="noopener noreferrer"' in FRONTEND

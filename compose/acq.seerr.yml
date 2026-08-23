@@ -1,0 +1,31 @@
+# Untunnelled. Seerr is a request UI that talks to Sonarr/Radarr (and
+# Emby) over kine_internal. It does not need outbound indexer access,
+# so it stays on its own network stack with Traefik labels here rather
+# than joining gluetun.
+services:
+  seerr:
+    image: ghcr.io/seerr-team/seerr:${SEERR_TAG}
+    container_name: kine-seerr
+    profiles: ["seerr"]
+    restart: unless-stopped
+    init: true
+    environment:
+      TZ: ${KINE_TIMEZONE}
+      LOG_LEVEL: info
+    volumes:
+      - ${STACK_ROOT}/config/seerr:/app/config
+    networks: [kine_internal, kine_edge]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/settings/public || exit 1",
+        ]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.seerr.rule=Host(`seerr.${KINE_DOMAIN}`) || Host(`seerr.${KINE_LOCAL_DOMAIN}`)
+      - traefik.http.services.seerr.loadbalancer.server.port=5055

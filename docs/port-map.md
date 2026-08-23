@@ -26,6 +26,10 @@ Untunnelled, on their own service names as usual:
 | Application | Address |
 |---|---|
 | Emby | `emby:8096` |
+| Seerr | `seerr:5055` |
 | Dispatcharr | `dispatcharr:9191` |
 | ECM | `ecm:8080` |
 | Teamarr | `teamarr:8080` |
+
+Seerr reaches tunnelled Sonarr/Radarr as `gluetun:8989` and
+`gluetun:7878` (see the table above).

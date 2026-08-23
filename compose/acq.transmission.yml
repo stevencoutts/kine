@@ -17,7 +17,9 @@ services:
       TZ: ${KINE_TIMEZONE}
     volumes:
       - ${STACK_ROOT}/config/transmission:/config
-      - ${DATA_ROOT}/downloads:/data/downloads
+      # Single /data mount, same as Sonarr and Radarr, so imports can
+      # hardlink instead of copying across bind mounts.
+      - ${DATA_ROOT}:/data
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:9091/transmission/web/ || exit 1"]
       interval: 30s

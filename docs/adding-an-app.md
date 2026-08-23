@@ -29,7 +29,12 @@ to start. Add your app to that table in the same commit.
 
 `catalogue.yml`. `summary` and `releases` are what the GUI shows.
 `requires` makes the GUI pull dependencies in when you enable it, and
-refuse to disable something that is still depended on.
+refuse to disable something that is still depended on. Optional `dev_tag`
+(for example `develop`, `development`, `dev`, `beta`, `edge`) declares the
+unstable image channel for the Apps page Dev Version control: Helm adds the
+app to `APP_DEV_CHANNELS`, saves the current pin in `<APP>_STABLE_TAG`, and
+points `<APP>_TAG` at `dev_tag` (clearing `<APP>_DIGEST`). Omit `dev_tag`
+when there is no public develop/nightly channel.
 
 ## 3. A provisioning recipe (only if it needs wiring)
 

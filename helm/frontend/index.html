@@ -99,6 +99,31 @@ const state = { tab:'apps', apps:[], tiers:{},
 const TAB_LABELS = {apps:'Apps', updates:'Updates', vpn:'VPN', status:'Status', settings:'Settings'};
 const TIER_ORDER = ['media','acquisition','live','platform'];
 
+// window.open(..., 'noopener') returns null on success in modern browsers,
+// so set opener manually and fall back to same-tab when a pop-up is blocked.
+const launchApp = (app) => {
+  const tierMsg = $('#tier-msg');
+  const name = app?.name || 'application';
+  if (!app?.url) {
+    tierMsg.className = 'banner bad';
+    tierMsg.textContent = `Could not open ${name}. No launch URL is configured.`;
+    return;
+  }
+  const w = window.open(app.url, '_blank');
+  if (w) {
+    w.opener = null;
+    return;
+  }
+  try {
+    window.location.assign(app.url);
+    return;
+  } catch (_) {}
+  tierMsg.className = 'banner bad';
+  tierMsg.innerHTML =
+    `Could not open ${name}. Copy this URL into a new tab: ` +
+    `<a class="link" href="${app.url}" target="_blank" rel="noopener noreferrer">${app.url}</a>`;
+};
+
 const render = {};
 
 render.shell = (body) => {
@@ -254,6 +279,10 @@ render.apps = async () => {
           <h3><span class="dot ${a.running?'on':'off'}"></span>${a.name}</h3>
           <p>${a.summary}</p>
           ${a.tunnelled==='forced'?'<p style="color:var(--warn)">Always Tunnelled</p>':''}
+          ${a.dev_supported ? `<label class="row" style="margin:0">
+            <input type="checkbox" data-dev="${a.id}" ${a.dev_enabled?'checked':''} style="width:auto">
+            Dev Version${a.dev_enabled && a.dev_tag ? ` <span style="color:var(--muted)">(${a.dev_tag})</span>` : ''}
+          </label>` : ''}
           <div class="row">
             ${a.enabled
               ? `<button class="act" data-act="disable" data-id="${a.id}">Disable</button>
@@ -286,21 +315,28 @@ render.apps = async () => {
       };
     }
   });
+  document.querySelectorAll('[data-dev]').forEach(el => {
+    el.onchange = async () => {
+      el.disabled = true;
+      try {
+        await api(`/apps/${el.dataset.dev}/dev/${el.checked?'enable':'disable'}`, {method:'POST'});
+        render.apps();
+      } catch (e) {
+        el.checked = !el.checked;
+        const tierMsg = $('#tier-msg');
+        tierMsg.className = 'banner bad';
+        tierMsg.textContent = e.message || 'Could not update image channel';
+        el.disabled = false;
+      }
+    };
+  });
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
     b.disabled = true; b.textContent = 'Working...';
     await api(`/apps/${b.dataset.id}/${b.dataset.act}`, {method:'POST'});
     render.apps();
   });
   document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
-    const app = state.apps.find(a => a.id === b.dataset.open);
-    const opened = app?.url && window.open(app.url, '_blank', 'noopener');
-    if (opened) {
-      opened.opener = null;
-      return;
-    }
-    const tierMsg = $('#tier-msg');
-    tierMsg.className = 'banner bad';
-    tierMsg.textContent = `Could not open ${app?.name || 'application'}. Check browser pop-up and certificate settings.`;
+    launchApp(state.apps.find(a => a.id === b.dataset.open));
   });
 };
 

@@ -13,6 +13,8 @@ apps:
     internal: http://emby:8096
     subdomain: emby
     provides: [library]
+    # embyserver publishes a beta channel alongside latest.
+    dev_tag: beta
     default: true
 
   sonarr:
@@ -27,6 +29,8 @@ apps:
     wires: [download-client, indexer-proxy, root-folder]
     requires: [gluetun]
     tunnelled: forced
+    # linuxserver/sonarr develop tracks Sonarr's develop branch.
+    dev_tag: develop
     default: true
 
   radarr:
@@ -41,6 +45,7 @@ apps:
     wires: [download-client, indexer-proxy, root-folder]
     requires: [gluetun]
     tunnelled: forced
+    dev_tag: develop
     default: true
 
   prowlarr:
@@ -55,6 +60,7 @@ apps:
     wires: [pvr-applications]
     requires: [gluetun]
     tunnelled: forced
+    dev_tag: develop
     default: true
 
   jackett:
@@ -67,6 +73,8 @@ apps:
     provides: [indexer-proxy]
     requires: [gluetun]
     tunnelled: forced
+    # linuxserver uses "development" (not develop) for Jackett.
+    dev_tag: development
     default: true
 
   bazarr:
@@ -80,6 +88,7 @@ apps:
     wires: [pvr-link]
     requires: [gluetun]
     tunnelled: forced
+    dev_tag: development
     default: false
 
   transmission:
@@ -124,6 +133,22 @@ apps:
     wires: [pvr-link]
     requires: [gluetun]
     tunnelled: forced
+    # ghcr.io/recyclarr/recyclarr edge is the continuous build channel.
+    dev_tag: edge
+    default: false
+
+  seerr:
+    name: Seerr
+    tier: acquisition
+    summary: Media request and discovery UI. Links to Sonarr and Radarr over the Docker network; not VPN-tunnelled.
+    url: https://docs.seerr.dev
+    releases: https://github.com/seerr-team/seerr/releases
+    internal: http://seerr:5055
+    subdomain: seerr
+    provides: [requests]
+    wires: [pvr-link]
+    # seerr publishes a develop image alongside latest.
+    dev_tag: develop
     default: false
 
   dispatcharr:
@@ -135,6 +160,8 @@ apps:
     subdomain: tv
     provides: [iptv]
     wires: [emby-tuner]
+    # dispatcharr publishes a floating :dev image.
+    dev_tag: dev
     default: true
 
   ecm:
@@ -146,6 +173,7 @@ apps:
     subdomain: channels
     requires: [dispatcharr]
     wires: [dispatcharr-link]
+    dev_tag: dev
     default: true
 
   teamarr:
@@ -157,6 +185,7 @@ apps:
     subdomain: sports
     requires: [dispatcharr]
     wires: [dispatcharr-link]
+    dev_tag: dev
     default: true
 
   gluetun:

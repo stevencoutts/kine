@@ -1,10 +1,11 @@
 """Seed application config files before their first start.
 
 The *arr applications generate a random API key on first run and write
-it into config.xml. Jackett does the same in ServerConfig.json. If we
-write those files first, the apps adopt our key instead. This must
-happen before the container starts, which is why install.sh runs `seed`
-before `docker compose up`.
+it into config.xml. Jackett does the same in ServerConfig.json.
+Transmission writes settings.json with /downloads/* paths that do not
+match our /data mount. If we write those files first, the apps adopt
+our settings instead. This must happen before the container starts,
+which is why install.sh runs `seed` before `docker compose up`.
 """
 import json
 import pathlib
@@ -103,6 +104,29 @@ def seed_jackett() -> None:
     print("  jackett: seeded ServerConfig.json with derived API key")
 
 
+def seed_transmission() -> None:
+    cfg_dir = STACK / "config" / "transmission"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = cfg_dir / "settings.json"
+
+    if cfg.exists():
+        print("  transmission: existing settings retained")
+        return
+
+    settings = {
+        "download-dir": "/data/downloads/complete",
+        "incomplete-dir": "/data/downloads/incomplete",
+        "incomplete-dir-enabled": True,
+        "rpc-enabled": True,
+        "rpc-port": 9091,
+        "rpc-url": "/transmission/",
+        "rpc-bind-address": "[::]",
+        "rpc-authentication-required": False,
+    }
+    cfg.write_text(json.dumps(settings, indent=4) + "\n")
+    print("  transmission: seeded settings.json with /data download paths")
+
+
 def seed_all(enabled: set[str]) -> None:
     print("Seeding application config...")
     for app in ARR_DEFAULTS:
@@ -110,3 +134,5 @@ def seed_all(enabled: set[str]) -> None:
             seed_arr(app)
     if "jackett" in enabled:
         seed_jackett()
+    if "transmission" in enabled:
+        seed_transmission()

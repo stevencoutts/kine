@@ -57,6 +57,7 @@ def test_fresh_profiles_contain_no_visible_apps():
     }
     assert not fresh & visible
     assert fresh == {"mdns"}
+    assert env.get("APP_DEV_CHANNELS", "") == ""
 
 
 def test_shell_env_loader_does_not_expand_password_hash(tmp_path):
@@ -202,6 +203,19 @@ def test_jackett_uses_maintained_image_without_unused_downloads_mount():
     assert "services.jackett.loadbalancer.server.port=9117" in labels
 
 
+def test_seerr_is_untunnelled_with_official_image_and_traefik():
+    _, seerr = SERVICES["seerr"]
+    assert seerr["image"] == "ghcr.io/seerr-team/seerr:${SEERR_TAG}"
+    assert seerr.get("init") is True
+    assert seerr.get("network_mode") != "service:gluetun"
+    assert "kine_internal" in seerr.get("networks", [])
+    assert seerr["volumes"] == ["${STACK_ROOT}/config/seerr:/app/config"]
+    labels = " ".join(str(label) for label in seerr.get("labels", []))
+    assert "routers.seerr.rule" in labels
+    assert "services.seerr.loadbalancer.server.port=5055" in labels
+    assert "seerr" not in TUNNELLED
+
+
 # ── everything else ─────────────────────────────────────────────
 def test_untunnelled_web_apps_have_routers():
     for app, meta in CATALOGUE.items():
@@ -246,13 +260,15 @@ def test_traefik_supports_modern_docker_api_negotiation():
             key, value = line.split("=", 1)
             env[key] = value
     version = tuple(int(part) for part in env["TRAEFIK_TAG"].lstrip("v").split("."))
-    assert version >= (3, 6, 1)
+    # v3.6.0+ lists all containers; v3.6.14+ logs vanished-container
+    # inspect races at DEBUG instead of spamming WRN on recreate.
+    assert version >= (3, 6, 14)
 
 
 def test_arr_apps_get_one_data_mount_not_two():
     """Split media and downloads mounts cost hardlinks silently: the
     import still succeeds, it is just a full copy every time."""
-    for app in ("sonarr", "radarr"):
+    for app in ("sonarr", "radarr", "transmission"):
         _, svc = SERVICES[app]
         targets = [v.split(":")[1] for v in svc["volumes"] if ":" in v]
         data = [t for t in targets if t.startswith("/data")]
@@ -276,7 +292,10 @@ def test_traefik_uses_socket_proxy_for_docker_discovery():
     assert "kine_ctrl" in traefik["networks"]
     assert "dockerproxy" in traefik["depends_on"]
     _, proxy = SERVICES["dockerproxy"]
+    # Traefik needs list+inspect+events through the proxy; denying
+    # either makes discovery silent or forces a raw-socket mount.
     assert str(proxy["environment"]["EVENTS"]) == "1"
+    assert str(proxy["environment"]["CONTAINERS"]) == "1"
 
 
 def test_helm_mounts_repository_root():

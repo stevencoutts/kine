@@ -91,9 +91,15 @@ Enabling a section selects its catalogue defaults:
 - live TV: Dispatcharr, Enhanced Channel Manager (ECM), and Teamarr
 
 Optional acquisition apps remain individually available: Bazarr, NZBGet,
-Unpackerr, and Recyclarr. Jackett ships with three public indexers
+Unpackerr, Recyclarr, and Seerr. Jackett ships with three public indexers
 preconfigured; Prowlarr remains the indexer proxy wired into Sonarr and
 Radarr, so Jackett Torznab feeds are copied manually when needed.
+
+Seerr is not VPN-tunnelled. After enabling it, complete its setup wizard
+(point it at Emby), then add Sonarr and Radarr under Settings using host
+`gluetun` with ports `8989` / `7878` and the API keys from each app's
+config (or Helm). The provisioner does not wire Seerr automatically
+because its API requires that interactive first-run.
 
 Important defaults:
 
@@ -206,9 +212,10 @@ only saves the values. Stop dependent containers before changing a live mount.
 
 ## VPN and TUN behavior
 
-The acquisition tier does not merely route through gluetun. Sonarr, Radarr,
-Prowlarr, Bazarr, Transmission, NZBGet, Unpackerr, and Recyclarr join gluetun's
-network namespace with `network_mode: service:gluetun`.
+Most of the acquisition tier does not merely route through gluetun. Sonarr,
+Radarr, Prowlarr, Bazarr, Transmission, NZBGet, Unpackerr, and Recyclarr join
+gluetun's network namespace with `network_mode: service:gluetun`. Seerr stays
+on `kine_internal` and talks to those apps as `gluetun:<port>`.
 
 Consequences:
 
@@ -242,6 +249,12 @@ make the result inconclusive.
 **Compose profiles are the source of truth.** `docker-compose.yml` includes
 one fragment per service from `compose/`. Each optional application has a
 same-named profile, and `.env`'s `COMPOSE_PROFILES` selects what runs.
+
+**Image channels are optional and explicit.** Catalogue entries may declare
+a `dev_tag` (for example `develop` or `beta`). Membership in
+`APP_DEV_CHANNELS` switches that app's `<APP>_TAG` to the develop pin,
+remembering the previous value in `<APP>_STABLE_TAG`. Fresh installs leave
+`APP_DEV_CHANNELS` empty.
 
 **Provisioning is deterministic.** `KINE_SECRET` derives API keys for
 Sonarr, Radarr, Prowlarr, and Jackett before first boot (`config.xml` for the

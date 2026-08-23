@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
-from recipes import arr, emby, envfiles, jackett, prowlarr  # noqa: E402
+from recipes import arr, emby, envfiles, jackett, prowlarr, transmission  # noqa: E402
 from seed import seed_all  # noqa: E402
 
 STATE = pathlib.Path("/stack/provision.log")
@@ -48,6 +48,8 @@ def ensure_data_tree() -> None:
         "/data/media/recordings",
         "/data/downloads/incomplete",
         "/data/downloads/complete",
+        "/data/downloads/complete/tv-sonarr",
+        "/data/downloads/complete/radarr",
     ):
         pathlib.Path(path).mkdir(parents=True, exist_ok=True)
 
@@ -64,6 +66,12 @@ def wire(enabled: set[str]) -> None:
                 arr.configure(app, enabled, log)
             except Exception as exc:  # noqa: BLE001 — one app must not abort the rest
                 log(f"{app}: wiring failed ({exc})")
+
+    if "transmission" in enabled:
+        try:
+            transmission.configure(log)
+        except Exception as exc:  # noqa: BLE001
+            log(f"transmission: wiring failed ({exc})")
 
     if "prowlarr" in enabled:
         try:

@@ -28,3 +28,10 @@ def test_production_helm_uses_configured_domain():
 
 def test_app_without_subdomain_has_no_launch_url():
     assert launch.app_url(None, "kine.local", "127.0.0.1", "127.0.0.1.nip.io") is None
+
+
+def test_loopback_hosts_include_localhost_variants():
+    for host in ("127.0.0.1", "::1", "localhost"):
+        assert launch.app_url(
+            "sonarr", "kine.local", host, "127.0.0.1.nip.io",
+        ) == "https://sonarr.127.0.0.1.nip.io"

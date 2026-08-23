@@ -23,6 +23,7 @@ include:
   - compose/acq.nzbget.yml
   - compose/acq.unpackerr.yml
   - compose/acq.recyclarr.yml
+  - compose/acq.seerr.yml
   - compose/live.dispatcharr.yml
   - compose/live.ecm.yml
   - compose/live.teamarr.yml

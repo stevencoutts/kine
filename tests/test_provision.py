@@ -81,6 +81,99 @@ def test_download_clients_use_loopback_not_service_names():
         assert host == "localhost", f"{client['name']} addresses {host}"
 
 
+def test_transmission_client_directory_matches_shared_data_mount():
+    from recipes.arr import transmission_client
+    from recipes.transmission import DOWNLOAD_DIR, INCOMPLETE_DIR
+
+    directory = [f for f in transmission_client("tv-sonarr")["fields"]
+                 if f["name"] == "directory"][0]["value"]
+    assert directory == DOWNLOAD_DIR
+    assert DOWNLOAD_DIR.startswith("/data/downloads/")
+    assert INCOMPLETE_DIR.startswith("/data/downloads/")
+
+
+def test_transmission_seed_uses_data_download_paths(stack):
+    import json
+    import seed
+    seed.seed_transmission()
+    settings = json.loads((stack / "config" / "transmission" / "settings.json").read_text())
+    assert settings["download-dir"] == "/data/downloads/complete"
+    assert settings["incomplete-dir"] == "/data/downloads/incomplete"
+
+
+def test_transmission_seed_never_overwrites_existing_settings(stack):
+    import json
+    import seed
+    d = stack / "config" / "transmission"
+    d.mkdir(parents=True)
+    (d / "settings.json").write_text(json.dumps({"download-dir": "/downloads/complete"}))
+    seed.seed_transmission()
+    assert json.loads((d / "settings.json").read_text())["download-dir"] == "/downloads/complete"
+
+
+def test_transmission_configure_sets_paths_via_rpc(monkeypatch):
+    import recipes.transmission as transmission
+
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, status_code=200, headers=None, body=None):
+            self.status_code = status_code
+            self.headers = headers or {}
+            self.content = b"{}"
+            self._body = body or {"arguments": {"download-dir": "/downloads/complete"}}
+
+        def json(self):
+            return self._body
+
+        def raise_for_status(self):
+            pass
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def post(self, url, json, headers=None):
+            calls.append((json.get("method"), json.get("arguments")))
+            if json.get("method") == "session-get":
+                return FakeResponse(body={"arguments": {
+                    "download-dir": "/downloads/complete",
+                    "incomplete-dir": "/downloads/incomplete",
+                    "incomplete-dir-enabled": True,
+                }})
+            return FakeResponse()
+
+    monkeypatch.setattr(transmission.httpx, "Client", FakeClient)
+    logs = []
+    transmission.configure(logs.append)
+    assert ("session-set", {
+        "download-dir": "/data/downloads/complete",
+        "incomplete-dir": "/data/downloads/incomplete",
+        "incomplete-dir-enabled": True,
+    }) in calls
+    assert any("download-dir -> /data/downloads/complete" in m for m in logs)
+
+
+def test_ensure_data_tree_creates_category_directories(monkeypatch):
+    created = []
+
+    def track_mkdir(self, *args, **kwargs):
+        created.append(str(self))
+
+    monkeypatch.setattr("provision.pathlib.Path.mkdir", track_mkdir, raising=False)
+    from provision import ensure_data_tree
+
+    ensure_data_tree()
+    assert "/data/downloads/complete/tv-sonarr" in created
+    assert "/data/downloads/complete/radarr" in created
+
+
 def test_prowlarr_links_both_pvrs_over_loopback():
     from recipes.prowlarr import TARGETS
     for app, (_, _, url) in TARGETS.items():
