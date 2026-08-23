@@ -125,9 +125,13 @@ network and disk; node-exporter for host CPU, memory, filesystems and
 sensors; Prometheus to store them for 30 days (capped at 2 GB so it cannot
 fill the media disk); and Grafana to draw them. Application statistics come
 from Helm itself, which already holds every app's API key — it exposes
-library sizes, download queues, subtitles wanted, indexer activity, live
-Plex and Emby sessions and pending image updates at `/api/metrics`, refreshed
-every 60 seconds. Only Grafana appears in Apps; the other three are hidden
+library sizes, download queues, subtitles wanted, indexer activity and live
+Plex and Emby sessions at `/api/metrics`, refreshed every 60 seconds. Pending
+image updates are published there too, but they mirror the nightly update
+check (04:00 by default, `HELM_UPDATE_CHECK_CRON`) rather than the 60-second
+cycle, because comparing digests means querying every registry in turn and
+takes far longer than a minute; the update panels stay empty until that job
+has run once. Only Grafana appears in Apps; the other three are hidden
 plumbing pulled in as dependencies, and disabling the section stops all four.
 
 Grafana is readable without signing in, which is what lets Helm embed panels;
@@ -317,6 +321,13 @@ make the result inconclusive.
 one fragment per service from `compose/`. Each optional application has a
 same-named profile, and `.env`'s `COMPOSE_PROFILES` selects what runs.
 
+**Dependencies resolve transitively, and both files must agree.** Enabling
+Grafana pulls in Prometheus, which pulls in cAdvisor and node-exporter. Any
+`depends_on` in a Compose fragment has to be mirrored by a `requires` in
+`catalogue.yml`: without it Helm enables the profile but not its dependency's,
+and Compose then rejects every command because `depends_on` points at a
+service no active profile provides. A test enforces the mirror.
+
 **Image channels are optional and explicit.** Catalogue entries may declare
 a `dev_tag` (for example `develop` or `beta`). Membership in
 `APP_DEV_CHANNELS` switches that app's `<APP>_TAG` to the develop pin,
@@ -348,6 +359,8 @@ Helm tabs map to the same operations as the CLI:
   image channels, restart services. A **Watching** overview button shows
   active Plex and Emby sessions (from Settings credentials) and expands
   into a combined now-playing list.
+- **Stats** — embedded Grafana panels for the stack's own history. Offers to
+  turn the Metrics tier on when it is off, so nothing else needs configuring.
 - **Updates** — one row per container: prod or dev channel, configured tag,
   local vs registry digest, and an apply button when a newer image exists.
   Checks are cached overnight; **Check Now** refreshes live from registries.
