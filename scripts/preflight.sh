@@ -27,13 +27,14 @@ fi
 # doubles your disk use until the download is cleaned up.
 if [[ -f .env ]]; then
   load_env .env
-  mkdir -p "${DATA_ROOT}/media" "${DATA_ROOT}/downloads" 2>/dev/null
-  fs_media=$(dev_id "${DATA_ROOT}/media" || echo x)
-  fs_dl=$(dev_id "${DATA_ROOT}/downloads" || echo y)
+  data_root="${DATA_ROOT:-/srv/media-data}"
+  mkdir -p "${data_root}/media" "${data_root}/downloads" 2>/dev/null
+  fs_media=$(dev_id "${data_root}/media" || echo x)
+  fs_dl=$(dev_id "${data_root}/downloads" || echo y)
   if [[ "$fs_media" == "$fs_dl" ]]; then
     ok "media and downloads share a filesystem (hardlinks will work)"
   else
-    bad "${DATA_ROOT}/media and ${DATA_ROOT}/downloads are on different filesystems"
+    bad "${data_root}/media and ${data_root}/downloads are on different filesystems"
     echo "    Imports would be copies, not hardlinks. Put both under one mount."
   fi
 fi
