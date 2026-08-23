@@ -39,6 +39,30 @@ async def _refresh_mdns() -> None:
     await compose.run("up", "-d", "--force-recreate", "mdns", timeout=60)
 
 
+async def _apply_domain_routing() -> None:
+    """Recreate services whose Traefik Host() rules embed KINE_DOMAIN.
+
+    Docker bakes compose labels at container creation; restarting Traefik
+    alone leaves gluetun (and others) still advertising the old domain.
+    """
+    profiles = set(config.profiles())
+    env = config.read()
+    routed = ["traefik", "helm"]
+    if "gluetun" in profiles:
+        routed.append("gluetun")
+    for app in ("emby", "seerr", "tdarr", "dispatcharr", "ecm", "teamarr"):
+        if app in profiles:
+            routed.append(app)
+    await compose.run("up", "-d", "--force-recreate", *routed, timeout=300)
+    if "gluetun" not in profiles:
+        return
+    tunnelled = [a for a in env.get("VPN_TUNNELLED_APPS", "").split(",") if a in profiles]
+    if tunnelled:
+        await compose.run(
+            "up", "-d", "--force-recreate", "gluetun", *tunnelled, timeout=300
+        )
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     config.normalize()
@@ -550,9 +574,11 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
     config.write({k: str(v) for k, v in body.items() if k in allowed})
     if {"KINE_TLS_MODE", "KINE_DOMAIN", "KINE_ACME_EMAIL"} & set(body):
         await compose.script("tls-setup.sh")
-        await compose.run("restart", "traefik")
     if "KINE_DOMAIN" in body:
+        await _apply_domain_routing()
         await _refresh_mdns()
+    elif {"KINE_TLS_MODE", "KINE_ACME_EMAIL"} & set(body):
+        await compose.run("restart", "traefik")
     nfs_changed = bool(set(_NFS_KEYS) & set(body))
     return {"ok": True, "nfs_requires_host_mount": nfs_changed}
 
