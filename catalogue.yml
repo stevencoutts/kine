@@ -75,7 +75,7 @@ apps:
     tunnelled: forced
     # linuxserver uses "development" (not develop) for Jackett.
     dev_tag: development
-    default: true
+    default: false
 
   bazarr:
     name: Bazarr

@@ -7,9 +7,11 @@ and IPTV/sports services behind one Traefik HTTPS entry point.
 The provisioner does more than start containers:
 
 - Sonarr and Radarr receive their root folders and enabled download clients.
-- Prowlarr is linked to Sonarr and Radarr.
-- Jackett receives a derived API key and three public indexers (KickassTorrents,
-  The Pirate Bay, and 1337x); Torznab feeds into Sonarr/Radarr stay manual
+- Prowlarr is linked to Sonarr and Radarr, seeds three public indexers
+  (KickassTorrents, The Pirate Bay, and 1337x), and registers Transmission
+  as its download client.
+- Jackett (optional) receives a derived API key and the same three public
+  indexers when enabled; Torznab feeds into Sonarr/Radarr stay manual
   because Prowlarr is the wired indexer proxy.
 - Emby's first-run wizard is completed with Movies, TV, and Sports libraries.
 - Transmission runs in gluetun's WireGuard namespace; ProtonVPN port changes
@@ -68,8 +70,8 @@ Open the URL printed at the end, normally:
 - recovery access to Helm: `http://<host-lan-ip>:8600`
 
 The first-run admin password must be at least 12 characters. If VPN is enabled
-in onboarding, paste a valid WireGuard client configuration. Then add indexers
-in Prowlarr and any IPTV provider details in Dispatcharr.
+in onboarding, paste a valid WireGuard client configuration. Prowlarr ships
+with three public indexers; add IPTV provider details in Dispatcharr.
 
 The default `internal` TLS mode uses Traefik's generated self-signed
 certificate, so browsers warn. `custom` mode reads `fullchain.pem` and
@@ -87,13 +89,13 @@ Gluetun gateway when VPN is selected.
 Enabling a section selects its catalogue defaults:
 
 - media: Emby
-- acquisition: Sonarr, Radarr, Prowlarr, Jackett, and Transmission
+- acquisition: Sonarr, Radarr, Prowlarr, and Transmission
 - live TV: Dispatcharr, Enhanced Channel Manager (ECM), and Teamarr
 
-Optional acquisition apps remain individually available: Bazarr, NZBGet,
-Unpackerr, Recyclarr, and Seerr. Jackett ships with three public indexers
-preconfigured; Prowlarr remains the indexer proxy wired into Sonarr and
-Radarr, so Jackett Torznab feeds are copied manually when needed.
+Optional acquisition apps remain individually available: Jackett, Bazarr,
+NZBGet, Unpackerr, Recyclarr, and Seerr. Prowlarr remains the indexer
+proxy wired into Sonarr and Radarr. Jackett ships with the same three
+public indexers when enabled; its Torznab feeds are copied manually.
 
 Seerr is not VPN-tunnelled. After enabling it, complete its setup wizard
 (point it at Emby), then add Sonarr and Radarr under Settings using host

@@ -5,11 +5,11 @@ import httpx
 
 
 class ArrClient:
-    def __init__(self, base: str, key: str, api: str = "v3"):
+    def __init__(self, base: str, key: str, api: str = "v3", timeout: float = 30.0):
         self.base = base.rstrip("/")
         self.api = api
         self.http = httpx.Client(
-            headers={"X-Api-Key": key}, timeout=30.0, follow_redirects=True
+            headers={"X-Api-Key": key}, timeout=timeout, follow_redirects=True
         )
 
     def _url(self, path: str) -> str:

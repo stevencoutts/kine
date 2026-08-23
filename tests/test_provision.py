@@ -352,3 +352,144 @@ def test_arr_wiring_registers_transmission_for_sonarr_and_radarr(monkeypatch):
     assert clients.count(("downloadclient", "Transmission", "Transmission")) == 2
     assert any("sonarr: download client Transmission" in m for m in logs)
     assert any("radarr: download client Transmission" in m for m in logs)
+
+
+def test_prowlarr_public_indexers_match_jackett_defaults():
+    from prowlarr_indexers import INDEXERS
+
+    assert INDEXERS["thepiratebay"]["apiurl"] == "apibay.org"
+    assert INDEXERS["thepiratebay"]["top100"] == 6
+    assert INDEXERS["1337x"]["sort"] == 2
+    assert INDEXERS["1337x"]["type"] == 1
+    assert INDEXERS["kickasstorrents-ws"]["sort"] == 2
+    assert INDEXERS["kickasstorrents-ws"]["type"] == 1
+
+
+def test_prowlarr_transmission_client_uses_loopback():
+    from recipes.prowlarr import transmission_client
+
+    client = transmission_client()
+    host = next(f for f in client["fields"] if f["name"] == "host")["value"]
+    assert host == "localhost"
+    assert client["categories"] == []
+    assert client["protocol"] == "torrent"
+
+
+def test_prowlarr_ensure_indexers_is_idempotent():
+    from prowlarr_indexers import INDEXERS, ensure_indexers
+
+    class FakeClient:
+        def __init__(self):
+            self.indexers = []
+            self.posted = []
+            self.puts = []
+
+        def get(self, path):
+            if path == "indexer/schema":
+                return [
+                    {
+                        "definitionName": name,
+                        "name": name.title(),
+                        "implementation": "Cardigann",
+                        "configContract": "CardigannSettings",
+                        "fields": [
+                            {"name": "definitionFile", "value": name, "type": "textbox"},
+                            *[
+                                {"name": key, "value": value, "type": "select"}
+                                for key, value in overrides.items()
+                            ],
+                        ],
+                    }
+                    for name, overrides in INDEXERS.items()
+                ]
+            if path == "indexer":
+                return self.indexers
+            raise AssertionError(path)
+
+        def post(self, path, payload):
+            self.posted.append((path, payload["enable"]))
+            self.indexers.append(
+                {
+                    "id": len(self.indexers) + 1,
+                    "definitionName": payload["fields"][0]["value"],
+                    "enable": payload["enable"],
+                    "fields": payload["fields"],
+                }
+            )
+
+        def put(self, path, payload):
+            self.puts.append((path, payload.get("enable")))
+            for item in self.indexers:
+                if item["id"] == payload["id"]:
+                    item.update({"enable": payload["enable"], "fields": payload["fields"]})
+
+    client = FakeClient()
+    logs = []
+    ensure_indexers(client, logs.append)
+    ensure_indexers(client, logs.append)
+    assert len(client.posted) == 3
+    assert len(client.puts) == 3
+    assert client.puts[0][1] is True
+    assert logs.count("prowlarr: configured indexer thepiratebay") == 1
+
+
+def test_prowlarr_configure_wires_indexers_and_transmission(monkeypatch):
+    import recipes.prowlarr as prowlarr
+
+    posted = []
+
+    class FakeClient:
+        def __init__(self, base, key, api="v1", timeout=30.0):
+            self.base, self.key, self.api, self.timeout = base, key, api, timeout
+            self.indexers = []
+
+        def wait(self):
+            return True
+
+        def ensure(self, path, payload, match_on="name"):
+            posted.append((path, payload.get(match_on), payload.get("implementation")))
+            return path == "downloadclient"
+
+        def get(self, path):
+            if path == "indexer/schema":
+                return [
+                    {
+                        "definitionName": "thepiratebay",
+                        "name": "The Pirate Bay",
+                        "implementation": "Cardigann",
+                        "configContract": "CardigannSettings",
+                        "fields": [
+                            {"name": "definitionFile", "value": "thepiratebay", "type": "textbox"},
+                            {"name": "apiurl", "value": "apibay.org", "type": "textbox"},
+                            {"name": "top100", "value": 6, "type": "select"},
+                        ],
+                    }
+                ]
+            if path == "indexer":
+                return self.indexers
+            raise AssertionError(path)
+
+        def post(self, path, payload):
+            posted.append((path, payload.get("name")))
+            self.indexers.append(
+                {
+                    "id": len(self.indexers) + 1,
+                    "definitionName": "thepiratebay",
+                    "enable": payload.get("enable"),
+                    "fields": payload["fields"],
+                }
+            )
+
+        def put(self, path, payload):
+            posted.append((path, payload.get("name")))
+
+    monkeypatch.setattr(prowlarr, "ArrClient", FakeClient)
+    monkeypatch.setattr(prowlarr, "resolve_key", lambda app: f"key-{app}")
+    logs = []
+    prowlarr.configure({"sonarr", "radarr", "transmission"}, logs.append)
+
+    assert ("applications", "Sonarr", "Sonarr") in posted
+    assert ("applications", "Radarr", "Radarr") in posted
+    assert ("downloadclient", "Transmission", "Transmission") in posted
+    assert any("prowlarr: configured indexer thepiratebay" in m for m in logs)
+    assert any("prowlarr: download client Transmission" in m for m in logs)

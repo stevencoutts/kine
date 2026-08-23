@@ -6,6 +6,7 @@ pre-wiring in the stack.
 """
 from arrclient import ArrClient
 from keys import resolve_key
+from prowlarr_indexers import ensure_indexers
 
 TARGETS = {
     "sonarr": ("Sonarr", "SonarrSettings", "http://localhost:8989"),
@@ -13,8 +14,34 @@ TARGETS = {
 }
 
 
+def transmission_client() -> dict:
+    return {
+        "enable": True,
+        "protocol": "torrent",
+        "priority": 1,
+        "categories": [],
+        "tags": [],
+        "name": "Transmission",
+        "implementation": "Transmission",
+        "configContract": "TransmissionSettings",
+        "fields": [
+            # Prowlarr and Transmission share gluetun's namespace.
+            {"name": "host", "value": "localhost"},
+            {"name": "port", "value": 9091},
+            {"name": "useSsl", "value": False},
+            {"name": "urlBase", "value": "/transmission/"},
+            {"name": "username", "value": ""},
+            {"name": "password", "value": ""},
+            {"name": "category", "value": ""},
+            {"name": "directory", "value": ""},
+            {"name": "priority", "value": 0},
+            {"name": "addPaused", "value": False},
+        ],
+    }
+
+
 def configure(enabled: set[str], log) -> None:
-    client = ArrClient("http://gluetun:9696", resolve_key("prowlarr"), api="v1")
+    client = ArrClient("http://gluetun:9696", resolve_key("prowlarr"), api="v1", timeout=120.0)
     if not client.wait():
         log("prowlarr: no API response, skipping wiring")
         return
@@ -37,3 +64,9 @@ def configure(enabled: set[str], log) -> None:
         }
         if client.ensure("applications", payload):
             log(f"prowlarr: linked {impl}")
+
+    ensure_indexers(client, log)
+
+    if "transmission" in enabled:
+        if client.ensure("downloadclient", transmission_client()):
+            log("prowlarr: download client Transmission")
