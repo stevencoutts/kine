@@ -19,6 +19,8 @@ from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
 from .wireguard import parse_conf as _parse_wireguard_conf
+from .wireguard import proton_clears as _proton_clears
+from .wireguard import write_gluetun_conf as _write_gluetun_conf
 
 _REPO = pathlib.Path(os.environ.get("KINE_REPO", "/repo"))
 FRONTEND = _REPO / "helm" / "frontend"
@@ -129,9 +131,22 @@ async def first_run(request: Request):
     vpn_enabled = bool(body.get("vpn_enabled", True))
     vpn_fields = {}
     if vpn_enabled:
-        vpn_fields = _parse_wireguard_conf(body.get("wireguard_conf", ""))
+        try:
+            vpn_fields = _parse_wireguard_conf(body.get("wireguard_conf", ""))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
         if "WIREGUARD_PRIVATE_KEY" not in vpn_fields:
-            raise HTTPException(400, "VPN is enabled: a valid WireGuard config is required")
+            raise HTTPException(
+                400,
+                "VPN is enabled: paste a WireGuard config that includes "
+                "[Interface] PrivateKey (and Address)",
+            )
+        if "WIREGUARD_ADDRESSES" not in vpn_fields:
+            raise HTTPException(
+                400,
+                "VPN is enabled: WireGuard config must include Address= "
+                "under [Interface]",
+            )
 
     updates = {
         k: str(body[v])
@@ -154,6 +169,15 @@ async def first_run(request: Request):
     if vpn_enabled:
         if "gluetun" not in wanted:
             wanted.append("gluetun")
+        wireguard_text = body.get("wireguard_conf", "")
+        is_custom = vpn_fields.get("VPN_SERVICE_PROVIDER") == "custom"
+        if is_custom:
+            vpn_fields.update(_proton_clears())
+        env = config.read()
+        stack_root = env.get("STACK_ROOT") or "/srv/kine"
+        await asyncio.to_thread(
+            _write_gluetun_conf, wireguard_text, stack_root, custom=is_custom
+        )
         config.write({"VPN_ENABLED": "true", **vpn_fields})
     else:
         # Nothing tunnelled-forced can run without it, so switching VPN
@@ -164,9 +188,40 @@ async def first_run(request: Request):
     config.set_profiles(wanted)
 
     if vpn_enabled:
-        code, _ = await compose.run("up", "-d", "--wait", "gluetun", timeout=180)
+        code, _ = await compose.run(
+            "up", "-d", "--force-recreate", "gluetun", timeout=120
+        )
         if code != 0:
-            raise HTTPException(500, "VPN could not start; check Gluetun logs")
+            _, logs = await compose.run("logs", "--tail", "30", "gluetun")
+            detail = (logs or "").strip().splitlines()
+            tail = " | ".join(detail[-5:]) if detail else "no gluetun logs"
+            raise HTTPException(500, f"VPN could not start ({tail})")
+        healthy = False
+        for _ in range(30):
+            _, status = await compose.run(
+                "inspect", "--format", "{{.State.Health.Status}}", "kine-gluetun"
+            )
+            status = (status or "").strip()
+            if status == "healthy":
+                healthy = True
+                break
+            if status == "unhealthy":
+                break
+            await asyncio.sleep(6)
+        if not healthy:
+            _, logs = await compose.run("logs", "--tail", "40", "gluetun")
+            detail = (logs or "").strip().splitlines()
+            tail = " | ".join(detail[-6:]) if detail else "no gluetun logs"
+            endpoint = vpn_fields.get("WIREGUARD_ENDPOINT_IP", "")
+            hint = (
+                f"Expected endpoint {endpoint}; if logs show different IPs, "
+                "update Helm and retry setup. "
+            ) if endpoint else ""
+            raise HTTPException(
+                500,
+                f"VPN health check failed ({hint}{tail}). "
+                "Check: docker logs kine-gluetun",
+            )
 
     # Only lock onboarding after every requested prerequisite succeeded,
     # so a bad tunnel configuration can be corrected and submitted again.
