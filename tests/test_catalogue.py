@@ -30,12 +30,17 @@ def test_defaults_match_catalogue_flags():
 
 def test_acquisition_defaults_exclude_optional_extras():
     acq = catalogue.tier_default_apps("acquisition")
-    assert acq == ["sonarr", "radarr", "prowlarr", "transmission"]
+    assert acq == ["sonarr", "radarr", "prowlarr", "transmission", "recyclarr"]
     assert "jackett" not in acq
     assert CATALOGUE["jackett"]["default"] is False
     assert "seerr" not in acq
     assert CATALOGUE["seerr"]["default"] is False
     assert CATALOGUE["seerr"].get("tunnelled") != "forced"
+
+
+def test_process_tier_defaults_to_tdarr():
+    assert catalogue.tier_default_apps("process") == ["tdarr"]
+    assert CATALOGUE["tdarr"]["tier"] == "process"
 
 
 def test_resolve_deps_pulls_in_gluetun():

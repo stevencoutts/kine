@@ -26,6 +26,7 @@ Untunnelled, on their own service names as usual:
 | Application | Address |
 |---|---|
 | Emby | `emby:8096` |
+| Tdarr | `tdarr:8265` (UI), `tdarr:8266` (server) |
 | Seerr | `seerr:5055` |
 | Dispatcharr | `dispatcharr:9191` |
 | ECM | `ecm:8080` |

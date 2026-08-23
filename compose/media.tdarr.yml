@@ -1,0 +1,43 @@
+# Untunnelled process-tier transcoder. Uses an internal node so a separate
+# tdarr_node container is not required. Library media is read/write so
+# remuxed files can replace sources; the transcode cache lives under
+# ${DATA_ROOT}/cache/tdarr (local disk, or NFS_CACHE when configured).
+services:
+  tdarr:
+    image: ghcr.io/haveagitgat/tdarr:${TDARR_TAG}
+    container_name: kine-tdarr
+    profiles: ["tdarr"]
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK_SET: ${UMASK}
+      TZ: ${KINE_TIMEZONE}
+      serverIP: 0.0.0.0
+      serverPort: "8266"
+      webUIPort: "8265"
+      internalNode: "true"
+      inContainer: "true"
+      ffmpegVersion: "7"
+      nodeName: kine-internal
+      auth: "false"
+      openBrowser: "false"
+    volumes:
+      - ${STACK_ROOT}/config/tdarr/server:/app/server
+      - ${STACK_ROOT}/config/tdarr/configs:/app/configs
+      - ${STACK_ROOT}/config/tdarr/logs:/app/logs
+      - ${DATA_ROOT}/media:/media
+      - ${DATA_ROOT}/cache/tdarr:/temp
+    devices:
+      - /dev/dri:/dev/dri
+    networks: [kine_internal, kine_edge]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8265/api/v2/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.tdarr.rule=Host(`tdarr.${KINE_DOMAIN}`) || Host(`tdarr.${KINE_LOCAL_DOMAIN}`)
+      - traefik.http.services.tdarr.loadbalancer.server.port=8265

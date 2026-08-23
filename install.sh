@@ -68,10 +68,11 @@ else
   warn "no /dev/dri/renderD128; hardware transcoding will be unavailable"
 fi
 
-mkdir -p "${STACK_ROOT}"/{config,backups} "${DATA_ROOT}"/{media,downloads}
-mkdir -p "${STACK_ROOT}"/config/{traefik/dynamic,traefik/certs,unpackerr,recyclarr,ecm,teamarr}
+mkdir -p "${STACK_ROOT}"/{config,backups} "${DATA_ROOT}"/{media,downloads,cache}
+mkdir -p "${STACK_ROOT}"/config/{traefik/dynamic,traefik/certs,unpackerr,recyclarr,ecm,teamarr,tdarr/{server,configs,logs}}
 mkdir -p "${DATA_ROOT}"/media/{movies,tv,sports,recordings}
 mkdir -p "${DATA_ROOT}"/downloads/{incomplete,complete/{tv-sonarr,radarr}}
+mkdir -p "${DATA_ROOT}/cache/tdarr"
 chown -R "${PUID_ACTUAL}:${PGID_ACTUAL}" "${STACK_ROOT}" "${DATA_ROOT}"
 chmod -R g+rwX "${DATA_ROOT}"
 ./scripts/mount-media.sh || warn "NFS mounts failed; using local directories"

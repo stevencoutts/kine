@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, catalogue, channels, compose, config, launch, scheduler
+from . import auth, catalogue, channels, compose, config, launch, nfs_exports, scheduler
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -458,12 +458,31 @@ async def vpn_leaktest(user: str = Depends(require_user)):
 
 
 # ── settings, backup, provisioning ──────────────────────────────
+_NFS_KEYS = ("NFS_SERVER", "NFS_TV", "NFS_MOVIES", "NFS_DOWNLOADS", "NFS_CACHE")
+
+
+@app.get("/api/nfs/exports")
+async def nfs_list_exports(server: str = "", user: str = Depends(require_user)):
+    """Browse exports advertised by an NFS server (showmount -e).
+
+    Does not mount anything. Applying mounts remains a host-side
+    ``sudo ./scripts/mount-media.sh`` step.
+    """
+    try:
+        exports = await asyncio.to_thread(nfs_exports.list_exports, server)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    return {"server": nfs_exports.validate_server(server), "exports": exports}
+
+
 @app.get("/api/settings")
 async def get_settings(user: str = Depends(require_user)):
     env = config.read()
     public = ("KINE_DOMAIN", "KINE_TLS_MODE", "KINE_ACME_EMAIL", "KINE_ACME_DNS_PROVIDER",
               "KINE_TIMEZONE", "STACK_ROOT", "DATA_ROOT", "HELM_UPDATE_CHECK_CRON",
-              "NFS_SERVER", "NFS_TV", "NFS_MOVIES", "NFS_DOWNLOADS")
+              *_NFS_KEYS)
     return {k: env.get(k, "") for k in public}
 
 
@@ -472,7 +491,7 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
     body = await request.json()
     allowed = {"KINE_DOMAIN", "KINE_TLS_MODE", "KINE_ACME_EMAIL",
                "KINE_ACME_DNS_PROVIDER", "KINE_TIMEZONE", "HELM_UPDATE_CHECK_CRON",
-               "NFS_SERVER", "NFS_TV", "NFS_MOVIES", "NFS_DOWNLOADS"}
+               *_NFS_KEYS}
     config.write({k: str(v) for k, v in body.items() if k in allowed})
     if {"KINE_TLS_MODE", "KINE_DOMAIN", "KINE_ACME_EMAIL"} & set(body):
         await compose.script("tls-setup.sh")
@@ -481,9 +500,7 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
         # Best-effort: mdns may not be enabled, and a missing container
         # is not a settings-save failure.
         await compose.run("restart", "mdns")
-    nfs_changed = bool(
-        {"NFS_SERVER", "NFS_TV", "NFS_MOVIES", "NFS_DOWNLOADS"} & set(body)
-    )
+    nfs_changed = bool(set(_NFS_KEYS) & set(body))
     return {"ok": True, "nfs_requires_host_mount": nfs_changed}
 
 

@@ -8,6 +8,7 @@ REPO = pathlib.Path(os.environ.get("KINE_REPO", "/repo"))
 TIER_LABELS = {
     "media": "Media",
     "acquisition": "Acquisition",
+    "process": "Process",
     "live": "Live TV",
     "platform": "Platform",
 }

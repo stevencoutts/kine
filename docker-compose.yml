@@ -14,6 +14,7 @@ include:
   - compose/core.mdns.yml
   - compose/vpn.gluetun.yml
   - compose/media.emby.yml
+  - compose/media.tdarr.yml
   - compose/acq.sonarr.yml
   - compose/acq.radarr.yml
   - compose/acq.prowlarr.yml

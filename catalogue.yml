@@ -17,6 +17,17 @@ apps:
     dev_tag: beta
     default: true
 
+  tdarr:
+    name: Tdarr
+    tier: process
+    summary: Library transcoding with a local or NFS-backed cache at /temp.
+    releases: https://github.com/HaveAGitGat/Tdarr/releases
+    internal: http://tdarr:8265
+    subdomain: tdarr
+    provides: [transcode]
+    # Official images publish latest; no separate develop channel.
+    default: true
+
   sonarr:
     name: Sonarr
     tier: acquisition
@@ -135,7 +146,7 @@ apps:
     tunnelled: forced
     # ghcr.io/recyclarr/recyclarr edge is the continuous build channel.
     dev_tag: edge
-    default: false
+    default: true
 
   seerr:
     name: Seerr

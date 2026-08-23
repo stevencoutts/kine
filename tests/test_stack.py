@@ -216,6 +216,21 @@ def test_seerr_is_untunnelled_with_official_image_and_traefik():
     assert "seerr" not in TUNNELLED
 
 
+def test_tdarr_is_untunnelled_with_media_and_cache_mounts():
+    _, tdarr = SERVICES["tdarr"]
+    assert tdarr["image"] == "ghcr.io/haveagitgat/tdarr:${TDARR_TAG}"
+    assert tdarr.get("network_mode") != "service:gluetun"
+    assert "kine_internal" in tdarr.get("networks", [])
+    vols = tdarr.get("volumes", [])
+    assert "${DATA_ROOT}/media:/media" in vols
+    assert "${DATA_ROOT}/cache/tdarr:/temp" in vols
+    labels = " ".join(str(label) for label in tdarr.get("labels", []))
+    assert "routers.tdarr.rule" in labels
+    assert "services.tdarr.loadbalancer.server.port=8265" in labels
+    assert "tdarr" not in TUNNELLED
+    assert CATALOGUE["tdarr"]["default"] is True
+    assert CATALOGUE["tdarr"]["tier"] == "process"
+
 def test_recyclarr_image_uses_published_tag():
     """GHCR publishes major-version tags (8), not latest."""
     env = {}

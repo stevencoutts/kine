@@ -15,7 +15,7 @@ ok()   { printf '\033[32m+ %s\033[0m\n' "$*"; }
 [[ -f "$REPO/.env" ]] || die ".env not found; run install.sh first"
 load_env "$REPO/.env"
 
-for value in "${NFS_SERVER:-}" "${NFS_TV:-}" "${NFS_MOVIES:-}" "${NFS_DOWNLOADS:-}"; do
+for value in "${NFS_SERVER:-}" "${NFS_TV:-}" "${NFS_MOVIES:-}" "${NFS_DOWNLOADS:-}" "${NFS_CACHE:-}"; do
   [[ "$value" != *[[:space:]]* ]] || die "NFS server and export paths cannot contain whitespace"
 done
 
@@ -40,6 +40,7 @@ write_fstab() {
     fstab_line "${DATA_ROOT}/media/tv" "${NFS_TV:-}"
     fstab_line "${DATA_ROOT}/media/movies" "${NFS_MOVIES:-}"
     fstab_line "${DATA_ROOT}/downloads" "${NFS_DOWNLOADS:-}"
+    fstab_line "${DATA_ROOT}/cache/tdarr" "${NFS_CACHE:-}"
     echo "# END kine-nfs"
   } >> "$tmp"
   install -m 644 "$tmp" /etc/fstab
@@ -79,7 +80,10 @@ mount_export() {
 }
 
 bold "Media storage mounts"
-if [[ -z "${NFS_TV:-}${NFS_MOVIES:-}${NFS_DOWNLOADS:-}" ]]; then
+# Always ensure local cache dir exists when NFS cache is unused.
+mkdir -p "${DATA_ROOT}/cache/tdarr"
+
+if [[ -z "${NFS_TV:-}${NFS_MOVIES:-}${NFS_DOWNLOADS:-}${NFS_CACHE:-}" ]]; then
   echo "No NFS exports configured; using local directories."
   exit 0
 fi
@@ -90,3 +94,4 @@ write_fstab
 mount_export "${DATA_ROOT}/media/tv" "${NFS_TV:-}" "TV"
 mount_export "${DATA_ROOT}/media/movies" "${NFS_MOVIES:-}" "Movies"
 mount_export "${DATA_ROOT}/downloads" "${NFS_DOWNLOADS:-}" "Downloads"
+mount_export "${DATA_ROOT}/cache/tdarr" "${NFS_CACHE:-}" "Tdarr cache"

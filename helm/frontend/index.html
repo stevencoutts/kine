@@ -95,9 +95,9 @@ const api = async (path, opts={}) => {
 };
 
 const state = { tab:'apps', apps:[], tiers:{},
-  collapsed:{media:true,acquisition:true,live:true,platform:true} };
+  collapsed:{media:true,acquisition:true,process:true,live:true,platform:true} };
 const TAB_LABELS = {apps:'Apps', updates:'Updates', vpn:'VPN', status:'Status', settings:'Settings'};
-const TIER_ORDER = ['media','acquisition','live','platform'];
+const TIER_ORDER = ['media','acquisition','process','live','platform'];
 
 // window.open(..., 'noopener') returns null on success in modern browsers,
 // so set opener manually and fall back to same-tab when a pop-up is blocked.
@@ -427,6 +427,26 @@ render.status = async () => {
 
 render.settings = async () => {
   const s = await api('/settings');
+  const nfsRole = (id, label, value, placeholder) => `<label>${label}</label>
+      <div class="row" style="gap:.5rem">
+        <select id="${id}_pick" style="flex:1">
+          <option value="">Type path manually…</option>
+        </select>
+      </div>
+      <input id="${id}" value="${value||''}" placeholder="${placeholder}">`;
+  const fillExports = (exports) => {
+    const roles = ['NFS_TV','NFS_MOVIES','NFS_DOWNLOADS','NFS_CACHE'];
+    roles.forEach(id => {
+      const sel = $('#'+id+'_pick');
+      const cur = $('#'+id).value;
+      sel.innerHTML = '<option value="">Type path manually…</option>' +
+        exports.map(p => `<option value="${p}" ${p===cur?'selected':''}>${p}</option>`).join('');
+      sel.onchange = () => { if (sel.value) $('#'+id).value = sel.value; };
+    });
+    $('#nfs-exports').textContent = exports.length
+      ? `${exports.length} export(s) found — pick a share or type a path.`
+      : '';
+  };
   render.shell(`
     <div class="section"><h2>Settings</h2><div class="card">
       <label>Domain</label><input id="KINE_DOMAIN" value="${s.KINE_DOMAIN}">
@@ -448,14 +468,21 @@ render.settings = async () => {
     </div></div>
     <div class="section"><h2>Media Storage</h2><div class="card">
       <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
-        Optional NFS mounts. Exports are mounted onto the local tree under
-        <code>${s.DATA_ROOT||'/srv/media-data'}</code> before containers start.
-        Enabled apps are already wired to <code>/data/media/tv</code>,
-        <code>/data/media/movies</code> and <code>/data/downloads</code>.</p>
-      <label>NFS Server</label><input id="NFS_SERVER" value="${s.NFS_SERVER||''}" placeholder="192.168.1.10">
-      <label>TV Export Path</label><input id="NFS_TV" value="${s.NFS_TV||''}" placeholder="/media/TV">
-      <label>Movies Export Path</label><input id="NFS_MOVIES" value="${s.NFS_MOVIES||''}" placeholder="/media/Movies">
-      <label>Downloads Export Path</label><input id="NFS_DOWNLOADS" value="${s.NFS_DOWNLOADS||''}" placeholder="/media/downloads">
+        Optional NFS mounts. Browse the server's exports, pick a share for each
+        role, or type a path manually. Mounts are applied on the host under
+        <code>${s.DATA_ROOT||'/srv/media-data'}</code> with
+        <code>sudo ./scripts/mount-media.sh</code>. Leave Tdarr cache empty to
+        use local disk at <code>cache/tdarr</code>.</p>
+      <label>NFS Server</label>
+      <div class="row">
+        <input id="NFS_SERVER" value="${s.NFS_SERVER||''}" placeholder="192.168.1.10" style="flex:1">
+        <button class="act" id="browse-nfs" type="button">Browse</button>
+      </div>
+      <div id="nfs-exports" style="margin:.5rem 0;color:var(--muted);font-size:.85rem"></div>
+      ${nfsRole('NFS_TV','TV Export', s.NFS_TV, '/media/TV')}
+      ${nfsRole('NFS_MOVIES','Movies Export', s.NFS_MOVIES, '/media/Movies')}
+      ${nfsRole('NFS_DOWNLOADS','Downloads Export', s.NFS_DOWNLOADS, '/media/downloads')}
+      ${nfsRole('NFS_CACHE','Tdarr Cache Export', s.NFS_CACHE, '/media/cache')}
       <div class="row" style="margin-top:1rem">
         <button class="act primary" id="save-nfs">Save NFS Settings</button>
       </div>
@@ -467,8 +494,20 @@ render.settings = async () => {
       body: JSON.stringify(Object.fromEntries(keys.map(k=>[k,$('#'+k).value])))});
     $('#msg').innerHTML = '<div class="banner ok">Saved. Certificates may take a minute.</div>';
   };
+  $('#browse-nfs').onclick = async () => {
+    const server = $('#NFS_SERVER').value.trim();
+    $('#nfs-exports').textContent = 'Browsing…';
+    $('#nfs-msg').innerHTML = '';
+    try {
+      const r = await api('/nfs/exports?server=' + encodeURIComponent(server));
+      fillExports(r.exports || []);
+    } catch (e) {
+      $('#nfs-exports').textContent = '';
+      $('#nfs-msg').innerHTML = `<div class="banner bad">${e.message || 'Browse failed'}</div>`;
+    }
+  };
   $('#save-nfs').onclick = async () => {
-    const keys = ['NFS_SERVER','NFS_TV','NFS_MOVIES','NFS_DOWNLOADS'];
+    const keys = ['NFS_SERVER','NFS_TV','NFS_MOVIES','NFS_DOWNLOADS','NFS_CACHE'];
     await api('/settings', {method:'POST',
       body: JSON.stringify(Object.fromEntries(keys.map(k=>[k,$('#'+k).value])))});
     $('#nfs-msg').innerHTML = '<div class="banner ok">Saved. Apply on the host with <code>sudo ./scripts/mount-media.sh</code>.</div>';

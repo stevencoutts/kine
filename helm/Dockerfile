@@ -5,7 +5,7 @@ FROM python:3.12-slim
 ARG TARGETARCH
 ARG COMPOSE_VERSION=v2.32.4
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl ca-certificates docker-cli \
+      curl ca-certificates docker-cli nfs-common \
     && rm -rf /var/lib/apt/lists/* \
     && case "${TARGETARCH}" in \
          amd64) COMPOSE_ARCH=x86_64 ;; \

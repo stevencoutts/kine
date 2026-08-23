@@ -99,7 +99,7 @@ NZBGet, Unpackerr, Recyclarr, and Seerr. Prowlarr remains the indexer
 proxy wired into Sonarr and Radarr. Jackett ships with the same three
 public indexers when enabled; its Torznab feeds are copied manually.
 
-Recyclarr is off by default. When enabled it syncs TRaSH Guide 1080p
+Recyclarr is an acquisition default. When enabled it syncs TRaSH Guide 1080p
 quality profiles and custom formats into Sonarr (`WEB-1080p`) and Radarr
 (`HD Bluray + WEB`) on a daily cron schedule. Config is seeded under
 `${STACK_ROOT}/config/recyclarr/` before first start; `./kine provision`
@@ -113,6 +113,11 @@ quality profiles (`WEB-1080p` / `HD Bluray + WEB`, falling back to stock
 updates an existing Seerr server entry when its active profile is wrong.
 Finish the wizard Configure Services step (or skip it if provision already
 filled it) when prompted.
+
+Tdarr lives in the **Process** tier (not tunnelled). Enable the Process
+section from Apps, then point libraries at `/media/...` in its UI. Transcode
+cache is `${DATA_ROOT}/cache/tdarr` on local disk, or the NFS export assigned
+as `NFS_CACHE` after `sudo ./scripts/mount-media.sh`.
 
 Important defaults:
 
@@ -190,14 +195,20 @@ certificate warning as the production-domain URLs until its CA is trusted.
 ## NFS storage
 
 NFS is mounted by the **Linux host**, not by Helm or an application container.
-Set any required exports in `.env`:
+In **Settings → Media Storage**, enter the NFS server and click **Browse** to
+list exports (`showmount -e`). Pick a share for TV, Movies, Downloads, and the
+Tdarr cache, or type a path manually. Values are saved to `.env`:
 
 ```dotenv
 NFS_SERVER=192.168.1.10
 NFS_TV=/exports/media/tv
 NFS_MOVIES=/exports/media/movies
 NFS_DOWNLOADS=/exports/downloads
+NFS_CACHE=/exports/cache
 ```
+
+Leave `NFS_CACHE` empty to keep Tdarr's transcode cache on local disk under
+`${DATA_ROOT}/cache/tdarr`.
 
 Apply the settings as root:
 
@@ -210,6 +221,7 @@ The script manages a `# BEGIN kine-nfs` block in `/etc/fstab` and mounts:
 - `NFS_TV` at `${DATA_ROOT}/media/tv`
 - `NFS_MOVIES` at `${DATA_ROOT}/media/movies`
 - `NFS_DOWNLOADS` at `${DATA_ROOT}/downloads`
+- `NFS_CACHE` at `${DATA_ROOT}/cache/tdarr` (optional)
 
 Separate NFS mount points cannot hardlink to one another, even when they are
 exports from the same server. If hardlinks matter, export and mount one common
@@ -221,7 +233,8 @@ stat -c '%d' /srv/media-data/media /srv/media-data/downloads
 ```
 
 After changing NFS settings in Helm, run `mount-media.sh` on the host; Helm
-only saves the values. Stop dependent containers before changing a live mount.
+only saves the values (and can browse exports). Stop dependent containers
+before changing a live mount.
 
 ## VPN and TUN behavior
 
