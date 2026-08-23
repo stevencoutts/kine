@@ -43,8 +43,7 @@ http_port="${TRAEFIK_HTTP_PORT:-8080}"
 https_port="${TRAEFIK_HTTPS_PORT:-8443}"
 for p in "$http_port" "$https_port"; do
   if port_busy "$p"; then
-    bad "port $p already in use"
-    echo "    Change TRAEFIK_HTTP_PORT / TRAEFIK_HTTPS_PORT in .env and re-run."
+    bad "port $p already in use (install should have reassigned Traefik ports)"
   else
     ok "port $p free (Traefik)"
   fi

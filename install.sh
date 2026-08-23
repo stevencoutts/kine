@@ -16,10 +16,9 @@ ok()   { printf '\033[32m+ %s\033[0m\n' "$*"; }
 bold "Kine installer"
 echo
 
-# ── 1. Preflight ────────────────────────────────────────────────
-./scripts/preflight.sh || die "preflight failed; fix the above and re-run"
-
-# ── 2. Configuration ────────────────────────────────────────────
+# ── 1. Configuration ────────────────────────────────────────────
+# Create .env before preflight so ports and paths can be filled in
+# automatically — nobody should need to hand-edit for a first install.
 if [[ ! -f .env ]]; then
   cp .env.example .env
   ok "created .env"
@@ -30,10 +29,37 @@ if [[ ! -f .env ]]; then
   sedi "s|^HELM_SESSION_SECRET=.*|HELM_SESSION_SECRET=$(openssl rand -hex 32)|" .env
   ok "generated secrets"
 else
-  ok ".env already present, leaving it alone"
+  ok ".env already present"
 fi
 
+if merge_missing_env_keys .env .env.example; then
+  ok "merged missing keys from .env.example into .env"
+fi
 load_env .env
+# Defensive defaults so a partial .env cannot trip set -u later.
+: "${STACK_ROOT:=/srv/kine}"
+: "${DATA_ROOT:=/srv/media-data}"
+: "${KINE_DOMAIN:=kine.local}"
+: "${KINE_TLS_MODE:=internal}"
+: "${HELM_PORT:=8600}"
+: "${COMPOSE_PROFILES:=mdns}"
+: "${TRAEFIK_HTTP_PORT:=8080}"
+: "${TRAEFIK_HTTPS_PORT:=8443}"
+export STACK_ROOT DATA_ROOT KINE_DOMAIN KINE_TLS_MODE HELM_PORT COMPOSE_PROFILES
+export TRAEFIK_HTTP_PORT TRAEFIK_HTTPS_PORT
+
+# If 8080/8443 (or whatever is in .env) are taken, pick the next free
+# pair and write them back — no manual .env editing required.
+ports_rc=0
+ensure_traefik_ports .env || ports_rc=$?
+case $ports_rc in
+  0) ok "Traefik ports busy; using ${TRAEFIK_HTTP_PORT}/${TRAEFIK_HTTPS_PORT}" ;;
+  1) ok "Traefik ports ${TRAEFIK_HTTP_PORT}/${TRAEFIK_HTTPS_PORT} free" ;;
+  *) die "could not find free Traefik HTTP/HTTPS ports" ;;
+esac
+
+# ── 2. Preflight ────────────────────────────────────────────────
+./scripts/preflight.sh || die "preflight failed; fix the above and re-run"
 
 # ── 3. Service user and directories ─────────────────────────────
 if is_darwin; then
@@ -123,8 +149,10 @@ docker compose run --rm provision wire
 # ── 8. Done ─────────────────────────────────────────────────────
 echo
 bold "Ready"
-echo "  Admin GUI   https://admin.${KINE_DOMAIN}    (or http://$(local_ip):${HELM_PORT})"
-echo "  Emby        https://emby.${KINE_DOMAIN}"
+https_port="${TRAEFIK_HTTPS_PORT:-8443}"
+https_suffix=""; [[ "$https_port" == "443" ]] || https_suffix=":${https_port}"
+echo "  Admin GUI   https://admin.${KINE_DOMAIN}${https_suffix}    (or http://$(local_ip):${HELM_PORT})"
+echo "  Emby        https://emby.${KINE_DOMAIN}${https_suffix}"
 echo
 echo "Finish setup in the admin GUI: set the admin password, then add"
 echo "your VPN key and indexer accounts. Everything else is already wired."

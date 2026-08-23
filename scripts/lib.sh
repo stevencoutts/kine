@@ -18,6 +18,38 @@ load_env() {
   done < "$file"
 }
 
+# Append keys from .env.example that are missing from an existing .env.
+# Keeps hand-edited values; fills gaps after upgrades or partial copies.
+merge_missing_env_keys() {
+  local env_file="${1:-.env}" example="${2:-.env.example}" line key
+  local -a existing=()
+  [[ -f "$env_file" && -f "$example" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ "$line" != *=* || "$line" =~ ^[[:space:]]*# ]] && continue
+    key="${line%%=*}"
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    existing+=("$key")
+  done < "$env_file"
+  local added=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# || "$line" != *=* ]] && continue
+    key="${line%%=*}"
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    local found=0 k
+    for k in "${existing[@]+"${existing[@]}"}"; do
+      [[ "$k" == "$key" ]] && { found=1; break; }
+    done
+    if [[ $found -eq 0 ]]; then
+      printf '%s\n' "$line" >> "$env_file"
+      existing+=("$key")
+      added=1
+    fi
+  done < "$example"
+  [[ $added -eq 1 ]]
+}
+
 is_darwin() { [[ "$(uname)" == "Darwin" ]]; }
 
 # In-place sed: GNU wants `-i pattern`, BSD/macOS requires `-i ''`.
@@ -40,6 +72,58 @@ avail_gb() {
 # /dev/tcp instead of `ss`, which macOS doesn't have.
 port_busy() {
   (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null
+}
+
+# Next free TCP port at or above ``start``, skipping ``avoid`` when set.
+find_free_port() {
+  local start="${1:?}" avoid="${2:-}"
+  local p=$start
+  while (( p < 65535 )); do
+    if [[ -n "$avoid" && "$p" -eq "$avoid" ]]; then
+      p=$((p + 1))
+      continue
+    fi
+    if ! port_busy "$p"; then
+      echo "$p"
+      return 0
+    fi
+    p=$((p + 1))
+  done
+  return 1
+}
+
+# Ensure Traefik host ports in .env are free; rewrite when taken.
+# Returns 0 when it changed .env, 1 when ports were already free.
+ensure_traefik_ports() {
+  local env_file="${1:-.env}"
+  local http https new_http new_https
+  http="${TRAEFIK_HTTP_PORT:-8080}"
+  https="${TRAEFIK_HTTPS_PORT:-8443}"
+  new_http=$http
+  new_https=$https
+  if port_busy "$http"; then
+    new_http=$(find_free_port "$http") || return 2
+  fi
+  if port_busy "$https" || [[ "$https" == "$new_http" ]]; then
+    local start=$https
+    (( start <= new_http )) && start=$((new_http + 1))
+    new_https=$(find_free_port "$start" "$new_http") || return 2
+  fi
+  if [[ "$new_http" == "$http" && "$new_https" == "$https" ]]; then
+    return 1
+  fi
+  if grep -q '^TRAEFIK_HTTP_PORT=' "$env_file"; then
+    sedi "s|^TRAEFIK_HTTP_PORT=.*|TRAEFIK_HTTP_PORT=${new_http}|" "$env_file"
+  else
+    printf 'TRAEFIK_HTTP_PORT=%s\n' "$new_http" >> "$env_file"
+  fi
+  if grep -q '^TRAEFIK_HTTPS_PORT=' "$env_file"; then
+    sedi "s|^TRAEFIK_HTTPS_PORT=.*|TRAEFIK_HTTPS_PORT=${new_https}|" "$env_file"
+  else
+    printf 'TRAEFIK_HTTPS_PORT=%s\n' "$new_https" >> "$env_file"
+  fi
+  export TRAEFIK_HTTP_PORT="$new_http" TRAEFIK_HTTPS_PORT="$new_https"
+  return 0
 }
 
 # Best-effort LAN IP for the "open this URL" hint. hostname -I is Linux-only.

@@ -84,6 +84,66 @@ def test_shell_env_loader_does_not_expand_password_hash(tmp_path):
     ]
 
 
+def test_merge_missing_env_keys_fills_gaps_without_clobbering(tmp_path):
+    example = tmp_path / ".env.example"
+    env_file = tmp_path / ".env"
+    example.write_text(
+        "STACK_ROOT=/srv/kine\n"
+        "DATA_ROOT=/srv/media-data\n"
+        "CUSTOM=keep-me\n"
+    )
+    env_file.write_text("CUSTOM=already-set\nDATA_ROOT=/custom/data\n")
+    result = subprocess.run(
+        [
+            "bash", "-c",
+            'source scripts/lib.sh; merge_missing_env_keys "$1" "$2"; cat "$1"',
+            "bash", str(env_file), str(example),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    text = result.stdout
+    assert "CUSTOM=already-set" in text
+    assert "DATA_ROOT=/custom/data" in text
+    assert "STACK_ROOT=/srv/kine" in text
+    assert text.count("CUSTOM=") == 1
+
+
+def test_ensure_traefik_ports_rewrites_busy_defaults(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("TRAEFIK_HTTP_PORT=8080\nTRAEFIK_HTTPS_PORT=8443\n")
+    script = r'''
+source scripts/lib.sh
+port_busy() {
+  case "$1" in
+    8080|8443) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+export -f port_busy
+export TRAEFIK_HTTP_PORT=8080 TRAEFIK_HTTPS_PORT=8443
+ensure_traefik_ports "$1"
+echo "rc:$?"
+echo "http:$TRAEFIK_HTTP_PORT"
+echo "https:$TRAEFIK_HTTPS_PORT"
+cat "$1"
+'''
+    result = subprocess.run(
+        ["bash", "-c", script, "bash", str(env_file)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "rc:0" in result.stdout
+    assert "http:8081" in result.stdout
+    assert "https:8444" in result.stdout
+    assert "TRAEFIK_HTTP_PORT=8081" in env_file.read_text()
+    assert "TRAEFIK_HTTPS_PORT=8444" in env_file.read_text()
+
+
 def test_leaktest_probes_from_inside_gluetun():
     script = VPN_LEAKTEST.read_text()
     assert "docker exec kine-gluetun wget" in script

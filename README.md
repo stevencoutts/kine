@@ -28,9 +28,8 @@ below.
 - Linux x86_64 with Bash, Python 3, PyYAML, OpenSSL, and standard GNU user and
   filesystem tools
 - Docker Engine and Docker Compose **2.20+** (`include:` is required)
-- free TCP ports for Traefik (defaults **8080** / **8443**; set
-  `TRAEFIK_HTTP_PORT` / `TRAEFIK_HTTPS_PORT` in `.env`, or use `80` / `443`
-  when those are free)
+- free TCP ports for Traefik (defaults **8080** / **8443**; `install.sh`
+  picks the next free ports automatically when those are taken)
 - `/dev/net/tun` for gluetun
 - one filesystem mounted at `DATA_ROOT` for both media and downloads if you
   want hardlinks and atomic imports
@@ -61,8 +60,10 @@ each `env_file` before the provisioner can populate it.
 
 The installer is idempotent. On its first run it:
 
-1. checks Compose, ports, storage, TUN, and optional GPU support;
-2. creates `.env` from `.env.example` and generates the master/session secrets;
+1. creates `.env` from `.env.example` (or merges any missing keys into an
+   existing one), generates secrets, and picks free Traefik HTTP/HTTPS ports
+   when the defaults are already in use;
+2. checks Compose, storage, TUN, and optional GPU support;
 3. creates the `kine` service user and the data/config directories;
 4. prepares TLS, seeds application configuration, starts the enabled profiles,
    and runs the provisioner.
