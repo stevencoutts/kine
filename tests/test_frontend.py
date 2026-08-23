@@ -32,7 +32,14 @@ def test_vpn_api_derives_display_from_tunnel_type():
 
 
 def test_app_sections_start_collapsed():
-    assert "collapsed:{media:true,acquisition:true,live:true,platform:true}" in FRONTEND
+    assert "collapsed:{media:true,acquisition:true,process:true,live:true,platform:true}" in FRONTEND
+    assert "manualCollapse" in FRONTEND
+    assert "meta.enabled && !state.manualCollapse[tier]" in FRONTEND
+
+
+def test_tier_section_enabled_when_any_app_on():
+    assert "any(app in enabled for app in visible)" in BACKEND
+    assert "all(app in enabled for app in defaults)" not in BACKEND
 
 
 def test_tier_enable_starts_only_requested_defaults():

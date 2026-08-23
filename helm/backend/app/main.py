@@ -176,11 +176,9 @@ async def first_run(request: Request):
 
 # ── catalogue and lifecycle ─────────────────────────────────────
 def _tier_section_enabled(tier: str, enabled: set[str]) -> bool:
-    defaults = catalogue.tier_default_apps(tier)
-    if not defaults:
-        visible = catalogue.tier_visible_apps(tier)
-        return bool(visible) and all(app in enabled for app in visible)
-    return all(app in enabled for app in defaults)
+    """Section is on when any visible app in the tier is enabled."""
+    visible = catalogue.tier_visible_apps(tier)
+    return any(app in enabled for app in visible)
 
 
 @app.get("/api/apps")

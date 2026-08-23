@@ -117,7 +117,8 @@ const api = async (path, opts={}) => {
 };
 
 const state = { tab:'apps', apps:[], tiers:{},
-  collapsed:{media:true,acquisition:true,process:true,live:true,platform:true} };
+  collapsed:{media:true,acquisition:true,process:true,live:true,platform:true},
+  manualCollapse:{} };
 const TAB_LABELS = {apps:'Apps', updates:'Updates', vpn:'VPN', status:'Status', settings:'Settings'};
 const TIER_ORDER = ['media','acquisition','process','live','platform'];
 
@@ -281,6 +282,13 @@ render.apps = async () => {
   const data = await api('/apps');
   state.apps = data.apps;
   state.tiers = data.tiers;
+  // Enabled sections open by default; keep a manual collapse for this session.
+  TIER_ORDER.forEach(tier => {
+    const meta = state.tiers[tier];
+    if (!meta) return;
+    if (meta.enabled && !state.manualCollapse[tier]) state.collapsed[tier] = false;
+    if (!meta.enabled && !state.manualCollapse[tier]) state.collapsed[tier] = true;
+  });
   const body = '<div id="tier-msg"></div>' + TIER_ORDER.map(tier => {
     const meta = state.tiers[tier];
     if (!meta) return '';
@@ -321,6 +329,10 @@ render.apps = async () => {
         el.disabled = true;
         try {
           await api(`/tiers/${el.dataset.tier}/${el.checked?'enable':'disable'}`, {method:'POST'});
+          if (el.checked) {
+            state.collapsed[el.dataset.tier] = false;
+            state.manualCollapse[el.dataset.tier] = false;
+          }
           render.apps();
         } catch (e) {
           el.checked = !el.checked;
@@ -332,6 +344,7 @@ render.apps = async () => {
       };
     } else if (el.classList.contains('collapse')) {
       el.onclick = () => {
+        state.manualCollapse[el.dataset.tier] = true;
         state.collapsed[el.dataset.tier] = !state.collapsed[el.dataset.tier];
         render.apps();
       };
