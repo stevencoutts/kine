@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, catalogue, channels, compose, config, launch, nfs_exports, scheduler
+from . import auth, catalogue, channels, compose, config, launch, library_rescan, nfs_exports, scheduler
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -565,9 +565,12 @@ async def nfs_browse(server: str = "", path: str = "", user: str = Depends(requi
 @app.post("/api/nfs/apply")
 async def nfs_apply_mounts(user: str = Depends(require_user)):
     try:
-        return await asyncio.to_thread(nfs_exports.apply_mounts_via_agent)
+        result = await asyncio.to_thread(nfs_exports.apply_mounts_via_agent)
     except RuntimeError as exc:
         raise HTTPException(502, str(exc)) from exc
+    if result.get("ok"):
+        result["rescan"] = await asyncio.to_thread(library_rescan.after_nfs_mount)
+    return result
 
 
 @app.get("/api/settings")
@@ -600,6 +603,11 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
             nfs_mount = await asyncio.to_thread(nfs_exports.apply_mounts_via_agent)
         except RuntimeError as exc:
             nfs_mount = {"ok": False, "log": str(exc)}
+        if nfs_mount and nfs_mount.get("ok"):
+            changed = set(body) & set(_NFS_KEYS)
+            nfs_mount["rescan"] = await asyncio.to_thread(
+                library_rescan.after_nfs_mount, changed
+            )
     return {"ok": True, "nfs_mount": nfs_mount}
 
 

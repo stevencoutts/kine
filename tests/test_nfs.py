@@ -30,6 +30,7 @@ Export list for 192.168.1.10:
 
 def test_helm_applies_nfs_mounts_via_agent():
     assert "apply_mounts_via_agent" in MAIN
+    assert "library_rescan.after_nfs_mount" in MAIN
     assert "nfs_mount" in MAIN
     assert 'compose.script("mount-media.sh")' not in MAIN
 

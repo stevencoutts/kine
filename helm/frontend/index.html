@@ -608,9 +608,17 @@ render.settings = async () => {
   });
   const nfsMountMessage = (result) => {
     if (!result) return '<div class="banner ok">Saved.</div>';
+    const rescan = result.rescan;
+    const rescanLines = (rescan?.results || [])
+      .map(item => `${item.app}: ${item.ok ? item.message : item.message}`)
+      .join('\n');
+    const rescanBlock = rescanLines
+      ? `<pre style="margin:.5rem 0 0;font-size:.75rem;white-space:pre-wrap">${rescanLines}</pre>`
+      : '';
     if (result.ok) {
       const detail = result.log ? `<pre style="margin:.5rem 0 0;font-size:.75rem;white-space:pre-wrap">${result.log}</pre>` : '';
-      return `<div class="banner ok">Saved and NFS mounts applied.${detail}</div>`;
+      const rescanTitle = rescan?.skipped ? '' : (rescanLines ? ' Library rescans triggered.' : '');
+      return `<div class="banner ok">Saved and NFS mounts applied.${rescanTitle}${detail}${rescanBlock}</div>`;
     }
     const detail = result.log ? `<pre style="margin:.5rem 0 0;font-size:.75rem;white-space:pre-wrap">${result.log}</pre>` : '';
     return `<div class="banner bad">Saved settings but mounts failed.${detail}</div>`;
