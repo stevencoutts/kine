@@ -20,7 +20,10 @@ from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
 from .wireguard import parse_conf as _parse_wireguard_conf
 
-FRONTEND = pathlib.Path(__file__).resolve().parents[2] / "frontend"
+_REPO = pathlib.Path(os.environ.get("KINE_REPO", "/repo"))
+FRONTEND = _REPO / "helm" / "frontend"
+if not (FRONTEND / "index.html").is_file():
+    FRONTEND = pathlib.Path(__file__).resolve().parents[2] / "frontend"
 app = FastAPI(title="Kine Helm", docs_url=None, redoc_url=None)
 
 COOKIE = "kine_session"
@@ -532,4 +535,7 @@ app.mount("/assets", StaticFiles(directory=FRONTEND), name="assets")
 
 @app.get("/{path:path}")
 async def spa(path: str):
-    return FileResponse(FRONTEND / "index.html")
+    return FileResponse(
+        FRONTEND / "index.html",
+        headers={"Cache-Control": "no-cache"},
+    )
