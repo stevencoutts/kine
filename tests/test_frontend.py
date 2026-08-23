@@ -155,3 +155,27 @@ def test_helm_uses_grey_brand_and_favicon():
     assert 'href="/assets/favicon.svg"' in FRONTEND
     assert 'class="brand-mark"' in FRONTEND
     assert (ROOT / "helm" / "frontend" / "favicon.svg").is_file()
+
+
+# ── stats page ──────────────────────────────────────────────────
+def test_stats_tab_is_in_the_nav():
+    assert "stats:'Stats'" in FRONTEND.replace(" ", "")
+    assert "render.stats" in FRONTEND
+
+
+def test_stats_embeds_solo_panels_from_the_overview_dashboard():
+    assert "/d-solo/kine-overview" in FRONTEND
+    assert "kiosk" in FRONTEND
+
+
+def test_apps_page_asks_for_sparkline_data():
+    assert "/stats/cards" in FRONTEND
+
+
+def test_metrics_tier_is_ordered_with_the_others():
+    assert "'metrics'" in FRONTEND
+
+
+def test_stats_endpoints_exist_in_the_backend():
+    assert '"/api/stats/cards"' in BACKEND
+    assert '"/api/metrics"' in BACKEND

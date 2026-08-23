@@ -109,6 +109,14 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
 .watch-bar{height:4px;margin-top:.45rem;border-radius:999px;
   background:color-mix(in srgb, var(--line) 70%, transparent);overflow:hidden}
 .watch-bar i{display:block;height:100%;border-radius:999px;background:var(--ok)}
+.panel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:.75rem}
+.panel-grid iframe{width:100%;height:210px;border:0;border-radius:10px;
+  background:color-mix(in srgb, var(--panel) 60%, transparent)}
+.panel-grid iframe.tall{grid-column:span 2;height:260px}
+@media (max-width:760px){.panel-grid iframe.tall{grid-column:span 1}}
+.spark{display:block;width:100%;height:26px;margin:.5rem 0 0;opacity:.9}
+.spark path{fill:none;stroke:var(--accent);stroke-width:1.5;vector-effect:non-scaling-stroke}
+.spark path.fill{fill:color-mix(in srgb, var(--accent) 20%, transparent);stroke:none}
 .tier-switch{position:relative;display:inline-flex;align-items:center;flex:none;cursor:pointer}
 .tier-switch input{position:absolute;opacity:0;width:0;height:0;margin:0}
 .tier-switch-ui{display:inline-flex;align-items:center;width:2.6rem;height:1.35rem;
@@ -189,8 +197,8 @@ const state = { tab:'apps', apps:[], tiers:{}, activeTier:null, watchTimer:null 
 const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({
   '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
 }[c]));
-const TAB_LABELS = {apps:'Apps', updates:'Updates', vpn:'VPN', status:'Status', settings:'Settings'};
-const TIER_ORDER = ['media','acquisition','process','live','platform'];
+const TAB_LABELS = {apps:'Apps', stats:'Stats', updates:'Updates', vpn:'VPN', status:'Status', settings:'Settings'};
+const TIER_ORDER = ['media','acquisition','process','live','metrics','platform'];
 
 // window.open(..., 'noopener') returns null on success in modern browsers,
 // so set opener manually and fall back to same-tab when a pop-up is blocked.
@@ -231,7 +239,7 @@ render.shell = (body) => {
         <h1>Kine</h1>
       </div>
       <nav>
-        ${['apps','updates','vpn','status','settings'].map(t =>
+        ${['apps','stats','updates','vpn','status','settings'].map(t =>
           `<button class="${state.tab===t?'active':''}" data-tab="${t}">${TAB_LABELS[t]}</button>`
         ).join('')}
       </nav>
@@ -409,10 +417,25 @@ const watchPanel = (w) => {
   return `<div class="watch-list">${rows}</div>
     ${errors ? `<p style="color:var(--warn);font-size:.8rem;margin:.75rem 0 0">${escHtml(errors)}</p>` : ''}`;
 };
+// Drawn inline rather than embedded: one Prometheus query feeds every
+// card, where twenty iframes would be twenty round trips.
+const sparkline = (values, w = 100, h = 26) => {
+  if (!values || values.length < 2) return '';
+  const max = Math.max(...values, 0.0001);
+  const step = w / (values.length - 1);
+  const line = values.map((v, i) =>
+    `${i ? 'L' : 'M'}${(i * step).toFixed(1)},${(h - (v / max) * (h - 2)).toFixed(1)}`
+  ).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">` +
+    `<path class="fill" d="${line} L${w},${h} L0,${h} Z"></path>` +
+    `<path d="${line}"></path></svg>`;
+};
+
 const appCard = a => `
   <div class="card">
     <h3><span class="dot ${a.running?'on':'off'}"></span>${a.name}</h3>
     <p>${a.summary}</p>
+    <div data-spark="${a.id}"></div>
     ${a.tunnelled==='forced'?'<p style="color:var(--warn)">Always Tunnelled</p>':''}
     ${a.dev_supported ? `<label class="tier-switch" style="margin:.15rem 0" aria-label="Dev Version">
       <input type="checkbox" data-dev="${a.id}" ${a.dev_enabled?'checked':''}>
@@ -533,6 +556,64 @@ render.apps = async () => {
   document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
     launchApp(state.apps.find(a => a.id === b.dataset.open));
   });
+  // Fired after the cards are in the DOM: the page must not wait on
+  // Prometheus, and renders unchanged when metrics are off.
+  api('/stats/cards').then(stats => {
+    Object.entries(stats.apps || {}).forEach(([id, series]) => {
+      const host = document.querySelector(`[data-spark="${id}"]`);
+      if (host) host.innerHTML = sparkline(series.cpu);
+    });
+  }).catch(() => {});
+};
+
+render.stats = async () => {
+  render.shell('<div class="card"><h3>Stats</h3><p>Loading&hellip;</p></div>');
+  const data = await api('/apps').catch(() => ({apps: []}));
+  const grafana = (data.apps || []).find(a => a.id === 'grafana');
+  if (!grafana || !grafana.enabled || !grafana.url) {
+    render.shell(`
+      <div class="card">
+        <h3>Stats</h3>
+        <p>The Metrics section is off, so there is nothing to graph yet.
+           Turning it on starts Prometheus, cAdvisor, node-exporter and
+           Grafana. History begins accumulating from that moment, so the
+           graphs fill in over the following hours.</p>
+        <div class="row"><button class="act primary" id="enable-metrics">Enable Metrics</button></div>
+        <div id="metrics-msg"></div>
+      </div>`);
+    $('#enable-metrics').onclick = async (e) => {
+      e.target.disabled = true;
+      e.target.textContent = 'Starting...';
+      try {
+        await api('/tiers/metrics/enable', {method:'POST'});
+        render.stats();
+      } catch (err) {
+        const msg = $('#metrics-msg');
+        msg.className = 'banner bad';
+        msg.textContent = err.message || 'Could not enable Metrics';
+        e.target.disabled = false;
+        e.target.textContent = 'Enable Metrics';
+      }
+    };
+    return;
+  }
+  const base = grafana.url.replace(/\/$/, '');
+  const panel = (id, cls='') =>
+    `<iframe class="${cls}" loading="lazy" title="Kine panel ${id}" src="${base}` +
+    `/d-solo/kine-overview?panelId=${id}&theme=dark&kiosk&from=now-24h&to=now&refresh=30s"></iframe>`;
+  render.shell(`
+    <div class="section">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:.75rem">
+        <h2 style="margin:0">Stats</h2>
+        <a class="link" href="${base}/d/kine-overview" target="_blank"
+           rel="noopener noreferrer">Open Grafana</a>
+      </div>
+      <div class="panel-grid">
+        ${panel(1)}${panel(2)}${panel(3)}${panel(4)}
+        ${panel(7,'tall')}${panel(8,'tall')}
+        ${panel(9,'tall')}${panel(10,'tall')}
+      </div>
+    </div>`);
 };
 
 render.updates = async (refresh=false) => {
