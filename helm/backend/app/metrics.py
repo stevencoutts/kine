@@ -60,6 +60,106 @@ def _format_value(value: float) -> str:
     return str(int(value)) if float(value).is_integer() else repr(float(value))
 
 
+ARR_ITEM_KIND = {"sonarr": "series", "radarr": "movies"}
+
+
+def _num(value) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def parse_arr(app: str, *, counts: dict, queue: dict, missing: dict) -> list[Sample]:
+    items = counts.get("items") or []
+    kind = ARR_ITEM_KIND.get(app, "items")
+    out = [Sample("kine_library_items", {"app": app, "kind": kind}, len(items))]
+
+    size = sum(
+        _num((item.get("statistics") or {}).get("sizeOnDisk", item.get("sizeOnDisk")))
+        for item in items
+    )
+    out.append(Sample("kine_library_bytes", {"app": app}, size))
+
+    if kind == "series":
+        episodes = sum(_num((i.get("statistics") or {}).get("episodeCount")) for i in items)
+        out.append(Sample("kine_library_items", {"app": app, "kind": "episodes"}, episodes))
+        gap_kind = "episodes"
+    else:
+        gap_kind = "movies"
+    out.append(
+        Sample("kine_library_missing", {"app": app, "kind": gap_kind},
+               _num(missing.get("totalRecords")))
+    )
+    out.append(Sample("kine_queue_items", {"app": app}, _num(queue.get("totalRecords"))))
+    return out
+
+
+def parse_bazarr(series: dict, movies: dict) -> list[Sample]:
+    return [
+        Sample("kine_subtitles_wanted", {"kind": "series"}, len(series.get("data") or [])),
+        Sample("kine_subtitles_wanted", {"kind": "movies"}, len(movies.get("data") or [])),
+    ]
+
+
+def parse_prowlarr(indexers: list, stats: dict) -> list[Sample]:
+    rows = stats.get("indexers") or []
+    return [
+        Sample("kine_indexers_enabled", {"app": "prowlarr"},
+               sum(1 for i in indexers if i.get("enable"))),
+        Sample("kine_indexer_queries_total", {"app": "prowlarr"},
+               sum(_num(r.get("numberOfQueries")) for r in rows)),
+        Sample("kine_indexer_grabs_total", {"app": "prowlarr"},
+               sum(_num(r.get("numberOfGrabs")) for r in rows)),
+    ]
+
+
+def parse_transmission(session_stats: dict) -> list[Sample]:
+    args = session_stats.get("arguments") or {}
+    client = {"client": "transmission"}
+    return [
+        Sample("kine_download_rate_bytes", {**client, "direction": "down"},
+               _num(args.get("downloadSpeed"))),
+        Sample("kine_download_rate_bytes", {**client, "direction": "up"},
+               _num(args.get("uploadSpeed"))),
+        Sample("kine_torrents", {**client, "state": "active"},
+               _num(args.get("activeTorrentCount"))),
+        Sample("kine_torrents", {**client, "state": "paused"},
+               _num(args.get("pausedTorrentCount"))),
+        Sample("kine_torrents", {**client, "state": "total"},
+               _num(args.get("torrentCount"))),
+    ]
+
+
+def parse_streams(snapshot: dict) -> list[Sample]:
+    counts: dict[tuple[str, str, str], int] = {}
+    for session in snapshot.get("sessions") or []:
+        key = (
+            session.get("server") or "unknown",
+            session.get("state") or "playing",
+            session.get("user") or "unknown",
+        )
+        counts[key] = counts.get(key, 0) + 1
+    return [
+        Sample("kine_streams_active", {"server": s, "state": st, "user": u}, n)
+        for (s, st, u), n in sorted(counts.items())
+    ]
+
+
+def parse_updates(payload: dict) -> list[Sample]:
+    """Rows come from updates.sh check-json, keyed by service id."""
+    out = []
+    for row in payload.get("containers") or []:
+        app = row.get("id")
+        if not app:
+            continue
+        pending = row.get("update_available")
+        if pending is None:
+            pending = row.get("status") == "update"
+        out.append(Sample("kine_update_pending", {"app": app}, 1 if pending else 0))
+    return out
+
+
 def render(samples: list[Sample]) -> str:
     lines: list[str] = []
     for name in METRIC_TYPES:
