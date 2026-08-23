@@ -37,9 +37,22 @@ def tier_visible_apps(tier: str) -> list[str]:
 
 
 def resolve_deps(app_id: str, cat: dict, wanted: list[str]) -> list[str]:
-    for dep in cat[app_id].get("requires", []):
-        if dep not in wanted:
-            wanted.append(dep)
+    """Pull in requires, and their requires, until nothing new appears.
+
+    One level is not enough: Grafana needs Prometheus, which needs the
+    exporters, and stopping halfway starts a dashboard with no data.
+    """
+    queue = [app_id]
+    seen = set()
+    while queue:
+        current = queue.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        for dep in cat.get(current, {}).get("requires", []):
+            if dep not in wanted:
+                wanted.append(dep)
+            queue.append(dep)
     return wanted
 
 

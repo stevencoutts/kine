@@ -53,6 +53,22 @@ def test_resolve_deps_pulls_in_gluetun():
     assert "gluetun" in wanted
 
 
+def test_resolve_deps_follows_multi_hop_chains():
+    cat = {
+        "grafana": {"requires": ["prometheus"]},
+        "prometheus": {"requires": ["cadvisor", "node-exporter"]},
+        "cadvisor": {},
+        "node-exporter": {},
+    }
+    wanted = catalogue.resolve_deps("grafana", cat, ["grafana"])
+    assert set(wanted) == {"grafana", "prometheus", "cadvisor", "node-exporter"}
+
+
+def test_resolve_deps_survives_a_dependency_cycle():
+    cat = {"a": {"requires": ["b"]}, "b": {"requires": ["a"]}}
+    assert set(catalogue.resolve_deps("a", cat, ["a"])) == {"a", "b"}
+
+
 def test_prune_orphan_gluetun_keeps_mandatory_tunnel_when_empty():
     pruned = catalogue.prune_orphan_gluetun(["emby", "gluetun"], CATALOGUE)
     assert pruned == ["emby", "gluetun"]
