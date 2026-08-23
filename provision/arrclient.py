@@ -49,6 +49,10 @@ class ArrClient:
         r.raise_for_status()
         return r.json() if r.content else {}
 
+    def delete(self, path: str) -> None:
+        r = self.http.delete(self._url(path))
+        r.raise_for_status()
+
     def ensure(self, path: str, payload: dict, match_on: str = "name") -> bool:
         """Idempotent create. Returns True if something was created.
 
@@ -62,3 +66,23 @@ class ArrClient:
                 return False
         self.post(path, payload)
         return True
+
+    def upsert(self, path: str, payload: dict, match_on: str = "name") -> str:
+        """Create or update by match field. Returns 'created' or 'updated'."""
+        existing = self.get(path)
+        wanted = payload[match_on]
+        for item in existing:
+            if item.get(match_on) == wanted:
+                merged = {**item, **payload, "id": item["id"]}
+                self.put(f"{path}/{item['id']}", merged)
+                return "updated"
+        self.post(path, payload)
+        return "created"
+
+    def remove_named(self, path: str, name: str, match_on: str = "name") -> bool:
+        """Delete the first item matching name. Returns True if deleted."""
+        for item in self.get(path):
+            if item.get(match_on) == name:
+                self.delete(f"{path}/{item['id']}")
+                return True
+        return False

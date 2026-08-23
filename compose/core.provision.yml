@@ -14,6 +14,14 @@ services:
       VPN_TUNNELLED_APPS: ${VPN_TUNNELLED_APPS}
       PUID: ${PUID}
       PGID: ${PGID}
+      PLEX_HOST: ${PLEX_HOST:-}
+      PLEX_PORT: ${PLEX_PORT:-32400}
+      PLEX_TOKEN: ${PLEX_TOKEN:-}
+      PLEX_USE_SSL: ${PLEX_USE_SSL:-false}
+      EMBY_HOST: ${EMBY_HOST:-}
+      EMBY_PORT: ${EMBY_PORT:-8096}
+      EMBY_API_KEY: ${EMBY_API_KEY:-}
+      EMBY_USE_SSL: ${EMBY_USE_SSL:-false}
     volumes:
       - ${STACK_ROOT}:/stack
       - ${DATA_ROOT}/media:/data/media

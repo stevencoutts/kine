@@ -349,6 +349,14 @@ def test_arr_wiring_registers_transmission_for_sonarr_and_radarr(monkeypatch):
             posted.append((path, payload.get(match_on), payload.get("implementation")))
             return True
 
+        def upsert(self, path, payload, match_on="name"):
+            posted.append((path, payload.get(match_on), payload.get("implementation")))
+            return "created"
+
+        def remove_named(self, path, name, match_on="name"):
+            posted.append((path, f"remove:{name}", None))
+            return True
+
         def get(self, path):
             return {"id": 1}
 
@@ -367,6 +375,212 @@ def test_arr_wiring_registers_transmission_for_sonarr_and_radarr(monkeypatch):
     assert clients.count(("downloadclient", "Transmission", "Transmission")) == 2
     assert any("sonarr: download client Transmission" in m for m in logs)
     assert any("radarr: download client Transmission" in m for m in logs)
+
+
+def test_plex_and_emby_notification_payloads():
+    from recipes.arr import emby_notification, plex_notification
+
+    plex = plex_notification("sonarr", "10.0.0.5", 32400, "tok", use_ssl=False)
+    assert plex["name"] == "Plex"
+    assert plex["implementation"] == "PlexServer"
+    assert plex["onDownload"] is True
+    assert plex["onUpgrade"] is True
+    assert plex["onRename"] is True
+    assert plex["updateLibrary"] is True
+    fields = {f["name"]: f["value"] for f in plex["fields"]}
+    assert fields == {"host": "10.0.0.5", "port": 32400, "useSsl": False, "authToken": "tok"}
+    assert "onSeriesDelete" in plex or "onMovieDelete" in plex
+
+    emby = emby_notification("radarr", "emby", 8096, "key", use_ssl=False)
+    assert emby["name"] == "Emby"
+    assert emby["implementation"] == "MediaBrowser"
+    assert emby["updateLibrary"] is True
+    efields = {f["name"]: f["value"] for f in emby["fields"]}
+    assert efields["host"] == "emby"
+    assert efields["apiKey"] == "key"
+    assert efields["port"] == 8096
+
+
+def test_arr_wiring_upserts_media_server_notifications(monkeypatch):
+    import recipes.arr as arr
+
+    actions = []
+
+    class FakeClient:
+        def __init__(self, base, key):
+            pass
+
+        def wait(self):
+            return True
+
+        def ensure(self, path, payload, match_on="name"):
+            return False
+
+        def upsert(self, path, payload, match_on="name"):
+            actions.append(("upsert", path, payload["name"], payload["implementation"]))
+            return "updated"
+
+        def remove_named(self, path, name, match_on="name"):
+            actions.append(("remove", path, name, None))
+            return False
+
+        def get(self, path):
+            return {"id": 1}
+
+        def put(self, path, payload):
+            return payload
+
+    monkeypatch.setattr(arr, "ArrClient", FakeClient)
+    monkeypatch.setattr(arr, "resolve_key", lambda app: "k")
+    monkeypatch.setenv("PLEX_HOST", "plex.lan")
+    monkeypatch.setenv("PLEX_PORT", "32400")
+    monkeypatch.setenv("PLEX_TOKEN", "plex-tok")
+    monkeypatch.setenv("PLEX_USE_SSL", "false")
+    monkeypatch.setenv("EMBY_HOST", "emby")
+    monkeypatch.setenv("EMBY_PORT", "8096")
+    monkeypatch.setenv("EMBY_API_KEY", "emby-key")
+    monkeypatch.setenv("EMBY_USE_SSL", "false")
+    logs = []
+    arr.configure("sonarr", {"sonarr"}, logs.append)
+    assert ("upsert", "notification", "Plex", "PlexServer") in actions
+    assert ("upsert", "notification", "Emby", "MediaBrowser") in actions
+    assert any("sonarr: notification Plex" in m for m in logs)
+    assert any("sonarr: notification Emby" in m for m in logs)
+
+
+def test_arr_wiring_removes_media_server_notifications_when_cleared(monkeypatch):
+    import recipes.arr as arr
+
+    actions = []
+
+    class FakeClient:
+        def __init__(self, base, key):
+            pass
+
+        def wait(self):
+            return True
+
+        def ensure(self, path, payload, match_on="name"):
+            return False
+
+        def upsert(self, path, payload, match_on="name"):
+            raise AssertionError("should not upsert")
+
+        def remove_named(self, path, name, match_on="name"):
+            actions.append((path, name))
+            return True
+
+        def get(self, path):
+            return {"id": 1}
+
+        def put(self, path, payload):
+            return payload
+
+    monkeypatch.setattr(arr, "ArrClient", FakeClient)
+    monkeypatch.setattr(arr, "resolve_key", lambda app: "k")
+    for key in (
+        "PLEX_HOST", "PLEX_TOKEN", "PLEX_PORT", "PLEX_USE_SSL",
+        "EMBY_HOST", "EMBY_API_KEY", "EMBY_PORT", "EMBY_USE_SSL",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    logs = []
+    arr.configure("radarr", {"radarr", "emby"}, logs.append)
+    assert ("notification", "Plex") in actions
+    assert ("notification", "Emby") in actions
+
+
+def test_arr_client_upsert_updates_existing():
+    from arrclient import ArrClient
+
+    class FakeHTTP:
+        def __init__(self):
+            self.posts = []
+            self.puts = []
+
+        def get(self, url):
+            class R:
+                status_code = 200
+                content = b"[]"
+
+                def json(_self):
+                    return [{"id": 9, "name": "Plex", "host": "old"}]
+
+                def raise_for_status(_self):
+                    pass
+
+            return R()
+
+        def post(self, url, json):
+            self.posts.append(json)
+            class R:
+                status_code = 200
+                content = b"{}"
+                def json(_self): return {}
+                def raise_for_status(_self): pass
+            return R()
+
+        def put(self, url, json):
+            self.puts.append((url, json))
+            class R:
+                status_code = 200
+                content = b"{}"
+                def json(_self): return json
+                def raise_for_status(_self): pass
+            return R()
+
+    c = ArrClient("http://x", "k")
+    c.http = FakeHTTP()
+    assert c.upsert("notification", {"name": "Plex", "host": "new"}) == "updated"
+    assert c.http.posts == []
+    assert len(c.http.puts) == 1
+    assert c.http.puts[0][1]["id"] == 9
+    assert c.http.puts[0][1]["host"] == "new"
+
+
+def test_arr_client_remove_named():
+    from arrclient import ArrClient
+
+    class FakeHTTP:
+        def __init__(self):
+            self.deleted = []
+
+        def get(self, url):
+            class R:
+                def json(_self):
+                    return [{"id": 3, "name": "Emby"}]
+
+                def raise_for_status(_self):
+                    pass
+
+            return R()
+
+        def delete(self, url):
+            self.deleted.append(url)
+            class R:
+                def raise_for_status(_self): pass
+            return R()
+
+    c = ArrClient("http://x", "k")
+    c.http = FakeHTTP()
+    assert c.remove_named("notification", "Emby") is True
+    assert c.http.deleted == ["http://x/api/v3/notification/3"]
+    assert c.remove_named("notification", "Missing") is False
+
+
+def test_provision_compose_passes_media_server_env():
+    text = (ROOT / "compose" / "core.provision.yml").read_text()
+    assert "PLEX_HOST" in text
+    assert "PLEX_TOKEN" in text
+    assert "EMBY_HOST" in text
+    assert "EMBY_API_KEY" in text
+
+
+def test_env_example_documents_media_servers():
+    text = (ROOT / ".env.example").read_text()
+    assert "PLEX_HOST=" in text
+    assert "PLEX_TOKEN=" in text
+    assert "EMBY_HOST=" in text
+    assert "EMBY_API_KEY=" in text
 
 
 def test_prowlarr_public_indexers_match_jackett_defaults():

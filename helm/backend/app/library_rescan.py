@@ -479,9 +479,17 @@ def _post_arr_command(base: str, api: str, key: str, name: str) -> tuple[bool, s
 
 
 def _refresh_emby(base: str) -> tuple[bool, str]:
+    api_key = (
+        os.environ.get("EMBY_API_KEY", "").strip()
+        or config.read().get("EMBY_API_KEY", "").strip()
+    )
+    if not api_key:
+        return False, "needs Emby API key (refresh skipped)"
+    headers = {"X-Emby-Token": api_key}
     try:
         response = httpx.post(
             f"{base.rstrip('/')}/Library/Refresh",
+            headers=headers,
             params={
                 "Recursive": "true",
                 "MetadataRefreshMode": "FullRefresh",
@@ -494,7 +502,7 @@ def _refresh_emby(base: str) -> tuple[bool, str]:
     if response.status_code in (200, 204):
         return True, "library refresh queued"
     if response.status_code == 401:
-        return False, "needs Emby API key (refresh skipped)"
+        return False, "Emby API key rejected"
     detail = response.text.strip().splitlines()[0] if response.text else ""
     return False, f"HTTP {response.status_code}" + (f" ({detail})" if detail else "")
 

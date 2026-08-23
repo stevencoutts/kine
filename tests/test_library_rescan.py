@@ -34,6 +34,33 @@ def test_after_nfs_mount_skips_downloads_only_change(monkeypatch):
     assert result["results"] == []
 
 
+def test_refresh_emby_requires_api_key(monkeypatch):
+    monkeypatch.setattr(library_rescan.config, "read", lambda: {})
+    monkeypatch.delenv("EMBY_API_KEY", raising=False)
+    ok, message = library_rescan._refresh_emby("http://emby:8096")
+    assert ok is False
+    assert "API key" in message
+
+
+def test_refresh_emby_sends_token_header(monkeypatch):
+    monkeypatch.setenv("EMBY_API_KEY", "emby-secret")
+    seen = {}
+
+    def fake_post(url, headers=None, params=None, timeout=None):
+        seen["url"] = url
+        seen["headers"] = headers
+        class R:
+            status_code = 204
+            text = ""
+        return R()
+
+    monkeypatch.setattr(library_rescan.httpx, "post", fake_post)
+    ok, message = library_rescan._refresh_emby("http://emby:8096")
+    assert ok is True
+    assert seen["headers"]["X-Emby-Token"] == "emby-secret"
+    assert "library refresh" in message
+
+
 def test_after_nfs_mount_triggers_enabled_apps(monkeypatch, stack):
     _seed_arr_key(stack, "sonarr", "sonarr-key")
     _seed_arr_key(stack, "radarr", "radarr-key")

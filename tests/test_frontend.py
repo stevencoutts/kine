@@ -93,6 +93,21 @@ def test_dev_version_checkbox_only_when_supported():
     assert 'data-dev="${a.id}"' in FRONTEND
     assert "Dev Version" in FRONTEND
     assert "/apps/${el.dataset.dev}/dev/" in FRONTEND
+    assert "tier-switch" in FRONTEND
+    assert FRONTEND.count("tier-switch-ui") >= 2
+
+
+def test_settings_media_servers_section():
+    assert "Media Servers" in FRONTEND
+    assert "PLEX_HOST" in FRONTEND
+    assert "PLEX_TOKEN" in FRONTEND
+    assert "EMBY_HOST" in FRONTEND
+    assert "EMBY_API_KEY" in FRONTEND
+    assert "save-media-servers" in FRONTEND
+    assert "PLEX_HOST" in BACKEND
+    assert "EMBY_API_KEY" in BACKEND
+    assert "_MEDIA_SERVER_KEYS" in BACKEND
+    assert 'provision", "wire"' in BACKEND
 
 
 def test_dev_channel_api_recreates_when_profile_enabled():
