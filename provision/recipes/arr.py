@@ -166,16 +166,22 @@ def _emby_config(enabled: set[str]) -> tuple[str, int, str, bool] | None:
     if not token:
         return None
     host = os.environ.get("EMBY_HOST", "").strip()
+    use_ssl = _env_bool("EMBY_USE_SSL")
+    port = _env_int("EMBY_PORT", 443 if use_ssl else 8096)
     if not host and "emby" in enabled:
-        host = "emby"
+        domain = os.environ.get("KINE_DOMAIN", "").strip()
+        if domain:
+            host = f"emby.{domain}"
+            port = 443
+            use_ssl = True
+        else:
+            host = "emby"
     if not host:
         return None
-    return (
-        host,
-        _env_int("EMBY_PORT", 8096),
-        token,
-        _env_bool("EMBY_USE_SSL"),
-    )
+    # Traefik serves Emby on 443; 8096 is only the container port.
+    if use_ssl and port == 8096:
+        port = 443
+    return (host, port, token, use_ssl)
 
 
 def _sync_media_notifications(client: ArrClient, app: str, enabled: set[str], log) -> None:

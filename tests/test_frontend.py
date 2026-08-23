@@ -104,9 +104,15 @@ def test_settings_media_servers_section():
     assert "EMBY_HOST" in FRONTEND
     assert "EMBY_API_KEY" in FRONTEND
     assert "save-media-servers" in FRONTEND
+    assert "EMBY_DEFAULT_HOST" in FRONTEND
+    assert "port 443 with SSL" in FRONTEND
+    assert "bindMediaPortToggle" in FRONTEND
+    assert "mediaPortFor" in FRONTEND
     assert "PLEX_HOST" in BACKEND
     assert "EMBY_API_KEY" in BACKEND
     assert "_MEDIA_SERVER_KEYS" in BACKEND
+    assert "EMBY_DEFAULT_HOST" in BACKEND
+    assert 'wiring failed" not in log.lower()' in BACKEND
     assert 'provision", "wire"' in BACKEND
 
 

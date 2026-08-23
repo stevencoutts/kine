@@ -401,6 +401,31 @@ def test_plex_and_emby_notification_payloads():
     assert efields["port"] == 8096
 
 
+def test_emby_config_uses_443_for_domain_ssl(monkeypatch):
+    from recipes.arr import _emby_config
+
+    monkeypatch.setenv("EMBY_API_KEY", "key")
+    monkeypatch.setenv("EMBY_HOST", "emby.couttsnet.com")
+    monkeypatch.setenv("EMBY_PORT", "8096")
+    monkeypatch.setenv("EMBY_USE_SSL", "true")
+    host, port, key, use_ssl = _emby_config(set())
+    assert host == "emby.couttsnet.com"
+    assert port == 443
+    assert use_ssl is True
+
+
+def test_emby_config_defaults_bundled_to_domain_443(monkeypatch):
+    from recipes.arr import _emby_config
+
+    monkeypatch.setenv("EMBY_API_KEY", "key")
+    monkeypatch.delenv("EMBY_HOST", raising=False)
+    monkeypatch.setenv("KINE_DOMAIN", "couttsnet.com")
+    host, port, key, use_ssl = _emby_config({"emby"})
+    assert host == "emby.couttsnet.com"
+    assert port == 443
+    assert use_ssl is True
+
+
 def test_arr_wiring_upserts_media_server_notifications(monkeypatch):
     import recipes.arr as arr
 
@@ -436,10 +461,10 @@ def test_arr_wiring_upserts_media_server_notifications(monkeypatch):
     monkeypatch.setenv("PLEX_PORT", "32400")
     monkeypatch.setenv("PLEX_TOKEN", "plex-tok")
     monkeypatch.setenv("PLEX_USE_SSL", "false")
-    monkeypatch.setenv("EMBY_HOST", "emby")
-    monkeypatch.setenv("EMBY_PORT", "8096")
+    monkeypatch.setenv("EMBY_HOST", "emby.couttsnet.com")
+    monkeypatch.setenv("EMBY_PORT", "443")
     monkeypatch.setenv("EMBY_API_KEY", "emby-key")
-    monkeypatch.setenv("EMBY_USE_SSL", "false")
+    monkeypatch.setenv("EMBY_USE_SSL", "true")
     logs = []
     arr.configure("sonarr", {"sonarr"}, logs.append)
     assert ("upsert", "notification", "Plex", "PlexServer") in actions

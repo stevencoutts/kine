@@ -690,6 +690,11 @@ async def get_settings(user: str = Depends(require_user)):
               *_NFS_KEYS, *_MEDIA_SERVER_KEYS)
     out = {k: env.get(k, "") for k in public}
     out["EMBY_BUNDLED"] = "emby" in config.profiles()
+    domain = env.get("KINE_DOMAIN", "").strip()
+    if out["EMBY_BUNDLED"] and domain:
+        out["EMBY_DEFAULT_HOST"] = f"emby.{domain}"
+    else:
+        out["EMBY_DEFAULT_HOST"] = ""
     return out
 
 
@@ -721,7 +726,11 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
     media_wire = None
     if set(_MEDIA_SERVER_KEYS) & set(body):
         code, out = await compose.run("run", "--rm", "provision", "wire", timeout=900)
-        media_wire = {"ok": code == 0, "log": out[-2000:] if out else ""}
+        log = out[-2000:] if out else ""
+        media_wire = {
+            "ok": code == 0 and "wiring failed" not in log.lower(),
+            "log": log,
+        }
     return {"ok": True, "nfs_mount": nfs_mount, "media_wire": media_wire}
 
 

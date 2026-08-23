@@ -545,6 +545,26 @@ render.settings = async () => {
   const nfsAdvancedIds = new Set(nfsAdvanced.map(([id]) => id));
   const nfsState = { exports: [], labels: {}, suggestions: {}, mediaSubfolders: [] };
   const esc = (v) => String(v || '').replace(/"/g, '&quot;');
+  const embySsl = s.EMBY_USE_SSL === 'true';
+  const embyHost = s.EMBY_HOST || s.EMBY_DEFAULT_HOST || '';
+  const embyPort = s.EMBY_PORT || (embySsl ? '443' : '8096');
+  const plexSsl = s.PLEX_USE_SSL === 'true';
+  const plexPort = s.PLEX_PORT || (plexSsl ? '443' : '32400');
+  const mediaPortFor = (ssl, current, sslPort, plainPort) => {
+    const p = String(current || '').trim();
+    if (p && !(ssl && p === String(plainPort)) && !(!ssl && p === String(sslPort))) return p;
+    return ssl ? String(sslPort) : String(plainPort);
+  };
+  const bindMediaPortToggle = (sslId, portId, sslPort, plainPort) => {
+    const sslEl = $('#'+sslId);
+    const portEl = $('#'+portId);
+    if (!sslEl || !portEl) return;
+    sslEl.onchange = () => {
+      const p = portEl.value.trim();
+      if (!p || p === String(plainPort) || p === String(sslPort))
+        portEl.value = sslEl.checked ? sslPort : plainPort;
+    };
+  };
   const nfsRoleRow = ([id, label]) => `
     <div class="nfs-role-row">
       <label for="${id}">${label}</label>
@@ -697,26 +717,27 @@ render.settings = async () => {
       <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
         When configured, Sonarr and Radarr notify these servers after imports
         so libraries refresh. Leave a server blank to disable its connection.
-        ${s.EMBY_BUNDLED ? 'Kine Emby is enabled — host defaults to <code>emby</code> if left empty.' : ''}</p>
+        Domain-hosted Emby (e.g. <code>emby.${esc(s.KINE_DOMAIN||'example.com')}</code>)
+        is served by Traefik on <strong>port 443 with SSL</strong> — not 8096.</p>
       <h3 style="margin:0 0 .35rem;font-size:.85rem">Plex</h3>
       <label>Host</label><input id="PLEX_HOST" value="${esc(s.PLEX_HOST)}" placeholder="10.100.100.20">
       <div class="row" style="gap:1rem;align-items:end">
         <div style="flex:1"><label>Port</label>
-          <input id="PLEX_PORT" value="${esc(s.PLEX_PORT||'32400')}"></div>
+          <input id="PLEX_PORT" value="${esc(plexPort)}"></div>
         <label class="tier-switch" style="margin-bottom:.35rem" aria-label="Plex Use SSL">
-          <input type="checkbox" id="PLEX_USE_SSL" ${s.PLEX_USE_SSL==='true'?'checked':''}>
+          <input type="checkbox" id="PLEX_USE_SSL" ${plexSsl?'checked':''}>
           <span class="tier-switch-ui" aria-hidden="true"></span>
           <span style="margin-left:.55rem;font-size:.8rem;color:var(--muted)">Use SSL</span>
         </label>
       </div>
       <label>Token</label><input id="PLEX_TOKEN" value="${esc(s.PLEX_TOKEN)}" autocomplete="off">
       <h3 style="margin:1.25rem 0 .35rem;font-size:.85rem">Emby</h3>
-      <label>Host</label><input id="EMBY_HOST" value="${esc(s.EMBY_HOST || (s.EMBY_BUNDLED ? 'emby' : ''))}" placeholder="emby or 10.100.100.21">
+      <label>Host</label><input id="EMBY_HOST" value="${esc(embyHost)}" placeholder="${esc(s.EMBY_DEFAULT_HOST||'emby.example.com')}">
       <div class="row" style="gap:1rem;align-items:end">
         <div style="flex:1"><label>Port</label>
-          <input id="EMBY_PORT" value="${esc(s.EMBY_PORT||'8096')}"></div>
+          <input id="EMBY_PORT" value="${esc(embyPort)}"></div>
         <label class="tier-switch" style="margin-bottom:.35rem" aria-label="Emby Use SSL">
-          <input type="checkbox" id="EMBY_USE_SSL" ${s.EMBY_USE_SSL==='true'?'checked':''}>
+          <input type="checkbox" id="EMBY_USE_SSL" ${embySsl?'checked':''}>
           <span class="tier-switch-ui" aria-hidden="true"></span>
           <span style="margin-left:.55rem;font-size:.8rem;color:var(--muted)">Use SSL</span>
         </label>
@@ -769,15 +790,17 @@ render.settings = async () => {
   $('#save-media-servers').onclick = async () => {
     const msg = $('#media-msg');
     msg.innerHTML = '<div class="banner" style="border:1px solid var(--line)">Saving and wiring Sonarr/Radarr…</div>';
+    const embyUseSsl = $('#EMBY_USE_SSL').checked;
+    const plexUseSsl = $('#PLEX_USE_SSL').checked;
     const body = {
       PLEX_HOST: $('#PLEX_HOST').value.trim(),
-      PLEX_PORT: $('#PLEX_PORT').value.trim() || '32400',
+      PLEX_PORT: mediaPortFor(plexUseSsl, $('#PLEX_PORT').value, 443, 32400),
       PLEX_TOKEN: $('#PLEX_TOKEN').value.trim(),
-      PLEX_USE_SSL: $('#PLEX_USE_SSL').checked ? 'true' : 'false',
+      PLEX_USE_SSL: plexUseSsl ? 'true' : 'false',
       EMBY_HOST: $('#EMBY_HOST').value.trim(),
-      EMBY_PORT: $('#EMBY_PORT').value.trim() || '8096',
+      EMBY_PORT: mediaPortFor(embyUseSsl, $('#EMBY_PORT').value, 443, 8096),
       EMBY_API_KEY: $('#EMBY_API_KEY').value.trim(),
-      EMBY_USE_SSL: $('#EMBY_USE_SSL').checked ? 'true' : 'false',
+      EMBY_USE_SSL: embyUseSsl ? 'true' : 'false',
     };
     try {
       const r = await api('/settings', {method:'POST', body: JSON.stringify(body)});
@@ -790,6 +813,8 @@ render.settings = async () => {
       msg.innerHTML = `<div class="banner bad">${esc(e.message || 'Could not save')}</div>`;
     }
   };
+  bindMediaPortToggle('PLEX_USE_SSL', 'PLEX_PORT', 443, 32400);
+  bindMediaPortToggle('EMBY_USE_SSL', 'EMBY_PORT', 443, 8096);
   $('#bk').onclick = async () => {
     const r = await api('/backup', {method:'POST'});
     $('#msg').innerHTML = `<div class="banner ok">Backup: ${r.path}</div>`;
