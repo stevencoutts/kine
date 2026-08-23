@@ -7,9 +7,14 @@ import pytest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "helm" / "backend" / "app"))
 
-from wireguard import parse_conf, proton_clears, write_gluetun_conf  # noqa: E402
+from wireguard import (  # noqa: E402
+    empty_vpn_env,
+    parse_conf,
+    remove_gluetun_conf,
+    write_gluetun_conf,
+)
 
-SAMPLE_PROTON = """\
+SAMPLE_HOSTNAME = """\
 [Interface]
 PrivateKey = cHJpdmF0ZS1rZXktdmFsdWU=
 Address = 10.2.0.2/32
@@ -36,44 +41,53 @@ PersistentKeepalive = 25
 """
 
 
-def test_named_provider_keeps_key_and_address_only():
-    found = parse_conf(SAMPLE_PROTON)
-    assert found == {
-        "WIREGUARD_PRIVATE_KEY": "cHJpdmF0ZS1rZXktdmFsdWU=",
-        "WIREGUARD_ADDRESSES": "10.2.0.2/32",
-    }
-    assert "VPN_SERVICE_PROVIDER" not in found
-
-
-def test_ip_endpoint_selects_custom_provider():
+def test_ip_endpoint_uses_custom_provider():
     found = parse_conf(SAMPLE_CUSTOM)
     assert found["VPN_SERVICE_PROVIDER"] == "custom"
+    assert found["VPN_TYPE"] == "wireguard"
     assert found["VPN_PORT_FORWARDING"] == "off"
+    assert found["VPN_SERVER_COUNTRIES"] == ""
+    assert found["VPN_PORT_FORWARDING_PROVIDER"] == ""
     assert found["WIREGUARD_ENDPOINT_IP"] == "198.167.192.9"
     assert found["WIREGUARD_ENDPOINT_PORT"] == "51820"
     assert found["WIREGUARD_PUBLIC_KEY"] == "c2VydmVyLXB1Yi1rZXktYWJjZGVm="
     assert found["WIREGUARD_PRESHARED_KEY"] == "cHNrLXZhbHVlLWFiY2RlZmdoaWpr="
     assert found["WIREGUARD_ADDRESSES"] == "10.8.0.2/32"
-    assert proton_clears() == {
-        "VPN_SERVER_COUNTRIES": "",
-        "VPN_PORT_FORWARDING_PROVIDER": "",
-    }
 
 
-def test_write_gluetun_conf_creates_and_removes(tmp_path):
+def test_hostname_endpoint_still_uses_custom():
+    found = parse_conf(SAMPLE_HOSTNAME)
+    assert found["VPN_SERVICE_PROVIDER"] == "custom"
+    assert found["WIREGUARD_ENDPOINT_IP"] == ""
+    assert found["WIREGUARD_ENDPOINT_PORT"] == ""
+    assert found["WIREGUARD_PUBLIC_KEY"] == "cHVibGljLWtleS12YWx1ZQ=="
+
+
+def test_write_gluetun_conf_creates_file(tmp_path):
     stack = tmp_path / "stack"
-    write_gluetun_conf(SAMPLE_CUSTOM, str(stack), custom=True)
+    write_gluetun_conf(SAMPLE_CUSTOM, str(stack))
     conf = stack / "config" / "gluetun" / "wireguard" / "wg0.conf"
     assert conf.is_file()
     assert "198.167.192.9" in conf.read_text()
-    write_gluetun_conf(SAMPLE_CUSTOM, str(stack), custom=False)
+
+
+def test_remove_gluetun_conf_deletes_file(tmp_path):
+    stack = tmp_path / "stack"
+    write_gluetun_conf(SAMPLE_CUSTOM, str(stack))
+    conf = stack / "config" / "gluetun" / "wireguard" / "wg0.conf"
+    remove_gluetun_conf(str(stack))
     assert not conf.exists()
 
 
-def test_hostname_endpoint_uses_named_provider():
-    found = parse_conf(SAMPLE_PROTON)
-    assert "VPN_SERVICE_PROVIDER" not in found
-    assert found["WIREGUARD_PRIVATE_KEY"] == "cHJpdmF0ZS1rZXktdmFsdWU="
+def test_empty_vpn_env_blanks_all_keys():
+    cleared = empty_vpn_env()
+    assert cleared["VPN_SERVICE_PROVIDER"] == ""
+    assert cleared["WIREGUARD_PRIVATE_KEY"] == ""
+
+
+def test_missing_peer_raises():
+    with pytest.raises(ValueError, match="PublicKey and Endpoint"):
+        parse_conf("[Interface]\nPrivateKey = abc=\nAddress = 10.0.0.2/32\n")
 
 
 def test_peer_only_is_not_enough():

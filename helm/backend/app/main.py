@@ -18,8 +18,9 @@ from . import auth, catalogue, channels, compose, config, launch, nfs_exports, s
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
+from .wireguard import empty_vpn_env as _empty_vpn_env
 from .wireguard import parse_conf as _parse_wireguard_conf
-from .wireguard import proton_clears as _proton_clears
+from .wireguard import remove_gluetun_conf as _remove_gluetun_conf
 from .wireguard import write_gluetun_conf as _write_gluetun_conf
 
 _REPO = pathlib.Path(os.environ.get("KINE_REPO", "/repo"))
@@ -128,7 +129,7 @@ async def first_run(request: Request):
     if len(pw) < 12:
         raise HTTPException(400, "password must be at least 12 characters")
 
-    vpn_enabled = bool(body.get("vpn_enabled", True))
+    vpn_enabled = bool(body.get("vpn_enabled", False))
     vpn_fields = {}
     if vpn_enabled:
         try:
@@ -139,13 +140,8 @@ async def first_run(request: Request):
             raise HTTPException(
                 400,
                 "VPN is enabled: paste a WireGuard config that includes "
-                "[Interface] PrivateKey (and Address)",
-            )
-        if "WIREGUARD_ADDRESSES" not in vpn_fields:
-            raise HTTPException(
-                400,
-                "VPN is enabled: WireGuard config must include Address= "
-                "under [Interface]",
+                "[Interface] PrivateKey and Address, and [Peer] PublicKey "
+                "and Endpoint",
             )
 
     updates = {
@@ -170,21 +166,19 @@ async def first_run(request: Request):
         if "gluetun" not in wanted:
             wanted.append("gluetun")
         wireguard_text = body.get("wireguard_conf", "")
-        is_custom = vpn_fields.get("VPN_SERVICE_PROVIDER") == "custom"
-        if is_custom:
-            vpn_fields.update(_proton_clears())
         env = config.read()
         stack_root = env.get("STACK_ROOT") or "/srv/kine"
-        await asyncio.to_thread(
-            _write_gluetun_conf, wireguard_text, stack_root, custom=is_custom
-        )
+        await asyncio.to_thread(_write_gluetun_conf, wireguard_text, stack_root)
         config.write({"VPN_ENABLED": "true", **vpn_fields})
     else:
         # Nothing tunnelled-forced can run without it, so switching VPN
         # off at setup drops them too rather than leaving them enabled
         # and silently broken.
         wanted = [p for p in wanted if p != "gluetun" and p not in tunnelled]
-        config.write({"VPN_ENABLED": "false"})
+        env = config.read()
+        stack_root = env.get("STACK_ROOT") or "/srv/kine"
+        await asyncio.to_thread(_remove_gluetun_conf, stack_root)
+        config.write({"VPN_ENABLED": "false", **_empty_vpn_env()})
     config.set_profiles(wanted)
 
     if vpn_enabled:

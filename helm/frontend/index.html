@@ -208,10 +208,10 @@ render.setup = () => {
         </div>
         <label>Timezone</label><input id="tz" value="Europe/London">
         <label class="row" style="margin-top:.75rem">
-          <input id="vpn_enable" type="checkbox" checked style="width:auto">
-          Enable VPN (recommended &mdash; tunnels the whole acquisition tier)
+          <input id="vpn_enable" type="checkbox" style="width:auto">
+          Enable VPN (tunnels the whole acquisition tier)
         </label>
-        <div id="vpn_conf_wrap">
+        <div id="vpn_conf_wrap" style="display:none">
           <label>WireGuard Config File</label>
           <input id="vpn_conf" type="file" accept=".conf,.txt">
           <label>&hellip;Or Paste It Here</label>

@@ -1,13 +1,32 @@
 """Parsing a client WireGuard .conf for onboarding.
 
-Named providers (protonvpn, mullvad, ...) only need a private key and
-tunnel address. A full peer config with an IP ``Endpoint`` is treated as
-gluetun's ``custom`` provider.
+Kine always runs gluetun in ``custom`` mode using the pasted ``wg0.conf``.
+No named-provider defaults (Proton, Mullvad, …) are applied.
 """
 from __future__ import annotations
 
 import ipaddress
+import pathlib
 import re
+
+VPN_ENV_KEYS = (
+    "VPN_SERVICE_PROVIDER",
+    "VPN_TYPE",
+    "VPN_PORT_FORWARDING",
+    "VPN_SERVER_COUNTRIES",
+    "VPN_PORT_FORWARDING_PROVIDER",
+    "WIREGUARD_PRIVATE_KEY",
+    "WIREGUARD_ADDRESSES",
+    "WIREGUARD_PUBLIC_KEY",
+    "WIREGUARD_PRESHARED_KEY",
+    "WIREGUARD_ENDPOINT_IP",
+    "WIREGUARD_ENDPOINT_PORT",
+)
+
+
+def empty_vpn_env() -> dict[str, str]:
+    """Blank every VPN credential key (used when VPN is disabled)."""
+    return {key: "" for key in VPN_ENV_KEYS}
 
 
 def _is_ip(host: str) -> bool:
@@ -19,12 +38,11 @@ def _is_ip(host: str) -> bool:
 
 
 def parse_conf(text: str) -> dict[str, str]:
-    """Extract WireGuard fields from a client ``.conf``.
+    """Validate a pasted WireGuard ``.conf`` and map it to gluetun env keys.
 
-    Returns gluetun environment keys. When the peer ``Endpoint`` is an IP
-    address and a peer ``PublicKey`` is present, also sets
-    ``VPN_SERVICE_PROVIDER=custom`` plus endpoint fields. Otherwise only
-    private key and address are returned (named-provider mode).
+    Requires ``[Interface]`` PrivateKey and Address, plus ``[Peer]``
+    PublicKey and Endpoint. Always selects gluetun ``custom`` mode; the
+    full config is also written to ``wg0.conf``.
     """
     interface: dict[str, str] = {}
     peer: dict[str, str] = {}
@@ -56,14 +74,15 @@ def parse_conf(text: str) -> dict[str, str]:
     if "privatekey" not in interface:
         return {}
 
-    out: dict[str, str] = {"WIREGUARD_PRIVATE_KEY": interface["privatekey"]}
-    if "address" in interface:
-        out["WIREGUARD_ADDRESSES"] = interface["address"]
+    if "address" not in interface:
+        raise ValueError("WireGuard config must include Address under [Interface]")
 
-    endpoint = peer.get("endpoint", "")
     public_key = peer.get("publickey", "")
-    if not endpoint or not public_key:
-        return out
+    endpoint = peer.get("endpoint", "")
+    if not public_key or not endpoint:
+        raise ValueError(
+            "WireGuard config must include [Peer] PublicKey and Endpoint"
+        )
 
     host, sep, port = endpoint.rpartition(":")
     if not sep or not host or not port:
@@ -71,41 +90,35 @@ def parse_conf(text: str) -> dict[str, str]:
     host = host.strip().strip("[]")
     if not re.fullmatch(r"\d{1,5}", port):
         raise ValueError(f"invalid WireGuard Endpoint port: {port}")
-    if not _is_ip(host):
-        # Hostname endpoints are for named providers (Proton, etc.) where
-        # gluetun picks the server. Ignore the peer block.
-        return out
 
+    out = empty_vpn_env()
     out.update(
         {
             "VPN_SERVICE_PROVIDER": "custom",
+            "VPN_TYPE": "wireguard",
             "VPN_PORT_FORWARDING": "off",
-            "WIREGUARD_ENDPOINT_IP": host,
-            "WIREGUARD_ENDPOINT_PORT": port,
+            "WIREGUARD_PRIVATE_KEY": interface["privatekey"],
+            "WIREGUARD_ADDRESSES": interface["address"],
             "WIREGUARD_PUBLIC_KEY": public_key,
         }
     )
     if "presharedkey" in peer:
         out["WIREGUARD_PRESHARED_KEY"] = peer["presharedkey"]
+    if _is_ip(host):
+        out["WIREGUARD_ENDPOINT_IP"] = host
+        out["WIREGUARD_ENDPOINT_PORT"] = port
     return out
 
 
-def proton_clears() -> dict[str, str]:
-    """Env keys to blank when switching to gluetun ``custom`` WireGuard."""
-    return {
-        "VPN_SERVER_COUNTRIES": "",
-        "VPN_PORT_FORWARDING_PROVIDER": "",
-    }
-
-
-def write_gluetun_conf(text: str, stack_root: str, *, custom: bool) -> None:
-    """Persist or remove ``wg0.conf`` under ``${STACK_ROOT}/config/gluetun``."""
-    import pathlib
-
+def write_gluetun_conf(text: str, stack_root: str) -> None:
+    """Persist the pasted config as ``wg0.conf`` under ``${STACK_ROOT}/config/gluetun``."""
     root = pathlib.Path(stack_root) / "config" / "gluetun" / "wireguard"
-    conf = root / "wg0.conf"
-    if custom:
-        root.mkdir(parents=True, exist_ok=True)
-        conf.write_text(text.strip() + "\n")
-    elif conf.exists():
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "wg0.conf").write_text(text.strip() + "\n")
+
+
+def remove_gluetun_conf(stack_root: str) -> None:
+    """Remove ``wg0.conf`` when VPN is disabled."""
+    conf = pathlib.Path(stack_root) / "config" / "gluetun" / "wireguard" / "wg0.conf"
+    if conf.exists():
         conf.unlink()
