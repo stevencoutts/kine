@@ -93,12 +93,13 @@ Gluetun gateway when VPN is selected.
 
 Enabling a section selects its catalogue defaults:
 
-- media: Emby
-- acquisition: Sonarr, Radarr, Prowlarr, and Transmission
+- media: none (enable Emby individually when wanted)
+- acquisition: Sonarr, Radarr, Prowlarr, Transmission, and Recyclarr
+- process: Tdarr
 - live TV: Dispatcharr, Enhanced Channel Manager (ECM), and Teamarr
 
-Optional acquisition apps remain individually available: Jackett, Bazarr,
-NZBGet, Unpackerr, Recyclarr, and Seerr. Prowlarr remains the indexer
+Optional apps remain individually available: Emby, Jackett, Bazarr,
+NZBGet, Unpackerr, and Seerr. Prowlarr remains the indexer
 proxy wired into Sonarr and Radarr. Jackett ships with the same three
 public indexers when enabled; its Torznab feeds are copied manually.
 

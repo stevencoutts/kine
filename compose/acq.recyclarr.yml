@@ -16,6 +16,16 @@ services:
       TZ: ${KINE_TIMEZONE}
     volumes:
       - ${STACK_ROOT}/config/recyclarr:/config
+    # Sync once on start (Sonarr/Radarr may still be booting after a rebuild).
+    # Without this, TRaSH profiles only appear after install.sh or the @daily cron.
+    entrypoint: ["/sbin/tini", "--", "/bin/sh", "-c"]
+    command:
+      - |
+        for i in 1 2 3 4 5 6 7 8 9 10; do
+          /entrypoint.sh sync && break
+          sleep 15
+        done
+        exec /entrypoint.sh
     healthcheck:
       test: ["CMD-SHELL", "test -f /config/recyclarr.yml && test -f /config/secrets.yml"]
       interval: 30s

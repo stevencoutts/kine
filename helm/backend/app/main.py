@@ -45,6 +45,17 @@ async def _queue_library_sync(changed_keys: set[str] | None = None) -> dict:
 COOKIE = "kine_session"
 
 
+async def _sync_recyclarr() -> None:
+    """Push TRaSH Guide profiles into Sonarr/Radarr after wire or tier changes."""
+    if "recyclarr" not in config.profiles():
+        return
+    code, out = await compose.run(
+        "exec", "-T", "recyclarr", "recyclarr", "sync", timeout=300,
+    )
+    if code != 0:
+        print(f"recyclarr sync failed: {out[-500:]}", flush=True)
+
+
 async def _refresh_mdns() -> None:
     """Recreate mdns so it re-reads COMPOSE_PROFILES and advertises new names."""
     if "mdns" not in config.profiles():
@@ -325,6 +336,7 @@ async def enable_tier(tier: str, user: str = Depends(require_user)):
     if code != 0:
         raise HTTPException(500, f"Could not start {label} apps")
     await compose.run("run", "--rm", "provision", "wire")
+    await _sync_recyclarr()
     return {"ok": True, "enabled": defaults}
 
 
@@ -380,6 +392,7 @@ async def enable(app_id: str, user: str = Depends(require_user)):
         raise HTTPException(500, f"Could not start {app_id}")
     # Wire it to whatever is already running.
     await compose.run("run", "--rm", "provision", "wire")
+    await _sync_recyclarr()
     return {"ok": True, "log": out[-2000:]}
 
 
@@ -631,6 +644,7 @@ async def backup(user: str = Depends(require_user)):
 @app.post("/api/provision")
 async def provision(user: str = Depends(require_user)):
     code, out = await compose.run("run", "--rm", "provision", "wire", timeout=900)
+    await _sync_recyclarr()
     return {"ok": code == 0, "log": out}
 
 

@@ -306,6 +306,8 @@ def test_recyclarr_runs_on_internal_network_with_config_healthcheck():
     assert recyclarr.get("network_mode") != "service:gluetun"
     assert "kine_internal" in recyclarr.get("networks", [])
     assert recyclarr["volumes"] == ["${STACK_ROOT}/config/recyclarr:/config"]
+    startup = str(recyclarr.get("command", ""))
+    assert "/entrypoint.sh sync" in startup
     health = recyclarr.get("healthcheck", {})
     assert "recyclarr.yml" in str(health.get("test", ""))
     assert "recyclarr" not in TUNNELLED

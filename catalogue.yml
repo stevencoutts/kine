@@ -15,7 +15,7 @@ apps:
     provides: [library]
     # embyserver publishes a beta channel alongside latest.
     dev_tag: beta
-    default: true
+    default: false
 
   tdarr:
     name: Tdarr

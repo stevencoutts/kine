@@ -23,6 +23,11 @@ def test_nzbget_is_off_by_default():
     assert CATALOGUE["nzbget"]["default"] is False
 
 
+def test_emby_is_off_by_default():
+    assert CATALOGUE["emby"]["default"] is False
+    assert catalogue.tier_default_apps("media") == []
+
+
 def test_defaults_match_catalogue_flags():
     expected = {k for k, v in CATALOGUE.items() if v.get("default") or v.get("mandatory")}
     assert set(catalogue.defaults()) == expected
