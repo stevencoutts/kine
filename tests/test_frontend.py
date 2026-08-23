@@ -38,6 +38,7 @@ def test_app_overview_buttons_show_running_counts():
     assert "activeTier" in FRONTEND
     assert "tierStats" in FRONTEND
     assert "/ ${stats.total} running" in FRONTEND
+    assert "tier-switch" in FRONTEND
     assert "manualCollapse" not in FRONTEND
     assert "section-head" not in FRONTEND
 

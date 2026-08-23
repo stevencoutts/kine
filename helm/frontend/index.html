@@ -85,13 +85,35 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   background:color-mix(in srgb, var(--accent) 14%, transparent);
   box-shadow:0 6px 28px color-mix(in srgb, var(--accent) 18%, transparent)}
 .overview-btn.off-tier{opacity:.72}
-.overview-top{display:flex;align-items:center;gap:.45rem;margin-bottom:.35rem}
+.overview-top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.45rem}
 .overview-btn h2{margin:0;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;
   color:var(--muted);font-weight:600}
 .overview-stat{font-size:1.15rem;font-weight:600;line-height:1.2}
 .overview-stat span{color:var(--muted);font-weight:400;font-size:.82rem}
-.tier-check{display:flex;align-items:center;cursor:pointer;flex:none}
-.tier-check input{width:auto;margin:0;cursor:pointer}
+.tier-switch{position:relative;display:inline-flex;align-items:center;flex:none;cursor:pointer}
+.tier-switch input{position:absolute;opacity:0;width:0;height:0;margin:0}
+.tier-switch-ui{display:inline-flex;align-items:center;width:2.6rem;height:1.35rem;
+  border-radius:999px;padding:2px;
+  background:color-mix(in srgb, var(--panel-2) 70%, transparent);
+  border:1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  box-shadow:inset 0 1px 3px color-mix(in srgb, #000 12%, transparent);
+  transition:background .18s,border-color .18s,box-shadow .18s}
+.tier-switch-ui::before{content:"";width:1.05rem;height:1.05rem;border-radius:50%;
+  background:color-mix(in srgb, var(--panel) 90%, transparent);
+  border:1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  box-shadow:0 1px 4px color-mix(in srgb, #000 18%, transparent);
+  transition:transform .18s,background .18s,border-color .18s}
+.tier-switch input:checked + .tier-switch-ui{
+  background:color-mix(in srgb, var(--ok) 55%, transparent);
+  border-color:color-mix(in srgb, var(--ok) 45%, transparent);
+  box-shadow:0 0 12px color-mix(in srgb, var(--ok) 28%, transparent),
+    inset 0 1px 2px color-mix(in srgb, #fff 12%, transparent)}
+.tier-switch input:checked + .tier-switch-ui::before{
+  transform:translateX(1.2rem);
+  background:#fff;border-color:transparent}
+.tier-switch input:focus-visible + .tier-switch-ui{
+  outline:2px solid color-mix(in srgb, var(--accent) 60%, transparent);outline-offset:2px}
+.tier-switch input:disabled + .tier-switch-ui{opacity:.55;cursor:wait}
 .apps-panel{background:color-mix(in srgb, var(--panel) 38%, transparent);
   backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
   border:1px solid color-mix(in srgb, var(--line) 45%, transparent);
@@ -357,10 +379,11 @@ render.apps = async () => {
     return `<div class="overview-btn ${active?'active':''} ${!meta.enabled?'off-tier':''}"
       data-overview="${tier}" role="button" tabindex="0" aria-pressed="${active}">
       <div class="overview-top">
-        <label class="tier-check" aria-label="Enable ${meta.label}">
-          <input type="checkbox" data-tier="${tier}" ${meta.enabled?'checked':''}>
-        </label>
         <h2>${meta.label}</h2>
+        <label class="tier-switch" aria-label="${meta.enabled?'Disable':'Enable'} ${meta.label}">
+          <input type="checkbox" data-tier="${tier}" ${meta.enabled?'checked':''}>
+          <span class="tier-switch-ui" aria-hidden="true"></span>
+        </label>
       </div>
       <div class="overview-stat">${stats.running}<span> / ${stats.total} running</span></div>
     </div>`;
