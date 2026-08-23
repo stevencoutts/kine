@@ -11,6 +11,14 @@ services:
     environment:
       NFS_BROWSE_BIND: ${NFS_BROWSE_BIND:-0.0.0.0}
       NFS_BROWSE_PORT: ${NFS_BROWSE_PORT:-8611}
+      DATA_ROOT: ${DATA_ROOT}
+      NFS_SERVER: ${NFS_SERVER:-}
+      NFS_TV: ${NFS_TV:-}
+      NFS_MOVIES: ${NFS_MOVIES:-}
+      NFS_DOWNLOADS: ${NFS_DOWNLOADS:-}
+      NFS_CACHE: ${NFS_CACHE:-}
+      KINE_SECRET: ${KINE_SECRET}
     volumes:
       - ../:/repo:ro
+      - ${DATA_ROOT}:${DATA_ROOT}:ro
     entrypoint: ["python3", "/repo/scripts/nfs-browse-agent.py"]
