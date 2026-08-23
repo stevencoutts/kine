@@ -65,6 +65,12 @@ def test_settings_api_includes_nfs_cache():
     assert "/api/nfs/browse" in MAIN
 
 
+def test_nfs_agent_runs_on_host_network():
+    text = (ROOT / "compose" / "core.nfs-agent.yml").read_text()
+    assert "network_mode: host" in text
+    assert "nfs-browse-agent" in text
+
+
 def test_helm_container_can_mount_for_browse():
     assert "SYS_ADMIN" in (ROOT / "compose" / "core.helm.yml").read_text()
 
@@ -182,14 +188,14 @@ def test_browse_prefers_host_agent(monkeypatch):
     assert data["entries"][0]["name"] == "TV"
 
 
-def test_mount_error_mentions_docker_desktop_when_denied():
+def test_mount_error_mentions_host_agent_when_denied():
     msg = nfs_exports._mount_error(
         "10.100.30.222:/exports/media",
         "access denied by server",
-        "10.100.30.36",
+        "10.100.100.34",
     )
-    assert "Docker Desktop" in msg
-    assert "nfs-agent" in msg
+    assert "bridge IP" in msg
+    assert "nfs-browse-agent" in msg
 
 
 

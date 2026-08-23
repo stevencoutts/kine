@@ -1,0 +1,16 @@
+# Host-network NFS browse agent. Mounts use the host LAN IP (e.g.
+# 10.100.100.34), not a Docker bridge address, so UniFi allowlists match.
+# Helm talks to this via NFS_BROWSE_AGENT (host.docker.internal:8611).
+services:
+  nfs-browse-agent:
+    image: kine/helm:local
+    container_name: kine-nfs-browse-agent
+    restart: unless-stopped
+    network_mode: host
+    cap_add: [SYS_ADMIN]
+    environment:
+      NFS_BROWSE_BIND: ${NFS_BROWSE_BIND:-0.0.0.0}
+      NFS_BROWSE_PORT: ${NFS_BROWSE_PORT:-8611}
+    volumes:
+      - ../:/repo:ro
+    entrypoint: ["python3", "/repo/scripts/nfs-browse-agent.py"]

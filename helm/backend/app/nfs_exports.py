@@ -204,11 +204,12 @@ def _mount_error(spec: str, last_error: str, clients: str) -> str:
         allowed = f" Currently allowed clients: {clients}." if clients else ""
         return (
             f"NFS server denied mount for {spec}.{allowed} "
-            "If this Mac's IP is already listed, that is expected on Docker "
-            "Desktop: Helm's NFS traffic does not come from your Mac IP. "
-            "Start the host browse agent with "
-            "`sudo ./kine nfs-agent`, or allow your LAN subnet on the share, "
-            "or append a subfolder name manually in Settings."
+            "Helm runs in Docker, so in-container mounts use a bridge IP, "
+            "not the host LAN address. Use the host browse agent: on Linux "
+            "ensure the nfs-browse-agent container is running; on Docker "
+            "Desktop run `sudo ./kine nfs-agent` and set "
+            "NFS_BROWSE_AGENT=http://host.docker.internal:8611, or type "
+            "export paths manually below."
         )
     return (
         f"could not mount {spec} for browsing ({last_error}). "

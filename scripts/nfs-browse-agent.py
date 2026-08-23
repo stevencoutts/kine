@@ -255,14 +255,29 @@ class Handler(BaseHTTPRequestHandler):
             self._send(502, {"detail": str(exc)})
 
 
+def bind_host() -> str:
+    explicit = os.environ.get("NFS_BROWSE_BIND", "").strip()
+    if explicit:
+        return explicit
+    return "127.0.0.1" if platform.system() == "Darwin" else "0.0.0.0"
+
+
 def main() -> None:
     global _TOKEN
     if os.geteuid() != 0:
         raise SystemExit("run with sudo so NFS mounts are allowed on this host")
     _TOKEN = load_token()
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"kine nfs-browse-agent listening on 127.0.0.1:{PORT}", flush=True)
-    print("Helm reaches this via host.docker.internal (Docker Desktop).", flush=True)
+    host = bind_host()
+    server = ThreadingHTTPServer((host, PORT), Handler)
+    print(f"kine nfs-browse-agent listening on {host}:{PORT}", flush=True)
+    if host == "127.0.0.1":
+        print("Helm reaches this via host.docker.internal (Docker Desktop).", flush=True)
+    else:
+        print(
+            "Helm reaches this via NFS_BROWSE_AGENT "
+            "(typically http://host.docker.internal:8611).",
+            flush=True,
+        )
     try:
         server.serve_forever()
     except KeyboardInterrupt:

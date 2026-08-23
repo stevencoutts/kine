@@ -35,6 +35,17 @@ fi
 if merge_missing_env_keys .env .env.example; then
   ok "merged missing keys from .env.example into .env"
 fi
+if ! is_darwin; then
+  agent=$(grep '^NFS_BROWSE_AGENT=' .env 2>/dev/null | cut -d= -f2- || true)
+  if [[ -z "$agent" ]]; then
+    if grep -q '^NFS_BROWSE_AGENT=' .env; then
+      sedi 's|^NFS_BROWSE_AGENT=.*|NFS_BROWSE_AGENT=http://host.docker.internal:8611|' .env
+    else
+      printf 'NFS_BROWSE_AGENT=http://host.docker.internal:8611\n' >> .env
+    fi
+    ok "NFS browse agent URL set for Linux host mounts"
+  fi
+fi
 load_env .env
 # Defensive defaults so a partial .env cannot trip set -u later.
 : "${STACK_ROOT:=/srv/kine}"
