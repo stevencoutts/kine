@@ -217,3 +217,6 @@ def seed_all(enabled: set[str]) -> None:
         seed_seerr()
     if "bazarr" in enabled:
         seed_bazarr(enabled)
+    from recipes import metrics
+
+    metrics.seed(STACK, enabled)

@@ -1237,3 +1237,49 @@ def test_seerr_configure_skips_until_admin_exists(stack, monkeypatch):
     logs = []
     seerr.configure({"seerr", "sonarr"}, logs.append)
     assert any("admin user not ready" in m for m in logs)
+
+
+# ── metrics seeding ─────────────────────────────────────────────
+def test_metrics_seed_writes_scrape_targets(tmp_path):
+    import yaml
+    from recipes import metrics as metrics_recipe
+    metrics_recipe.seed(tmp_path, {"grafana", "prometheus"}, log=lambda *_: None)
+    cfg = yaml.safe_load((tmp_path / "config" / "prometheus" / "prometheus.yml").read_text())
+    jobs = {j["job_name"]: j for j in cfg["scrape_configs"]}
+    assert "cadvisor:8080" in jobs["cadvisor"]["static_configs"][0]["targets"]
+    assert "node-exporter:9100" in jobs["node"]["static_configs"][0]["targets"]
+    assert "helm:8600" in jobs["kine"]["static_configs"][0]["targets"]
+    assert jobs["kine"]["metrics_path"] == "/api/metrics"
+
+
+def test_metrics_seed_pins_the_datasource_uid(tmp_path):
+    import yaml
+    from recipes import metrics as metrics_recipe
+    metrics_recipe.seed(tmp_path, {"grafana"}, log=lambda *_: None)
+    ds = yaml.safe_load(
+        (tmp_path / "config" / "grafana" / "provisioning" / "datasources"
+         / "prometheus.yml").read_text()
+    )
+    assert ds["datasources"][0]["uid"] == "kine-prom"
+    assert ds["datasources"][0]["url"] == "http://prometheus:9090"
+
+
+def test_metrics_seed_copies_dashboards(tmp_path):
+    from recipes import metrics as metrics_recipe
+    metrics_recipe.seed(tmp_path, {"grafana"}, log=lambda *_: None)
+    copied = {p.name for p in (tmp_path / "config" / "grafana" / "dashboards").glob("*.json")}
+    assert "kine-overview.json" in copied
+
+
+def test_metrics_seed_is_idempotent(tmp_path):
+    from recipes import metrics as metrics_recipe
+    metrics_recipe.seed(tmp_path, {"grafana"}, log=lambda *_: None)
+    first = (tmp_path / "config" / "prometheus" / "prometheus.yml").read_text()
+    metrics_recipe.seed(tmp_path, {"grafana"}, log=lambda *_: None)
+    assert (tmp_path / "config" / "prometheus" / "prometheus.yml").read_text() == first
+
+
+def test_metrics_seed_does_nothing_when_the_tier_is_off(tmp_path):
+    from recipes import metrics as metrics_recipe
+    metrics_recipe.seed(tmp_path, {"sonarr"}, log=lambda *_: None)
+    assert not (tmp_path / "config" / "prometheus").exists()

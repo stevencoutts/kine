@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
-from recipes import arr, bazarr, emby, envfiles, jackett, prowlarr, recyclarr, seerr, transmission  # noqa: E402
+from recipes import arr, bazarr, emby, envfiles, jackett, metrics, prowlarr, recyclarr, seerr, transmission  # noqa: E402
 from seed import seed_all  # noqa: E402
 
 STATE = pathlib.Path("/stack/provision.log")
