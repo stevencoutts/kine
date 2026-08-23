@@ -147,8 +147,10 @@ docker compose run --rm provision seed
 ok "application config seeded"
 
 # ── 6. Bring it up ──────────────────────────────────────────────
+# Build local images first. nfs-browse-agent also uses kine/helm:local;
+# pulling before the image exists makes Compose try a registry fetch.
+docker compose build helm mdns
 docker compose pull --ignore-buildable
-docker compose build helm
 docker compose up -d
 ok "containers started"
 

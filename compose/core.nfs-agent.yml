@@ -3,6 +3,9 @@
 # Helm talks to this via NFS_BROWSE_AGENT (host.docker.internal:8611).
 services:
   nfs-browse-agent:
+    # Same image as Helm; build must be declared so `compose pull --ignore-buildable`
+    # does not try to fetch kine/helm:local from a registry.
+    build: ../helm
     image: kine/helm:local
     container_name: kine-nfs-browse-agent
     restart: unless-stopped

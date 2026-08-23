@@ -29,6 +29,19 @@ if not (FRONTEND / "index.html").is_file():
     FRONTEND = pathlib.Path(__file__).resolve().parents[2] / "frontend"
 app = FastAPI(title="Kine Helm", docs_url=None, redoc_url=None)
 
+
+async def _queue_library_sync(changed_keys: set[str] | None = None) -> dict:
+    """Import and rescan in the background; large libraries can take minutes."""
+
+    async def _run() -> None:
+        try:
+            await asyncio.to_thread(library_rescan.after_nfs_mount, changed_keys)
+        except Exception as exc:
+            print(f"library sync failed: {exc}", flush=True)
+
+    asyncio.create_task(_run())
+    return {"ok": True, "queued": True, "results": []}
+
 COOKIE = "kine_session"
 
 
@@ -569,7 +582,7 @@ async def nfs_apply_mounts(user: str = Depends(require_user)):
     except RuntimeError as exc:
         raise HTTPException(502, str(exc)) from exc
     if result.get("ok"):
-        result["rescan"] = await asyncio.to_thread(library_rescan.after_nfs_mount)
+        result["rescan"] = await _queue_library_sync()
     return result
 
 
@@ -605,9 +618,7 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
             nfs_mount = {"ok": False, "log": str(exc)}
         if nfs_mount and nfs_mount.get("ok"):
             changed = set(body) & set(_NFS_KEYS)
-            nfs_mount["rescan"] = await asyncio.to_thread(
-                library_rescan.after_nfs_mount, changed
-            )
+            nfs_mount["rescan"] = await _queue_library_sync(changed)
     return {"ok": True, "nfs_mount": nfs_mount}
 
 

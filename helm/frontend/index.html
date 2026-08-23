@@ -654,7 +654,7 @@ render.settings = async () => {
       : '';
     if (result.ok) {
       const detail = result.log ? `<pre style="margin:.5rem 0 0;font-size:.75rem;white-space:pre-wrap">${result.log}</pre>` : '';
-      const rescanTitle = rescan?.skipped ? '' : (rescanLines ? ' Library rescans triggered.' : '');
+      const rescanTitle = rescan?.skipped ? '' : (rescan?.queued ? ' Library import started in the background (may take several minutes).' : (rescanLines ? ' Library import and rescans triggered.' : ''));
       return `<div class="banner ok">Saved and NFS mounts applied.${rescanTitle}${detail}${rescanBlock}</div>`;
     }
     const detail = result.log ? `<pre style="margin:.5rem 0 0;font-size:.75rem;white-space:pre-wrap">${result.log}</pre>` : '';
