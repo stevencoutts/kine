@@ -476,7 +476,8 @@ render.settings = async () => {
     ['NFS_MOVIES', 'Movies share'],
   ];
   const nfsAll = [...nfsPrimary, ...nfsAdvanced];
-  const nfsState = { exports: [], labels: {}, suggestions: {} };
+  const nfsAdvancedIds = new Set(nfsAdvanced.map(([id]) => id));
+  const nfsState = { exports: [], labels: {}, suggestions: {}, mediaSubfolders: [] };
   const esc = (v) => String(v || '').replace(/"/g, '&quot;');
   const nfsRoleRow = ([id, label]) => `
     <div class="nfs-role-row">
@@ -486,20 +487,31 @@ render.settings = async () => {
         ${s[id] ? `<option value="${esc(s[id])}" selected>${esc(s[id])}</option>` : ''}
       </select>
     </div>`;
+  const nfsOptionsFor = (id) => {
+    if (nfsAdvancedIds.has(id)) {
+      return nfsState.mediaSubfolders.map(({ path, label }) => ({
+        path,
+        label: `${label} — ${path}`,
+      }));
+    }
+    return nfsState.exports.map(path => {
+      const label = nfsState.labels[path] || path.split('/').pop() || path;
+      return { path, label: label === path ? path : `${label} — ${path}` };
+    });
+  };
   const fillNfsSelects = (keepValues=true) => {
     const saved = Object.fromEntries(nfsAll.map(([id]) => [id, keepValues ? $('#'+id)?.value || '' : '']));
     nfsAll.forEach(([id]) => {
       const sel = $('#'+id);
       if (!sel) return;
       const current = saved[id] || s[id] || '';
+      const options = nfsOptionsFor(id);
       sel.innerHTML = '<option value="">— not used —</option>' +
-        nfsState.exports.map(path => {
-          const label = nfsState.labels[path] || path.split('/').pop() || path;
-          const text = label === path ? path : `${label} — ${path}`;
+        options.map(({ path, label }) => {
           const selected = path === current ? ' selected' : '';
-          return `<option value="${esc(path)}"${selected}>${esc(text)}</option>`;
+          return `<option value="${esc(path)}"${selected}>${esc(label)}</option>`;
         }).join('');
-      if (current && !nfsState.exports.includes(current)) {
+      if (current && !options.some(opt => opt.path === current)) {
         sel.innerHTML += `<option value="${esc(current)}" selected>${esc(current)}</option>`;
       }
     });
@@ -523,6 +535,22 @@ render.settings = async () => {
         return `<li><strong>${esc(label)}</strong> <span>${esc(path)}</span></li>`;
       }).join('')}</ul>`;
   };
+  const loadMediaSubfolders = async () => {
+    const server = $('#NFS_SERVER').value.trim();
+    const mediaPath = ($('#NFS_MEDIA')?.value || nfsState.suggestions?.NFS_MEDIA || '').trim();
+    nfsState.mediaSubfolders = [];
+    if (!server || !mediaPath) return;
+    try {
+      const q = new URLSearchParams({ server, path: mediaPath });
+      const data = await api('/nfs/browse?' + q.toString());
+      nfsState.mediaSubfolders = (data.entries || []).map(entry => ({
+        path: entry.path,
+        label: entry.name,
+      }));
+    } catch (_) {
+      nfsState.mediaSubfolders = [];
+    }
+  };
   const loadNfsShares = async (applyGuess=true) => {
     const server = $('#NFS_SERVER').value.trim();
     const status = $('#nfs-shares-status');
@@ -539,6 +567,8 @@ render.settings = async () => {
       nfsState.suggestions = data.suggestions || {};
       fillNfsSelects(true);
       if (applyGuess) applySuggestions();
+      await loadMediaSubfolders();
+      fillNfsSelects(true);
       renderShareList();
       status.innerHTML = nfsState.exports.length
         ? '<div class="banner ok">Shares loaded. Pick one for each role below, then save.</div>'
@@ -584,8 +614,11 @@ render.settings = async () => {
       </div>
       <details style="margin-top:.75rem">
         <summary style="cursor:pointer;color:var(--muted);font-size:.85rem">
-          Separate TV / Movies shares (optional)</summary>
-        <div style="margin-top:.5rem">
+          Separate TV / Movies folders (optional)</summary>
+        <p style="margin:.5rem 0;color:var(--muted);font-size:.8rem">
+          Lists folders inside your media share. Leave as not used when TV and
+          Movies are subfolders of the main media library mount.</p>
+        <div style="margin-top:.35rem">
           ${nfsAdvanced.map(nfsRoleRow).join('')}
         </div>
       </details>
@@ -603,6 +636,10 @@ render.settings = async () => {
     $('#msg').innerHTML = '<div class="banner ok">Saved. Certificates may take a minute.</div>';
   };
   $('#load-nfs-shares').onclick = () => loadNfsShares(true);
+  $('#NFS_MEDIA')?.addEventListener('change', async () => {
+    await loadMediaSubfolders();
+    fillNfsSelects(true);
+  });
   $('#NFS_SERVER').addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); loadNfsShares(true); }
   });

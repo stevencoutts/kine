@@ -108,6 +108,9 @@ def test_helm_image_includes_showmount():
 def test_frontend_can_browse_and_pick_exports():
     assert "load-nfs-shares" in FRONTEND
     assert "/nfs/exports" in FRONTEND
+    assert "loadMediaSubfolders" in FRONTEND
+    assert "/nfs/browse" in FRONTEND
+    assert "mediaSubfolders" in FRONTEND
     assert "data-nfs-select" in FRONTEND
     assert "NFS_CACHE" in FRONTEND
     assert "mount-media.sh" not in FRONTEND
