@@ -137,6 +137,19 @@ textarea{font-family:ui-monospace,monospace;font-size:.8rem;resize:vertical}
 .nfs-shares ul{margin:0;padding:0;list-style:none;font-size:.8rem}
 .nfs-shares li{padding:.2rem 0;color:var(--text);word-break:break-all}
 .nfs-shares li span{color:var(--muted)}
+.updates-table{width:100%;border-collapse:separate;border-spacing:0;font-size:.82rem}
+.updates-table th,.updates-table td{padding:.55rem .65rem;text-align:left;border-bottom:1px solid var(--line)}
+.updates-table th{color:var(--muted);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+.updates-table tr:last-child td{border-bottom:none}
+.updates-table td.mono{font-family:ui-monospace,monospace;font-size:.78rem}
+.updates-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius);
+  background:color-mix(in srgb, var(--panel) 52%, transparent)}
+.badge{display:inline-block;padding:.15rem .55rem;border-radius:999px;font-size:.72rem;font-weight:600}
+.badge.ok{background:rgba(63,185,80,.15);color:var(--ok)}
+.badge.warn{background:rgba(224,160,48,.15);color:var(--warn)}
+.badge.muted{background:color-mix(in srgb, var(--panel-2) 80%, transparent);color:var(--muted)}
+.badge.dev{background:rgba(100,149,237,.15);color:#7eb6ff}
+@media (prefers-color-scheme: light){.badge.dev{color:#2563eb}}
 </style>
 </head>
 <body>
@@ -454,20 +467,56 @@ render.updates = async (refresh=false) => {
       <button class="act" id="refresh">Check Now</button>
       <span id="age" style="color:var(--muted);font-size:.8rem"></span>
     </div>
-    <pre id="rep">${refresh?'checking registries...':'loading...'}</pre>
-    <div id="acts" class="row" style="margin-top:1rem"></div></div>`);
+    <div class="updates-wrap"><table class="updates-table">
+      <thead><tr>
+        <th>Container</th><th>Channel</th><th>Tag</th>
+        <th>Current digest</th><th>Latest digest</th><th>Status</th><th></th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="7" style="color:var(--muted)">${
+        refresh ? 'checking registries…' : 'loading…'
+      }</td></tr></tbody>
+    </table></div>
+    <pre id="rep" style="margin-top:1rem;display:none"></pre></div>`);
   $('#refresh').onclick = () => render.updates(true);
   const r = await api('/updates' + (refresh ? '?refresh=true' : ''));
-  $('#rep').textContent = r.report || 'no report';
-  $('#age').textContent = r.cached ? `cached, checked ${r.checked}` : 'just checked';
-  $('#acts').innerHTML = (r.pending||[]).map(a =>
-    `<button class="act primary" data-up="${a}">Update ${a}</button>`).join('');
+  const rows = r.containers || [];
+  $('#age').textContent = r.cached ? `cached, checked ${r.checked || 'unknown'}` : 'just checked';
+  const fmtDigest = d => (!d || d === 'none' || d === '?') ? '—' : d;
+  const rowHtml = rows.map(c => {
+    const ch = c.channel === 'dev'
+      ? `<span class="badge dev">dev</span>`
+      : `<span class="badge muted">prod</span>`;
+    const tag = c.configured_tag || c.tag || 'latest';
+    const stable = c.stable_tag ? `<span style="color:var(--muted);font-size:.75rem"> ← ${c.stable_tag}</span>` : '';
+    const st = c.update_available
+      ? `<span class="badge warn">update</span>`
+      : `<span class="badge ok">current</span>`;
+    const run = c.running ? '' : ' <span style="color:var(--muted)">(stopped)</span>';
+    const btn = c.update_available
+      ? `<button class="act primary" data-up="${c.id}">Update</button>` : '';
+    return `<tr>
+      <td><strong>${c.name || c.id}</strong><span style="color:var(--muted)">${run}</span></td>
+      <td>${ch}</td>
+      <td class="mono">${tag}${stable}</td>
+      <td class="mono">${fmtDigest(c.local_digest)}</td>
+      <td class="mono">${fmtDigest(c.remote_digest)}</td>
+      <td>${st}</td>
+      <td>${btn}</td>
+    </tr>`;
+  }).join('');
+  $('#rows').innerHTML = rowHtml || `<tr><td colspan="7" style="color:var(--muted)">No updatable images in the active compose project.</td></tr>`;
   document.querySelectorAll('[data-up]').forEach(b => b.onclick = async () => {
-    b.disabled = true; b.textContent = 'updating...';
-    const res = await api('/updates/'+b.dataset.up, {method:'POST'});
-    $('#rep').textContent = res.log;
-    if (res.rolled_back)
-      $('#rep').textContent = 'ROLLED BACK\n\n' + res.log;
+    b.disabled = true; b.textContent = 'updating…';
+    const rep = $('#rep');
+    rep.style.display = 'block';
+    rep.textContent = 'pulling and recreating ' + b.dataset.up + '…';
+    try {
+      const res = await api('/updates/'+b.dataset.up, {method:'POST'});
+      rep.textContent = res.rolled_back ? 'ROLLED BACK\n\n' + res.log : res.log;
+      render.updates(true);
+    } catch (e) {
+      rep.textContent = e.message;
+    }
   });
 };
 

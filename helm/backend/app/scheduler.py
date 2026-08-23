@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 import httpx
 from croniter import croniter
 
-from . import compose, config
+from . import compose, config, provision_lock, updates_info
 
 STATE = pathlib.Path("/stack/helm-jobs.json")
 SEERR_SETTINGS = pathlib.Path("/stack/config/seerr/settings.json")
@@ -48,18 +48,14 @@ def _next(expr: str) -> float:
 
 
 async def _update_check() -> None:
-    code, out = await compose.script("updates.sh", "check", timeout=600)
-    pending = [
-        line.split()[0]
-        for line in out.splitlines()
-        if " UPDATE " in f" {line} "
-    ]
+    payload = await updates_info.fetch(compose, refresh=True)
     data = _load()
     data["updates"] = {
-        "checked": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "ok": code == 0,
-        "pending": pending,
-        "report": out,
+        "checked": payload["checked"],
+        "ok": payload["ok"],
+        "pending": payload["pending"],
+        "report": payload["report"],
+        "containers": payload["containers"],
     }
     _save(data)
 
@@ -111,7 +107,13 @@ async def _seerr_needs_wire() -> bool:
 async def wire_seerr_if_ready() -> None:
     if not await _seerr_needs_wire():
         return
-    code, out = await compose.run("run", "--rm", "provision", "wire", timeout=900)
+    if provision_lock.status().get("busy"):
+        return
+    try:
+        async with provision_lock.acquire(reason="seerr auto-wire"):
+            code, out = await compose.run("run", "--rm", "provision", "wire", timeout=900)
+    except provision_lock.ProvisionBusy:
+        return
     data = _load()
     data["seerr_wire"] = {
         "ran": datetime.now(timezone.utc).isoformat(timespec="seconds"),

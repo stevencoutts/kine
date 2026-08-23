@@ -11,22 +11,78 @@ load_env .env
 
 var_for() { echo "$(echo "$1" | tr 'a-z-' 'A-Z_')"; }
 
+_digest() {
+  sha256_hex | cut -c1-12
+}
+
+_row() {
+  local svc="$1" image="$2"
+  remote=$(docker manifest inspect "$image" 2>/dev/null | _digest) || remote="?"
+  local_d=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null | _digest) || local_d="none"
+  if [[ "$remote" == "$local_d" ]]; then
+    status="current"
+  else
+    status="UPDATE"
+  fi
+  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$svc" "$status" "$image" "$local_d" "$remote" "${image##*:}"
+}
+
 check() {
   printf '%-14s %-12s %s\n' APP STATUS IMAGE
   for svc in $(docker compose config --services 2>/dev/null); do
     image=$(docker compose config --format json 2>/dev/null \
             | python3 -c "import json,sys;print(json.load(sys.stdin)['services'].get('$svc',{}).get('image',''))")
     [[ -z "$image" || "$image" == *local* ]] && continue
-    remote=$(docker manifest inspect "$image" 2>/dev/null \
-             | sha256_hex | cut -c1-12) || remote="?"
-    local_d=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null \
-             | sha256_hex | cut -c1-12) || local_d="none"
-    if [[ "$remote" == "$local_d" ]]; then
-      printf '%-14s %-12s %s\n' "$svc" "current" "$image"
-    else
-      printf '%-14s %-12s %s\n' "$svc" "UPDATE" "$image"
-    fi
+    row=$(_row "$svc" "$image")
+    IFS=$'\t' read -r _ status image _ _ _ <<< "$row"
+    printf '%-14s %-12s %s\n' "$svc" "$status" "$image"
   done
+}
+
+check_json() {
+  python3 - <<'PY'
+import hashlib, json, subprocess
+
+def digest(raw: str) -> str:
+    if not raw or not raw.strip():
+        return "none"
+    return hashlib.sha256(raw.encode()).hexdigest()[:12]
+
+cfg = json.loads(subprocess.check_output(
+    ["docker", "compose", "config", "--format", "json"], text=True))
+rows = []
+for svc, meta in sorted(cfg.get("services", {}).items()):
+    image = (meta or {}).get("image") or ""
+    if not image or "local" in image:
+        continue
+    try:
+        remote_raw = subprocess.check_output(
+            ["docker", "manifest", "inspect", image],
+            stderr=subprocess.DEVNULL, text=True)
+        remote = digest(remote_raw)
+    except subprocess.CalledProcessError:
+        remote = "?"
+    try:
+        local_raw = subprocess.check_output(
+            ["docker", "image", "inspect", image,
+             "--format", "{{index .RepoDigests 0}}"],
+            stderr=subprocess.DEVNULL, text=True)
+        local_d = digest(local_raw)
+    except subprocess.CalledProcessError:
+        local_d = "none"
+    tag = image.rsplit(":", 1)[-1] if ":" in image else "latest"
+    update = remote not in ("?", "none") and local_d != "none" and remote != local_d
+    rows.append({
+        "id": svc,
+        "image": image,
+        "tag": tag,
+        "local_digest": local_d,
+        "remote_digest": remote,
+        "update_available": update,
+        "status": "update" if update else "current",
+    })
+print(json.dumps(rows))
+PY
 }
 
 apply() {
@@ -66,6 +122,7 @@ apply() {
 
 case "${1:-check}" in
   check) check ;;
+  check-json) check_json ;;
   apply) apply "${2:?app}" ;;
-  *) echo "usage: updates.sh check|apply <app>" >&2; exit 1 ;;
+  *) echo "usage: updates.sh check|check-json|apply <app>" >&2; exit 1 ;;
 esac

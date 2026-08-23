@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, catalogue, channels, compose, config, launch, library_rescan, nfs_exports, scheduler
+from . import auth, catalogue, channels, compose, config, launch, library_rescan, nfs_exports, provision_lock, scheduler, updates_info
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -43,6 +43,14 @@ async def _queue_library_sync(changed_keys: set[str] | None = None) -> dict:
     return {"ok": True, "queued": True, "results": []}
 
 COOKIE = "kine_session"
+
+
+async def _provision(*args: str, reason: str = "wire", timeout: int = 900) -> tuple[int, str]:
+    try:
+        async with provision_lock.acquire(reason=reason):
+            return await compose.run("run", "--rm", "provision", *args, timeout=timeout)
+    except provision_lock.ProvisionBusy as exc:
+        raise HTTPException(409, exc.detail) from exc
 
 
 async def _sync_recyclarr() -> None:
@@ -212,6 +220,7 @@ async def status(user: str = Depends(require_user)):
     return {
         "disks": disks,
         "jobs": scheduler.status(),
+        "provision": provision_lock.status(),
         "compose_ok": code == 0,
         "raw_ps": ps if code == 0 else "",
     }
@@ -400,18 +409,18 @@ async def enable_tier(tier: str, user: str = Depends(require_user)):
             wanted.append(app_id)
     config.set_profiles(wanted)
     await _refresh_mdns()
-    # Seed config.xml with derived API keys before first start so wire
-    # can authenticate. Safe no-op when configs already exist.
-    await compose.run("run", "--rm", "provision", "seed")
-    mount = await _ensure_nfs_mounted()
-    if err := _nfs_mount_error(mount):
-        raise HTTPException(500, f"NFS mount failed: {err}")
-    # Do not run an unscoped `up` from inside Helm: if Compose decides
-    # Helm itself needs recreation, it kills the request mid-deployment.
-    code, _ = await compose.run("up", "-d", *defaults)
-    if code != 0:
-        raise HTTPException(500, f"Could not start {label} apps")
-    await compose.run("run", "--rm", "provision", "wire")
+    try:
+        async with provision_lock.acquire(reason=f"enable tier {tier}"):
+            await compose.run("run", "--rm", "provision", "seed")
+            mount = await _ensure_nfs_mounted()
+            if err := _nfs_mount_error(mount):
+                raise HTTPException(500, f"NFS mount failed: {err}")
+            code, _ = await compose.run("up", "-d", *defaults)
+            if code != 0:
+                raise HTTPException(500, f"Could not start {label} apps")
+            await compose.run("run", "--rm", "provision", "wire")
+    except provision_lock.ProvisionBusy as exc:
+        raise HTTPException(409, exc.detail) from exc
     await _sync_recyclarr()
     if _nfs_configured() and set(defaults) & {"sonarr", "radarr"}:
         await _queue_library_sync({"NFS_MEDIA", "NFS_TV", "NFS_MOVIES"})
@@ -463,17 +472,19 @@ async def enable(app_id: str, user: str = Depends(require_user)):
     config.set_profiles(wanted)
     await _refresh_mdns()
 
-    # Seed before start so *arr apps adopt derived keys on first run.
-    await compose.run("run", "--rm", "provision", "seed")
-    if app_id in _MEDIA_VOLUME_APPS:
-        mount = await _ensure_nfs_mounted()
-        if err := _nfs_mount_error(mount):
-            raise HTTPException(500, f"NFS mount failed: {err}")
-    code, out = await compose.run("up", "-d", app_id)
-    if code != 0:
-        raise HTTPException(500, f"Could not start {app_id}")
-    # Wire it to whatever is already running.
-    await compose.run("run", "--rm", "provision", "wire")
+    try:
+        async with provision_lock.acquire(reason=f"enable {app_id}"):
+            await compose.run("run", "--rm", "provision", "seed")
+            if app_id in _MEDIA_VOLUME_APPS:
+                mount = await _ensure_nfs_mounted()
+                if err := _nfs_mount_error(mount):
+                    raise HTTPException(500, f"NFS mount failed: {err}")
+            code, out = await compose.run("up", "-d", app_id)
+            if code != 0:
+                raise HTTPException(500, f"Could not start {app_id}")
+            await compose.run("run", "--rm", "provision", "wire")
+    except provision_lock.ProvisionBusy as exc:
+        raise HTTPException(409, exc.detail) from exc
     await _sync_recyclarr()
     return {"ok": True, "log": out[-2000:]}
 
@@ -559,13 +570,7 @@ async def updates(refresh: bool = False, user: str = Depends(require_user)):
     A digest check hits every image's registry, so doing it on every
     page load is both slow and rude to the registries.
     """
-    cached = scheduler.status().get("updates")
-    if cached and not refresh:
-        return {"ok": cached["ok"], "report": cached["report"],
-                "pending": cached["pending"], "checked": cached["checked"],
-                "cached": True}
-    code, out = await compose.script("updates.sh", "check", timeout=300)
-    return {"ok": code == 0, "report": out, "cached": False}
+    return await updates_info.fetch(compose, refresh=refresh)
 
 
 @app.post("/api/updates/{app_id}")
@@ -726,7 +731,7 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
             nfs_mount["rescan"] = await _queue_library_sync(changed)
     media_wire = None
     if set(_MEDIA_SERVER_KEYS) & set(body) or set(_SUBTITLE_KEYS) & set(body):
-        code, out = await compose.run("run", "--rm", "provision", "wire", timeout=900)
+        code, out = await _provision("wire", reason="settings", timeout=900)
         log = out[-2000:] if out else ""
         media_wire = {
             "ok": code == 0 and "wiring failed" not in log.lower()
@@ -745,7 +750,7 @@ async def backup(user: str = Depends(require_user)):
 
 @app.post("/api/provision")
 async def provision(user: str = Depends(require_user)):
-    code, out = await compose.run("run", "--rm", "provision", "wire", timeout=900)
+    code, out = await _provision("wire", reason="manual wire")
     await _sync_recyclarr()
     return {"ok": code == 0, "log": out}
 

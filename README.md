@@ -318,6 +318,22 @@ and controls Docker through `tecnativa/docker-socket-proxy`. The proxy narrows
 the API surface but still grants powerful container-management access.
 Traefik separately mounts the raw Docker socket read-only for discovery.
 
+Helm tabs map to the same operations as the CLI:
+
+- **Apps** — enable/disable sections and individual apps, toggle development
+  image channels, restart services.
+- **Updates** — one row per container: prod or dev channel, configured tag,
+  local vs registry digest, and an apply button when a newer image exists.
+  Checks are cached overnight; **Check Now** refreshes live from registries.
+- **Settings** — domain, TLS, NFS paths, Plex/Emby library notify, and
+  OpenSubtitles credentials for Bazarr.
+
+Provisioning (`seed` / `wire`) is single-flight: Helm holds a file lock at
+`${STACK_ROOT}/provision.lock` so overlapping saves, enable actions, and
+background Seerr auto-wire cannot spawn concurrent `provision-run` containers.
+A second wire while one is in progress returns HTTP 409 instead of racing
+gluetun and tunnelled apps.
+
 Repository layout:
 
 ```text
@@ -345,7 +361,7 @@ configuration, but never media.
 ./kine enable bazarr        # enable, start, and provision an app
 ./kine disable bazarr       # stop and remove an app profile
 ./kine provision            # repeat idempotent application wiring
-./kine updates              # compare local and remote images
+./kine updates              # compare local and remote image digests (text)
 ./kine update sonarr        # back up, pull, recreate, and health-check
 ./kine vpn restart          # restart gluetun and all tunnelled dependants
 ./kine tls                  # regenerate TLS files after changing mode
