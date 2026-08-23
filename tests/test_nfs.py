@@ -40,6 +40,11 @@ def test_mount_script_supports_host_root_for_agent():
     assert 'host_path /etc/fstab' in MOUNT_SCRIPT
 
 
+def test_mount_script_links_title_case_media_dirs():
+    assert "link_media_subdir tv TV" in MOUNT_SCRIPT
+    assert "removed empty placeholder" in MOUNT_SCRIPT
+
+
 def test_installer_mounts_after_local_ownership_is_set():
     mount = INSTALL.index("./scripts/mount-media.sh")
     assert mount > INSTALL.index('chmod -R g+rwX "${DATA_ROOT}"')

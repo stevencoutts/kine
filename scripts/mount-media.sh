@@ -127,11 +127,33 @@ mount_export "$DOWNLOADS_ROOT" "${NFS_DOWNLOADS:-}" "Downloads"
 mount_export "$CACHE_ROOT" "${NFS_CACHE:-}" "Tdarr cache"
 
 # Apps expect lowercase tv/movies paths; link when the share uses Title case.
-if [[ -n "${NFS_MEDIA:-}" ]] && [[ -d "${MEDIA_ROOT}/TV" ]] && [[ ! -e "${MEDIA_ROOT}/tv" ]]; then
-  ln -s TV "${MEDIA_ROOT}/tv"
-  ok "linked ${MEDIA_ROOT}/tv -> TV"
-fi
-if [[ -n "${NFS_MEDIA:-}" ]] && [[ -d "${MEDIA_ROOT}/Movies" ]] && [[ ! -e "${MEDIA_ROOT}/movies" ]]; then
-  ln -s Movies "${MEDIA_ROOT}/movies"
-  ok "linked ${MEDIA_ROOT}/movies -> Movies"
-fi
+link_media_subdir() {
+  local lower=$1
+  local upper=$2
+  local target="${MEDIA_ROOT}/${lower}"
+  local source="${MEDIA_ROOT}/${upper}"
+
+  [[ -n "${NFS_MEDIA:-}" ]] || return 0
+  [[ -d "$source" ]] || return 0
+
+  if [[ -d "$target" ]] && [[ ! -L "$target" ]] && [[ -z "$(ls -A "$target" 2>/dev/null)" ]]; then
+    rmdir "$target" || {
+      warn "${target} exists but is not empty; leave content in ${upper}/ or remove it manually"
+      return 1
+    }
+    ok "removed empty placeholder ${target}"
+  fi
+
+  if [[ -e "$target" ]]; then
+    if [[ -L "$target" ]]; then
+      ok "${target} already linked"
+    fi
+    return 0
+  fi
+
+  ln -s "$upper" "$target"
+  ok "linked ${target} -> ${upper}"
+}
+
+link_media_subdir tv TV
+link_media_subdir movies Movies
