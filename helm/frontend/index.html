@@ -4,32 +4,33 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Kine</title>
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <style>
 :root{
-  --bg:#1b1a19; --panel:#26241f; --panel-2:#302d27; --line:#3d3a33;
-  --text:#f3f1ec; --muted:#a19c8f; --accent:#ff6a3d; --ok:#3fb950;
-  --warn:#e0a030; --bad:#f85149; --radius:16px;
+  --bg:#18191b; --panel:#242628; --panel-2:#2e3134; --line:#3e4248;
+  --text:#eef0f2; --muted:#9aa0a8; --accent:#8a8f98; --accent-strong:#c4c8ce;
+  --ok:#3fb950; --warn:#e0a030; --bad:#f85149; --radius:16px;
 }
 @media (prefers-color-scheme: light){
-  :root{--bg:#f3f1ec;--panel:#fff;--panel-2:#f6f4ee;--line:#e5e0d5;
-        --text:#22201b;--muted:#7a7568;}
+  :root{--bg:#eceef0;--panel:#fff;--panel-2:#f4f5f6;--line:#d5d8dc;
+        --text:#1c1e21;--muted:#6b7280;--accent:#6b7280;--accent-strong:#374151;}
 }
 *{box-sizing:border-box}
-/* ponytail: a CSS gradient stands in for the reference's background
-   photo — no image asset to embed, and a stock interior shot would
-   just add dead weight to a single-file admin panel. */
 body{margin:0;color:var(--text);
      font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
      background:
-       radial-gradient(1100px 500px at 15% -10%, color-mix(in srgb, var(--accent) 35%, transparent), transparent),
-       radial-gradient(900px 500px at 100% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent),
+       radial-gradient(1100px 500px at 15% -10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent),
+       radial-gradient(900px 500px at 100% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent),
        var(--bg);
      background-attachment:fixed}
-header{display:flex;align-items:center;gap:1rem;padding:1rem 1.5rem;
+header{display:flex;align-items:center;gap:.85rem;padding:1rem 1.5rem;
        border-bottom:1px solid var(--line);
        background:color-mix(in srgb, var(--panel) 65%, transparent);
        backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
-header h1{font-size:1rem;margin:0;letter-spacing:.02em}
+.brand{display:flex;align-items:center;gap:.65rem}
+.brand-mark{width:28px;height:28px;flex:none;display:block}
+header h1{font-size:1.05rem;margin:0;letter-spacing:.04em;font-weight:600;
+  color:var(--accent-strong)}
 nav{display:flex;gap:.25rem;margin-left:auto}
 nav button{background:none;border:1px solid transparent;color:var(--muted);
   padding:.5rem 1rem;border-radius:999px;cursor:pointer;font-size:.9rem}
@@ -55,9 +56,10 @@ footer#vpnbar .dot.on{animation:pulse 2s ease-in-out infinite}
 .row{display:flex;gap:.5rem;align-items:center}
 button.act{background:var(--panel-2);border:1px solid var(--line);color:var(--text);
   padding:.4rem .85rem;border-radius:999px;cursor:pointer;font-size:.8rem}
-button.act:hover{border-color:var(--accent)}
+button.act:hover{border-color:var(--accent-strong)}
 button.act.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-a.link{color:var(--accent);text-decoration:none;font-size:.8rem}
+button.act.primary:hover{background:var(--accent-strong);border-color:var(--accent-strong);color:#18191b}
+a.link{color:var(--accent-strong);text-decoration:none;font-size:.8rem}
 pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);
     padding:.75rem;overflow:auto;font-size:.8rem;max-height:420px}
 .section{margin-bottom:2rem}
@@ -139,7 +141,10 @@ const render = {};
 render.shell = (body) => {
   $('#app').innerHTML = `
     <header>
-      <h1>Kine</h1>
+      <div class="brand">
+        <img class="brand-mark" src="/assets/favicon.svg" alt="" width="28" height="28">
+        <h1>Kine</h1>
+      </div>
       <nav>
         ${['apps','updates','vpn','status','settings'].map(t =>
           `<button class="${state.tab===t?'active':''}" data-tab="${t}">${TAB_LABELS[t]}</button>`
@@ -173,6 +178,10 @@ setInterval(updateVpnBar, 30000);
 render.setup = () => {
   $('#app').innerHTML = `
     <main class="login" style="max-width:460px">
+      <div class="brand" style="justify-content:center;margin-bottom:1rem">
+        <img class="brand-mark" src="/assets/favicon.svg" alt="" width="36" height="36">
+        <h1>Kine</h1>
+      </div>
       <div class="card">
         <h3>First Run</h3>
         <p>Set the admin password and how this appliance is reached. Both
@@ -263,6 +272,10 @@ render.setup = () => {
 render.login = () => {
   $('#app').innerHTML = `
     <main class="login">
+      <div class="brand" style="justify-content:center;margin-bottom:1rem">
+        <img class="brand-mark" src="/assets/favicon.svg" alt="" width="36" height="36">
+        <h1>Kine</h1>
+      </div>
       <div class="card">
         <h3>Sign In</h3>
         <label>Username</label><input id="u" value="admin">

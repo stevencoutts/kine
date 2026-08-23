@@ -104,3 +104,11 @@ def test_open_button_uses_safe_new_window_and_inline_error():
     assert "launchApp(state.apps.find" in FRONTEND
     assert "Could not open" in FRONTEND
     assert 'target="_blank" rel="noopener noreferrer"' in FRONTEND
+
+
+def test_helm_uses_grey_brand_and_favicon():
+    assert "--accent:#8a8f98" in FRONTEND
+    assert "#ff6a3d" not in FRONTEND
+    assert 'href="/assets/favicon.svg"' in FRONTEND
+    assert 'class="brand-mark"' in FRONTEND
+    assert (ROOT / "helm" / "frontend" / "favicon.svg").is_file()
