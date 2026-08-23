@@ -106,6 +106,10 @@ def seed(stack: pathlib.Path, enabled: set[str], log=print) -> None:
     grafana = stack / "config" / "grafana"
     _write_yaml(grafana / "provisioning" / "datasources" / "prometheus.yml", DATASOURCE)
     _write_yaml(grafana / "provisioning" / "dashboards" / "kine.yml", DASHBOARD_PROVIDER)
+    # Grafana logs a scary error for every provisioning directory it does
+    # not find, and the mount is read-only so it cannot create them.
+    for empty in ("plugins", "alerting", "notifiers", "access-control"):
+        (grafana / "provisioning" / empty).mkdir(parents=True, exist_ok=True)
 
     dashboards = grafana / "dashboards"
     dashboards.mkdir(parents=True, exist_ok=True)

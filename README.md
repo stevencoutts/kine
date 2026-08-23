@@ -97,6 +97,7 @@ Enabling a section selects its catalogue defaults:
 - acquisition: Sonarr, Radarr, Prowlarr, Transmission, and Recyclarr
 - process: Tdarr
 - live TV: Dispatcharr, Enhanced Channel Manager (ECM), and Teamarr
+- metrics: Grafana, which pulls in Prometheus, cAdvisor and node-exporter
 
 Optional apps remain individually available: Emby, Jackett, Bazarr,
 NZBGet, Unpackerr, and Seerr. Prowlarr remains the indexer
@@ -117,6 +118,29 @@ quality profiles (`WEB-1080p` / `HD Bluray + WEB`, falling back to stock
 updates an existing Seerr server entry when its active profile is wrong.
 Finish the wizard Configure Services step (or skip it if provision already
 filled it) when prompted.
+
+The **Metrics** tier is off by default and records the stack's own history.
+Enabling it starts four containers: cAdvisor for per-container CPU, memory,
+network and disk; node-exporter for host CPU, memory, filesystems and
+sensors; Prometheus to store them for 30 days (capped at 2 GB so it cannot
+fill the media disk); and Grafana to draw them. Application statistics come
+from Helm itself, which already holds every app's API key — it exposes
+library sizes, download queues, subtitles wanted, indexer activity, live
+Plex and Emby sessions and pending image updates at `/api/metrics`, refreshed
+every 60 seconds. Only Grafana appears in Apps; the other three are hidden
+plumbing pulled in as dependencies, and disabling the section stops all four.
+
+Grafana is readable without signing in, which is what lets Helm embed panels;
+`GRAFANA_ADMIN_PASSWORD` in `.env` is only needed to edit dashboards. Four
+dashboards are provisioned from `provision/assets/grafana/dashboards/` — an
+overview, per-container detail, host resources, and media statistics — so they
+live in git rather than inside `grafana.db`. History starts when you enable the
+tier; the graphs fill in over the following hours.
+
+Helm's **Stats** page embeds the overview panels, and each app card on the Apps
+page grows a CPU sparkline drawn from a single Prometheus range query. With the
+Metrics tier off, the Stats page offers to turn it on and the app cards render
+exactly as before.
 
 Tdarr lives in the **Process** tier (not tunnelled). Enable the Process
 section from Apps, then point libraries at `/media/...` in its UI. Transcode

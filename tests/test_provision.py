@@ -1283,3 +1283,11 @@ def test_metrics_seed_does_nothing_when_the_tier_is_off(tmp_path):
     from recipes import metrics as metrics_recipe
     metrics_recipe.seed(tmp_path, {"sonarr"}, log=lambda *_: None)
     assert not (tmp_path / "config" / "prometheus").exists()
+
+
+def test_metrics_seed_creates_the_provisioning_dirs_grafana_expects(tmp_path):
+    from recipes import metrics as metrics_recipe
+    metrics_recipe.seed(tmp_path, {"grafana"}, log=lambda *_: None)
+    provisioning = tmp_path / "config" / "grafana" / "provisioning"
+    for name in ("plugins", "alerting", "notifiers", "access-control"):
+        assert (provisioning / name).is_dir(), f"grafana logs an error without {name}/"
