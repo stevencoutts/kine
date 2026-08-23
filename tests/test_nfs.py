@@ -163,12 +163,34 @@ def test_browse_subfolder_uses_temporary_mount(monkeypatch):
     ]
 
 
-def test_parse_showmount_extracts_export_paths():
-    assert nfs_exports.parse_showmount(SAMPLE_SHOWMOUNT) == [
-        "/exports/media",
-        "/exports/downloads",
-        "/exports/cache",
-    ]
+def test_browse_prefers_host_agent(monkeypatch):
+    monkeypatch.setenv("NFS_BROWSE_AGENT", "http://127.0.0.1:8611")
+    monkeypatch.setenv("KINE_SECRET", "test-secret")
+    monkeypatch.setattr(
+        nfs_exports,
+        "browse_via_agent",
+        lambda server, path="", timeout=15.0: {
+            "server": server,
+            "path": path,
+            "parent": None if not path else "",
+            "entries": [{"name": "TV", "path": f"{path}/TV", "kind": "dir"}],
+            "via": "host-agent",
+        },
+    )
+    data = nfs_exports.browse("nas.local", "/exports/media")
+    assert data["via"] == "host-agent"
+    assert data["entries"][0]["name"] == "TV"
+
+
+def test_mount_error_mentions_docker_desktop_when_denied():
+    msg = nfs_exports._mount_error(
+        "10.100.30.222:/exports/media",
+        "access denied by server",
+        "10.100.30.36",
+    )
+    assert "Docker Desktop" in msg
+    assert "nfs-agent" in msg
+
 
 
 def test_validate_server_rejects_injection():

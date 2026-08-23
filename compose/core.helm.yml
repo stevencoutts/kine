@@ -18,6 +18,9 @@ services:
       HELM_ADMIN_USER: ${HELM_ADMIN_USER}
       HELM_ADMIN_HASH: ${HELM_ADMIN_HASH}
       HELM_UPDATE_CHECK_CRON: ${HELM_UPDATE_CHECK_CRON}
+      # Docker Desktop: set to http://host.docker.internal:8611 and run
+      # `sudo ./kine nfs-agent` so Settings can list NFS subfolders.
+      NFS_BROWSE_AGENT: ${NFS_BROWSE_AGENT:-}
     volumes:
       # The repo itself: Helm edits .env and runs docker compose here.
       - ../:/repo
@@ -26,6 +29,8 @@ services:
       # sends their host-absolute paths to Docker.
       - ${STACK_ROOT}:${STACK_ROOT}
     networks: [kine_edge, kine_internal, kine_ctrl]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     cap_add:
       - SYS_ADMIN
     ports:

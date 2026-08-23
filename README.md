@@ -201,8 +201,16 @@ In **Settings → Media Storage**, enter the NFS server and click **Browse**
 subdirectories when the NFS server allows this host to mount.
 
 On Docker Desktop, subfolder listing often fails because the Linux VM’s IP is
-not on the share allowlist. Pick the export, use **Append subfolder** (for
-example `TV`), then **Use this path**. Values are written to `.env`:
+not on the share allowlist — even when your Mac’s LAN IP is. Run a host browse
+agent (needs sudo for mounts), then use Browse in Settings as usual:
+
+```bash
+sudo ./kine nfs-agent
+```
+
+Leave that terminal open. Alternatively pick the export and use **Append
+subfolder** (for example `TV`), then **Use this path**. Values are written to
+`.env`:
 
 ```dotenv
 NFS_SERVER=192.168.1.10

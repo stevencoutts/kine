@@ -1,11 +1,14 @@
 """NFS export listing and subfolder browsing for the Helm Settings UI.
 
 Top-level exports come from ``showmount -e``. Subfolders are read by
-temporarily mounting the export root inside Helm (read-only) and listing
-directories. Host-side mounting remains ``scripts/mount-media.sh``.
+temporarily mounting the export root read-only. On Docker Desktop the
+in-container source IP is not the Mac's LAN address, so mounts are
+denied even when the Mac is allowlisted — Helm then falls back to the
+host browse agent (``scripts/nfs-browse-agent.py``) when configured.
 """
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import posixpath
@@ -13,6 +16,9 @@ import re
 import shutil
 import subprocess
 import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
 from contextlib import contextmanager
 
 _SERVER_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
@@ -198,8 +204,11 @@ def _mount_error(spec: str, last_error: str, clients: str) -> str:
         allowed = f" Currently allowed clients: {clients}." if clients else ""
         return (
             f"NFS server denied mount for {spec}.{allowed} "
-            "Add this machine's IP to the UniFi/NFS client list for that share, "
-            "then try again. You can still type a subfolder path manually."
+            "If this Mac's IP is already listed, that is expected on Docker "
+            "Desktop: Helm's NFS traffic does not come from your Mac IP. "
+            "Start the host browse agent with "
+            "`sudo ./kine nfs-agent`, or allow your LAN subnet on the share, "
+            "or append a subfolder name manually in Settings."
         )
     return (
         f"could not mount {spec} for browsing ({last_error}). "
@@ -207,14 +216,55 @@ def _mount_error(spec: str, last_error: str, clients: str) -> str:
     )
 
 
+def _agent_url() -> str:
+    return (os.environ.get("NFS_BROWSE_AGENT") or "").rstrip("/")
+
+
+def _agent_token() -> str:
+    return os.environ.get("KINE_SECRET") or os.environ.get("NFS_BROWSE_TOKEN") or ""
+
+
+def browse_via_agent(server: str, path: str = "", timeout: float = 15.0) -> dict | None:
+    """Return browse payload from the host agent, or None if unavailable."""
+    base = _agent_url()
+    token = _agent_token()
+    if not base or not token:
+        return None
+    query = urllib.parse.urlencode({"server": server, "path": path or ""})
+    req = urllib.request.Request(
+        f"{base}/browse?{query}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")
+        try:
+            detail = json.loads(detail).get("detail", detail)
+        except json.JSONDecodeError:
+            pass
+        raise RuntimeError(str(detail) or f"host agent HTTP {exc.code}") from exc
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or "entries" not in data:
+        return None
+    return data
+
+
 def browse(server: str, path: str = "", timeout: float = 10.0) -> dict:
     """Browse exports or subfolders on ``server``.
 
-    When ``path`` is empty, returns advertised exports. Otherwise mounts
-    the export root read-only and lists child directories at ``path``.
+    Prefers the host browse agent when ``NFS_BROWSE_AGENT`` is set (Docker
+    Desktop). Otherwise mounts inside Helm.
     """
     host = validate_server(server)
     path = validate_export_path(path)
+
+    via_agent = browse_via_agent(host, path, timeout=max(timeout, 15.0))
+    if via_agent is not None:
+        return via_agent
+
     rows = list_export_rows(host, timeout=timeout)
     exports = [export for export, _clients in rows]
     clients_by_export = dict(rows)
