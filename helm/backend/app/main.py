@@ -465,8 +465,7 @@ _NFS_KEYS = ("NFS_SERVER", "NFS_TV", "NFS_MOVIES", "NFS_DOWNLOADS", "NFS_CACHE")
 async def nfs_list_exports(server: str = "", user: str = Depends(require_user)):
     """Browse exports advertised by an NFS server (showmount -e).
 
-    Does not mount anything. Applying mounts remains a host-side
-    ``sudo ./scripts/mount-media.sh`` step.
+    Does not mount anything. Prefer ``/api/nfs/browse`` for subfolders.
     """
     try:
         exports = await asyncio.to_thread(nfs_exports.list_exports, server)
@@ -475,6 +474,17 @@ async def nfs_list_exports(server: str = "", user: str = Depends(require_user)):
     except RuntimeError as exc:
         raise HTTPException(502, str(exc)) from exc
     return {"server": nfs_exports.validate_server(server), "exports": exports}
+
+
+@app.get("/api/nfs/browse")
+async def nfs_browse(server: str = "", path: str = "", user: str = Depends(require_user)):
+    """Browse NFS exports and subfolders for the Settings path picker."""
+    try:
+        return await asyncio.to_thread(nfs_exports.browse, server, path)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
 
 
 @app.get("/api/settings")

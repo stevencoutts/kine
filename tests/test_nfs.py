@@ -1,4 +1,5 @@
 """NFS export browsing and mount-script invariants."""
+import contextlib
 import pathlib
 import sys
 
@@ -61,6 +62,11 @@ def test_env_example_documents_nfs_cache():
 def test_settings_api_includes_nfs_cache():
     assert "NFS_CACHE" in MAIN
     assert "/api/nfs/exports" in MAIN
+    assert "/api/nfs/browse" in MAIN
+
+
+def test_helm_container_can_mount_for_browse():
+    assert "SYS_ADMIN" in (ROOT / "compose" / "core.helm.yml").read_text()
 
 
 def test_helm_image_includes_showmount():
@@ -69,8 +75,78 @@ def test_helm_image_includes_showmount():
 
 def test_frontend_can_browse_and_pick_exports():
     assert "browse-nfs" in FRONTEND
-    assert "/nfs/exports" in FRONTEND
+    assert "/nfs/browse" in FRONTEND
+    assert "nfs-browser-select" in FRONTEND
     assert "NFS_CACHE" in FRONTEND
+
+
+def test_export_root_for_longest_matching_prefix():
+    exports = ["/exports", "/exports/media", "/other"]
+    assert nfs_exports.export_root_for("/exports/media/tv", exports) == "/exports/media"
+    assert nfs_exports.export_root_for("/exports/media", exports) == "/exports/media"
+
+
+def test_parent_path_steps_up_within_export():
+    exports = ["/exports/media"]
+    assert nfs_exports.parent_path("/exports/media/tv", exports) == "/exports/media"
+    assert nfs_exports.parent_path("/exports/media", exports) == ""
+
+
+def test_validate_export_path_rejects_traversal():
+    with pytest.raises(ValueError):
+        nfs_exports.validate_export_path("/exports/../etc")
+    assert nfs_exports.validate_export_path("/exports/media/tv") == "/exports/media/tv"
+
+
+def test_browse_root_lists_exports_without_mount(monkeypatch):
+    monkeypatch.setattr(
+        nfs_exports,
+        "list_exports",
+        lambda server, timeout=10.0: ["/exports/media", "/exports/downloads"],
+    )
+    data = nfs_exports.browse("nas.local", "")
+    assert data["path"] == ""
+    assert data["parent"] is None
+    assert [e["path"] for e in data["entries"]] == [
+        "/exports/downloads",
+        "/exports/media",
+    ]
+
+
+def test_browse_subfolder_uses_temporary_mount(monkeypatch):
+    monkeypatch.setattr(
+        nfs_exports,
+        "list_exports",
+        lambda server, timeout=10.0: ["/exports/media"],
+    )
+
+    class FakeMount:
+        def joinpath(self, *parts):
+            return self
+
+        def is_dir(self):
+            return True
+
+    @contextlib.contextmanager
+    def fake_mount(server, export):
+        assert server == "nas.local"
+        assert export == "/exports/media"
+        yield FakeMount()
+
+    class FakeEntry:
+        name = "TV"
+
+        def is_dir(self, follow_symlinks=False):
+            return True
+
+    monkeypatch.setattr(nfs_exports, "_nfs_mount", fake_mount)
+    monkeypatch.setattr(nfs_exports.os, "scandir", lambda path: [FakeEntry()])
+    data = nfs_exports.browse("nas.local", "/exports/media")
+    assert data["path"] == "/exports/media"
+    assert data["parent"] == ""
+    assert data["entries"] == [
+        {"name": "TV", "path": "/exports/media/TV", "kind": "dir"},
+    ]
 
 
 def test_parse_showmount_extracts_export_paths():

@@ -26,6 +26,8 @@ services:
       # sends their host-absolute paths to Docker.
       - ${STACK_ROOT}:${STACK_ROOT}
     networks: [kine_edge, kine_internal, kine_ctrl]
+    cap_add:
+      - SYS_ADMIN
     ports:
       # Bound directly as well as via Traefik, so the GUI stays
       # reachable if the reverse proxy is what you have broken.

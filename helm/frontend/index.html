@@ -78,6 +78,23 @@ textarea{font-family:ui-monospace,monospace;font-size:.8rem;resize:vertical}
 .banner{padding:.6rem .9rem;border-radius:var(--radius);font-size:.85rem;margin-bottom:1rem}
 .banner.ok{background:rgba(63,185,80,.12);border:1px solid var(--ok)}
 .banner.bad{background:rgba(248,81,73,.12);border:1px solid var(--bad)}
+.nfs-browser{margin-top:1rem;border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--panel-2);overflow:hidden}
+.nfs-browser-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;
+  padding:.65rem .85rem;border-bottom:1px solid var(--line);font-size:.85rem}
+.nfs-crumbs{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;color:var(--muted);
+  padding:.55rem .85rem;border-bottom:1px solid var(--line);font-size:.8rem}
+.nfs-crumbs button{background:none;border:none;color:var(--accent);cursor:pointer;
+  padding:0;font:inherit}
+.nfs-crumbs span{color:var(--muted)}
+.nfs-list{max-height:260px;overflow:auto}
+.nfs-entry{display:flex;align-items:center;gap:.5rem;width:100%;text-align:left;
+  background:none;border:none;border-bottom:1px solid var(--line);color:var(--text);
+  padding:.65rem .85rem;cursor:pointer;font:inherit}
+.nfs-entry:last-child{border-bottom:none}
+.nfs-entry:hover{background:color-mix(in srgb, var(--accent) 10%, transparent)}
+.nfs-entry .icon{color:var(--accent);width:1rem;flex:none}
+.nfs-empty{padding:.85rem;color:var(--muted);font-size:.85rem}
 </style>
 </head>
 <body>
@@ -427,25 +444,74 @@ render.status = async () => {
 
 render.settings = async () => {
   const s = await api('/settings');
-  const nfsRole = (id, label, value, placeholder) => `<label>${label}</label>
+  const nfsRoles = [
+    ['NFS_TV', 'TV Export', '/media/TV'],
+    ['NFS_MOVIES', 'Movies Export', '/media/Movies'],
+    ['NFS_DOWNLOADS', 'Downloads Export', '/media/downloads'],
+    ['NFS_CACHE', 'Tdarr Cache Export', '/media/cache'],
+  ];
+  const nfsRoleLabel = Object.fromEntries(nfsRoles.map(([id, label]) => [id, label]));
+  const nfsRole = ([id, label, placeholder]) => `<label>${label}</label>
       <div class="row" style="gap:.5rem">
-        <select id="${id}_pick" style="flex:1">
-          <option value="">Type path manually…</option>
-        </select>
-      </div>
-      <input id="${id}" value="${value||''}" placeholder="${placeholder}">`;
-  const fillExports = (exports) => {
-    const roles = ['NFS_TV','NFS_MOVIES','NFS_DOWNLOADS','NFS_CACHE'];
-    roles.forEach(id => {
-      const sel = $('#'+id+'_pick');
-      const cur = $('#'+id).value;
-      sel.innerHTML = '<option value="">Type path manually…</option>' +
-        exports.map(p => `<option value="${p}" ${p===cur?'selected':''}>${p}</option>`).join('');
-      sel.onchange = () => { if (sel.value) $('#'+id).value = sel.value; };
+        <input id="${id}" value="${s[id]||''}" placeholder="${placeholder}" style="flex:1">
+        <button class="act" type="button" data-nfs-target="${id}">Browse…</button>
+      </div>`;
+  const nfsBrowser = { target: null, path: '' };
+  const renderNfsBrowser = (data) => {
+    nfsBrowser.path = data.path || '';
+    const list = $('#nfs-browser-list');
+    const crumbs = $('#nfs-browser-crumbs');
+    const targetEl = $('#nfs-browser-target');
+    const selectBtn = $('#nfs-browser-select');
+    targetEl.textContent = nfsBrowser.target
+      ? (nfsRoleLabel[nfsBrowser.target] || nfsBrowser.target)
+      : 'explore only';
+    selectBtn.style.display = nfsBrowser.target ? '' : 'none';
+    const segments = [];
+    if (!data.path) {
+      segments.push({ label: 'Exports', path: '' });
+    } else {
+      segments.push({ label: 'Exports', path: '' });
+      data.path.split('/').filter(Boolean).reduce((acc, part) => {
+        acc = `${acc}/${part}`;
+        segments.push({ label: part, path: acc });
+        return acc;
+      }, '');
+    }
+    crumbs.innerHTML = segments.map((seg, i) => {
+      const sep = i ? '<span>/</span>' : '';
+      const btn = `<button type="button" data-nfs-path="${seg.path}">${seg.label}</button>`;
+      return `${sep}${btn}`;
+    }).join('');
+    crumbs.querySelectorAll('[data-nfs-path]').forEach(btn => {
+      btn.onclick = () => loadNfsBrowse(btn.dataset.nfsPath);
     });
-    $('#nfs-exports').textContent = exports.length
-      ? `${exports.length} export(s) found — pick a share or type a path.`
-      : '';
+    if (!data.entries || !data.entries.length) {
+      list.innerHTML = '<div class="nfs-empty">No subfolders here. Select this path or go up.</div>';
+      return;
+    }
+    list.innerHTML = data.entries.map(entry => `
+      <button class="nfs-entry" type="button" data-nfs-path="${entry.path}">
+        <span class="icon">📁</span><span>${entry.name}</span>
+      </button>`).join('');
+    list.querySelectorAll('[data-nfs-path]').forEach(btn => {
+      btn.onclick = () => loadNfsBrowse(btn.dataset.nfsPath);
+    });
+  };
+  const loadNfsBrowse = async (path='') => {
+    const server = $('#NFS_SERVER').value.trim();
+    const browser = $('#nfs-browser');
+    browser.style.display = 'block';
+    $('#nfs-browser-list').innerHTML = '<div class="nfs-empty">Loading…</div>';
+    $('#nfs-msg').innerHTML = '';
+    try {
+      const q = new URLSearchParams({ server });
+      if (path) q.set('path', path);
+      renderNfsBrowser(await api('/nfs/browse?' + q.toString()));
+    } catch (e) {
+      $('#nfs-browser-list').innerHTML = '';
+      $('#nfs-msg').innerHTML = `<div class="banner bad">${e.message || 'Browse failed'}</div>`;
+    }
   };
   render.shell(`
     <div class="section"><h2>Settings</h2><div class="card">
@@ -468,8 +534,8 @@ render.settings = async () => {
     </div></div>
     <div class="section"><h2>Media Storage</h2><div class="card">
       <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
-        Optional NFS mounts. Browse the server's exports, pick a share for each
-        role, or type a path manually. Mounts are applied on the host under
+        Optional NFS mounts. Enter the server, browse into exports and subfolders,
+        then assign a path to each role. Mounts are applied on the host under
         <code>${s.DATA_ROOT||'/srv/media-data'}</code> with
         <code>sudo ./scripts/mount-media.sh</code>. Leave Tdarr cache empty to
         use local disk at <code>cache/tdarr</code>.</p>
@@ -478,11 +544,15 @@ render.settings = async () => {
         <input id="NFS_SERVER" value="${s.NFS_SERVER||''}" placeholder="192.168.1.10" style="flex:1">
         <button class="act" id="browse-nfs" type="button">Browse</button>
       </div>
-      <div id="nfs-exports" style="margin:.5rem 0;color:var(--muted);font-size:.85rem"></div>
-      ${nfsRole('NFS_TV','TV Export', s.NFS_TV, '/media/TV')}
-      ${nfsRole('NFS_MOVIES','Movies Export', s.NFS_MOVIES, '/media/Movies')}
-      ${nfsRole('NFS_DOWNLOADS','Downloads Export', s.NFS_DOWNLOADS, '/media/downloads')}
-      ${nfsRole('NFS_CACHE','Tdarr Cache Export', s.NFS_CACHE, '/media/cache')}
+      <div id="nfs-browser" class="nfs-browser" style="display:none">
+        <div class="nfs-browser-head">
+          <span>Assigning to: <strong id="nfs-browser-target">—</strong></span>
+          <button class="act primary" id="nfs-browser-select" type="button">Use this path</button>
+        </div>
+        <div id="nfs-browser-crumbs" class="nfs-crumbs"></div>
+        <div id="nfs-browser-list" class="nfs-list"></div>
+      </div>
+      ${nfsRoles.map(nfsRole).join('')}
       <div class="row" style="margin-top:1rem">
         <button class="act primary" id="save-nfs">Save NFS Settings</button>
       </div>
@@ -495,16 +565,20 @@ render.settings = async () => {
     $('#msg').innerHTML = '<div class="banner ok">Saved. Certificates may take a minute.</div>';
   };
   $('#browse-nfs').onclick = async () => {
-    const server = $('#NFS_SERVER').value.trim();
-    $('#nfs-exports').textContent = 'Browsing…';
-    $('#nfs-msg').innerHTML = '';
-    try {
-      const r = await api('/nfs/exports?server=' + encodeURIComponent(server));
-      fillExports(r.exports || []);
-    } catch (e) {
-      $('#nfs-exports').textContent = '';
-      $('#nfs-msg').innerHTML = `<div class="banner bad">${e.message || 'Browse failed'}</div>`;
-    }
+    nfsBrowser.target = null;
+    await loadNfsBrowse('');
+  };
+  document.querySelectorAll('[data-nfs-target]').forEach(btn => {
+    btn.onclick = async () => {
+      nfsBrowser.target = btn.dataset.nfsTarget;
+      const current = $('#'+nfsBrowser.target).value.trim();
+      await loadNfsBrowse(current);
+    };
+  });
+  $('#nfs-browser-select').onclick = () => {
+    if (!nfsBrowser.target) return;
+    $('#'+nfsBrowser.target).value = nfsBrowser.path;
+    $('#nfs-msg').innerHTML = '<div class="banner ok">Path assigned. Save NFS settings when ready.</div>';
   };
   $('#save-nfs').onclick = async () => {
     const keys = ['NFS_SERVER','NFS_TV','NFS_MOVIES','NFS_DOWNLOADS','NFS_CACHE'];

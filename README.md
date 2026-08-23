@@ -196,8 +196,9 @@ certificate warning as the production-domain URLs until its CA is trusted.
 
 NFS is mounted by the **Linux host**, not by Helm or an application container.
 In **Settings → Media Storage**, enter the NFS server and click **Browse** to
-list exports (`showmount -e`). Pick a share for TV, Movies, Downloads, and the
-Tdarr cache, or type a path manually. Values are saved to `.env`:
+open the folder picker. Navigate exports and subfolders (for example
+`media` → `TV`), click **Use this path** to assign a role, then save. Values
+are written to `.env`:
 
 ```dotenv
 NFS_SERVER=192.168.1.10
