@@ -16,7 +16,7 @@ import tempfile
 from contextlib import contextmanager
 
 _SERVER_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
-_EXPORT_RE = re.compile(r"^(/\S*)")
+_EXPORT_RE = re.compile(r"^(/\S*)\s*(.*)$")
 _PATH_RE = re.compile(r"^/[^\0]*$")
 
 
@@ -40,7 +40,13 @@ def validate_export_path(path: str) -> str:
 
 def parse_showmount(output: str) -> list[str]:
     """Parse ``showmount -e`` text into export path strings."""
-    exports: list[str] = []
+    return [path for path, _clients in parse_showmount_rows(output)]
+
+
+def parse_showmount_rows(output: str) -> list[tuple[str, str]]:
+    """Parse ``showmount -e`` into ``(export_path, clients)`` rows."""
+    rows: list[tuple[str, str]] = []
+    seen: set[str] = set()
     for line in output.splitlines():
         line = line.strip()
         if not line or line.lower().startswith("export list for"):
@@ -49,9 +55,26 @@ def parse_showmount(output: str) -> list[str]:
         if not m:
             continue
         path = m.group(1)
-        if path not in exports:
-            exports.append(path)
-    return exports
+        clients = (m.group(2) or "").strip()
+        if path in seen:
+            continue
+        seen.add(path)
+        rows.append((path, clients))
+    return rows
+
+
+def export_label(path: str) -> str:
+    """Human label for an export path.
+
+    UniFi Drive exports end in ``/.data``; use the parent folder name
+    (``media``, ``Downloads``) so the picker is readable.
+    """
+    parts = [p for p in path.rstrip("/").split("/") if p]
+    if not parts:
+        return path or "/"
+    if len(parts) >= 2 and parts[-1] == ".data":
+        return parts[-2]
+    return parts[-1]
 
 
 def export_root_for(path: str, exports: list[str]) -> str:
@@ -81,12 +104,7 @@ def parent_path(path: str, exports: list[str]) -> str | None:
     return root
 
 
-def list_exports(server: str, timeout: float = 10.0) -> list[str]:
-    """Return export paths advertised by ``server``.
-
-    Raises ValueError for bad input and RuntimeError when showmount is
-    missing or the probe fails.
-    """
+def _showmount(server: str, timeout: float = 10.0) -> str:
     host = validate_server(server)
     binary = shutil.which("showmount")
     if not binary:
@@ -107,14 +125,23 @@ def list_exports(server: str, timeout: float = 10.0) -> list[str]:
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "showmount failed").strip()
         raise RuntimeError(detail)
-    exports = parse_showmount(proc.stdout)
-    if not exports:
+    if not parse_showmount(proc.stdout):
         raise RuntimeError(f"no exports advertised by {host}")
-    return exports
+    return proc.stdout
+
+
+def list_exports(server: str, timeout: float = 10.0) -> list[str]:
+    """Return export paths advertised by ``server``."""
+    return parse_showmount(_showmount(server, timeout=timeout))
+
+
+def list_export_rows(server: str, timeout: float = 10.0) -> list[tuple[str, str]]:
+    """Return ``(export_path, clients)`` rows from ``showmount -e``."""
+    return parse_showmount_rows(_showmount(server, timeout=timeout))
 
 
 @contextmanager
-def _nfs_mount(server: str, export: str):
+def _nfs_mount(server: str, export: str, clients: str = ""):
     mount = shutil.which("mount")
     umount = shutil.which("umount")
     if not mount or not umount:
@@ -147,10 +174,7 @@ def _nfs_mount(server: str, export: str):
                 break
             last_error = (proc.stderr or proc.stdout or last_error).strip()
         if not mounted:
-            raise RuntimeError(
-                f"could not mount {spec} for browsing ({last_error}). "
-                "Recreate the helm container after updating compose (SYS_ADMIN)."
-            )
+            raise RuntimeError(_mount_error(spec, last_error, clients))
         yield mount_point
     finally:
         if mounted:
@@ -168,6 +192,21 @@ def _nfs_mount(server: str, export: str):
                 pass
 
 
+def _mount_error(spec: str, last_error: str, clients: str) -> str:
+    denied = "access denied" in last_error.lower() or "permission denied" in last_error.lower()
+    if denied:
+        allowed = f" Currently allowed clients: {clients}." if clients else ""
+        return (
+            f"NFS server denied mount for {spec}.{allowed} "
+            "Add this machine's IP to the UniFi/NFS client list for that share, "
+            "then try again. You can still type a subfolder path manually."
+        )
+    return (
+        f"could not mount {spec} for browsing ({last_error}). "
+        "Recreate the helm container after updating compose (SYS_ADMIN)."
+    )
+
+
 def browse(server: str, path: str = "", timeout: float = 10.0) -> dict:
     """Browse exports or subfolders on ``server``.
 
@@ -176,7 +215,9 @@ def browse(server: str, path: str = "", timeout: float = 10.0) -> dict:
     """
     host = validate_server(server)
     path = validate_export_path(path)
-    exports = list_exports(host, timeout=timeout)
+    rows = list_export_rows(host, timeout=timeout)
+    exports = [export for export, _clients in rows]
+    clients_by_export = dict(rows)
 
     if not path:
         return {
@@ -184,7 +225,12 @@ def browse(server: str, path: str = "", timeout: float = 10.0) -> dict:
             "path": "",
             "parent": None,
             "entries": [
-                {"name": _basename(export) or export, "path": export, "kind": "dir"}
+                {
+                    "name": export_label(export),
+                    "path": export,
+                    "detail": export,
+                    "kind": "dir",
+                }
                 for export in sorted(exports)
             ],
         }
@@ -192,7 +238,7 @@ def browse(server: str, path: str = "", timeout: float = 10.0) -> dict:
     root = export_root_for(path, exports)
     rel = path[len(root) :].lstrip("/")
 
-    with _nfs_mount(host, root) as mount_point:
+    with _nfs_mount(host, root, clients=clients_by_export.get(root, "")) as mount_point:
         target = mount_point.joinpath(*rel.split("/")) if rel else mount_point
         if not target.is_dir():
             raise RuntimeError(f"not a directory: {path}")
@@ -221,7 +267,3 @@ def browse(server: str, path: str = "", timeout: float = 10.0) -> dict:
         "parent": parent_path(path, exports),
         "entries": entries,
     }
-
-
-def _basename(path: str) -> str:
-    return path.rstrip("/").rsplit("/", 1)[-1]

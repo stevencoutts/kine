@@ -195,10 +195,14 @@ certificate warning as the production-domain URLs until its CA is trusted.
 ## NFS storage
 
 NFS is mounted by the **Linux host**, not by Helm or an application container.
-In **Settings → Media Storage**, enter the NFS server and click **Browse** to
-open the folder picker. Navigate exports and subfolders (for example
-`media` → `TV`), click **Use this path** to assign a role, then save. Values
-are written to `.env`:
+In **Settings → Media Storage**, enter the NFS server and click **Browse**
+(or **Browse…** on a role). Exports are listed with readable names (UniFi
+`/.data` shares show as `media`, `Downloads`, etc.). Open a folder to list
+subdirectories when the NFS server allows this host to mount.
+
+On Docker Desktop, subfolder listing often fails because the Linux VM’s IP is
+not on the share allowlist. Pick the export, use **Append subfolder** (for
+example `TV`), then **Use this path**. Values are written to `.env`:
 
 ```dotenv
 NFS_SERVER=192.168.1.10

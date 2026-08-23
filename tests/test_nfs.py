@@ -101,8 +101,11 @@ def test_validate_export_path_rejects_traversal():
 def test_browse_root_lists_exports_without_mount(monkeypatch):
     monkeypatch.setattr(
         nfs_exports,
-        "list_exports",
-        lambda server, timeout=10.0: ["/exports/media", "/exports/downloads"],
+        "list_export_rows",
+        lambda server, timeout=10.0: [
+            ("/exports/media", "*"),
+            ("/exports/downloads", "*"),
+        ],
     )
     data = nfs_exports.browse("nas.local", "")
     assert data["path"] == ""
@@ -111,13 +114,24 @@ def test_browse_root_lists_exports_without_mount(monkeypatch):
         "/exports/downloads",
         "/exports/media",
     ]
+    assert [e["name"] for e in data["entries"]] == ["downloads", "media"]
+
+
+def test_export_label_unwraps_unifi_data_suffix():
+    assert (
+        nfs_exports.export_label(
+            "/volume/uuid/.srv/.unifi-drive/media/.data"
+        )
+        == "media"
+    )
+    assert nfs_exports.export_label("/exports/tv") == "tv"
 
 
 def test_browse_subfolder_uses_temporary_mount(monkeypatch):
     monkeypatch.setattr(
         nfs_exports,
-        "list_exports",
-        lambda server, timeout=10.0: ["/exports/media"],
+        "list_export_rows",
+        lambda server, timeout=10.0: [("/exports/media", "192.168.1.10")],
     )
 
     class FakeMount:
@@ -128,7 +142,7 @@ def test_browse_subfolder_uses_temporary_mount(monkeypatch):
             return True
 
     @contextlib.contextmanager
-    def fake_mount(server, export):
+    def fake_mount(server, export, clients=""):
         assert server == "nas.local"
         assert export == "/exports/media"
         yield FakeMount()

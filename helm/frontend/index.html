@@ -88,13 +88,18 @@ textarea{font-family:ui-monospace,monospace;font-size:.8rem;resize:vertical}
   padding:0;font:inherit}
 .nfs-crumbs span{color:var(--muted)}
 .nfs-list{max-height:260px;overflow:auto}
-.nfs-entry{display:flex;align-items:center;gap:.5rem;width:100%;text-align:left;
+.nfs-entry{display:flex;align-items:flex-start;gap:.5rem;width:100%;text-align:left;
   background:none;border:none;border-bottom:1px solid var(--line);color:var(--text);
   padding:.65rem .85rem;cursor:pointer;font:inherit}
 .nfs-entry:last-child{border-bottom:none}
 .nfs-entry:hover{background:color-mix(in srgb, var(--accent) 10%, transparent)}
-.nfs-entry .icon{color:var(--accent);width:1rem;flex:none}
+.nfs-entry .icon{color:var(--accent);width:1rem;flex:none;margin-top:.15rem}
+.nfs-entry .meta{display:flex;flex-direction:column;gap:.15rem;min-width:0}
+.nfs-entry .meta strong{font-weight:600}
+.nfs-entry .meta small{color:var(--muted);font-size:.75rem;word-break:break-all}
 .nfs-empty{padding:.85rem;color:var(--muted);font-size:.85rem}
+.nfs-browser-error{margin:0;border-radius:0;border-left:none;border-right:none;
+  border-top:none}
 </style>
 </head>
 <body>
@@ -457,12 +462,18 @@ render.settings = async () => {
         <button class="act" type="button" data-nfs-target="${id}">Browse…</button>
       </div>`;
   const nfsBrowser = { target: null, path: '' };
+  const setNfsError = (msg) => {
+    const el = $('#nfs-browser-error');
+    if (!el) return;
+    el.innerHTML = msg ? `<div class="banner bad nfs-browser-error">${msg}</div>` : '';
+  };
   const renderNfsBrowser = (data) => {
     nfsBrowser.path = data.path || '';
     const list = $('#nfs-browser-list');
     const crumbs = $('#nfs-browser-crumbs');
     const targetEl = $('#nfs-browser-target');
     const selectBtn = $('#nfs-browser-select');
+    setNfsError('');
     targetEl.textContent = nfsBrowser.target
       ? (nfsRoleLabel[nfsBrowser.target] || nfsBrowser.target)
       : 'explore only';
@@ -474,7 +485,8 @@ render.settings = async () => {
       segments.push({ label: 'Exports', path: '' });
       data.path.split('/').filter(Boolean).reduce((acc, part) => {
         acc = `${acc}/${part}`;
-        segments.push({ label: part, path: acc });
+        const label = part === '.data' ? (acc.split('/').filter(Boolean).slice(-2,-1)[0] || part) : part;
+        segments.push({ label, path: acc });
         return acc;
       }, '');
     }
@@ -487,12 +499,17 @@ render.settings = async () => {
       btn.onclick = () => loadNfsBrowse(btn.dataset.nfsPath);
     });
     if (!data.entries || !data.entries.length) {
-      list.innerHTML = '<div class="nfs-empty">No subfolders here. Select this path or go up.</div>';
+      list.innerHTML = '<div class="nfs-empty">No subfolders here. Use this path, or go up.</div>';
       return;
     }
     list.innerHTML = data.entries.map(entry => `
       <button class="nfs-entry" type="button" data-nfs-path="${entry.path}">
-        <span class="icon">📁</span><span>${entry.name}</span>
+        <span class="icon">📁</span>
+        <span class="meta">
+          <strong>${entry.name}</strong>
+          ${entry.detail || entry.path !== entry.name
+            ? `<small>${entry.detail || entry.path}</small>` : ''}
+        </span>
       </button>`).join('');
     list.querySelectorAll('[data-nfs-path]').forEach(btn => {
       btn.onclick = () => loadNfsBrowse(btn.dataset.nfsPath);
@@ -502,6 +519,7 @@ render.settings = async () => {
     const server = $('#NFS_SERVER').value.trim();
     const browser = $('#nfs-browser');
     browser.style.display = 'block';
+    setNfsError('');
     $('#nfs-browser-list').innerHTML = '<div class="nfs-empty">Loading…</div>';
     $('#nfs-msg').innerHTML = '';
     try {
@@ -509,8 +527,11 @@ render.settings = async () => {
       if (path) q.set('path', path);
       renderNfsBrowser(await api('/nfs/browse?' + q.toString()));
     } catch (e) {
-      $('#nfs-browser-list').innerHTML = '';
-      $('#nfs-msg').innerHTML = `<div class="banner bad">${e.message || 'Browse failed'}</div>`;
+      const msg = e.message || 'Browse failed';
+      setNfsError(msg);
+      $('#nfs-browser-list').innerHTML =
+        `<div class="nfs-empty">Could not open that folder. ${path ? 'Go up with the breadcrumbs, or type the subfolder path manually below.' : ''}</div>`;
+      $('#nfs-msg').innerHTML = `<div class="banner bad">${msg}</div>`;
     }
   };
   render.shell(`
@@ -549,8 +570,19 @@ render.settings = async () => {
           <span>Assigning to: <strong id="nfs-browser-target">—</strong></span>
           <button class="act primary" id="nfs-browser-select" type="button">Use this path</button>
         </div>
+        <div id="nfs-browser-error"></div>
         <div id="nfs-browser-crumbs" class="nfs-crumbs"></div>
         <div id="nfs-browser-list" class="nfs-list"></div>
+        <div style="padding:.65rem .85rem;border-top:1px solid var(--line)">
+          <label style="margin:0 0 .25rem">Append subfolder (optional)</label>
+          <div class="row" style="gap:.5rem">
+            <input id="nfs-browser-append" placeholder="e.g. TV or Movies" style="flex:1">
+            <button class="act" id="nfs-browser-append-go" type="button">Apply</button>
+          </div>
+          <p style="margin:.4rem 0 0;color:var(--muted);font-size:.75rem">
+            Use when the server won’t allow Helm to list folders (common on Docker Desktop).
+            Pick an export above, then append the folder name.</p>
+        </div>
       </div>
       ${nfsRoles.map(nfsRole).join('')}
       <div class="row" style="margin-top:1rem">
@@ -577,8 +609,24 @@ render.settings = async () => {
   });
   $('#nfs-browser-select').onclick = () => {
     if (!nfsBrowser.target) return;
-    $('#'+nfsBrowser.target).value = nfsBrowser.path;
+    const append = ($('#nfs-browser-append').value || '').trim().replace(/^\/+/, '');
+    const base = nfsBrowser.path || '';
+    const full = append ? `${base.replace(/\/$/, '')}/${append}` : base;
+    $('#'+nfsBrowser.target).value = full;
     $('#nfs-msg').innerHTML = '<div class="banner ok">Path assigned. Save NFS settings when ready.</div>';
+  };
+  $('#nfs-browser-append-go').onclick = () => {
+    const append = ($('#nfs-browser-append').value || '').trim().replace(/^\/+/, '');
+    if (!nfsBrowser.path) {
+      setNfsError('Open an export first, then append a subfolder.');
+      return;
+    }
+    if (!append) {
+      setNfsError('Type a subfolder name (e.g. TV).');
+      return;
+    }
+    const next = `${nfsBrowser.path.replace(/\/$/, '')}/${append}`;
+    loadNfsBrowse(next);
   };
   $('#save-nfs').onclick = async () => {
     const keys = ['NFS_SERVER','NFS_TV','NFS_MOVIES','NFS_DOWNLOADS','NFS_CACHE'];
