@@ -37,6 +37,8 @@ def test_helm_applies_nfs_mounts_via_agent():
 
 def test_helm_recreates_media_apps_after_nfs_mount():
     assert "_recreate_media_volume_apps" in MAIN
+    assert "_stop_media_volume_apps" in MAIN
+    assert "await _stop_media_volume_apps()" in MAIN
     assert "await _recreate_media_volume_apps()" in MAIN
 
 
@@ -66,7 +68,7 @@ def test_nfs_mounts_are_persisted_for_reboot():
 
 
 def test_changed_export_replaces_existing_mount():
-    assert 'findmnt -n -o SOURCE --target "$mount_point"' in MOUNT_SCRIPT
+    assert 'findmnt -n -o SOURCE --target "$mount_point" --direct' in MOUNT_SCRIPT
     assert 'umount "$mount_point"' in MOUNT_SCRIPT
 
 

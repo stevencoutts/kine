@@ -69,6 +69,14 @@ _MEDIA_VOLUME_APPS = (
 )
 
 
+async def _stop_media_volume_apps() -> None:
+    """Stop apps that bind DATA_ROOT so host NFS mounts are not busy."""
+    profiles = set(config.profiles())
+    wanted = [a for a in _MEDIA_VOLUME_APPS if a in profiles]
+    if wanted:
+        await compose.run("stop", *wanted, timeout=120)
+
+
 async def _recreate_media_volume_apps() -> None:
     """Recreate apps that bind DATA_ROOT so they see host NFS mounts.
 
@@ -628,6 +636,7 @@ async def nfs_browse(server: str = "", path: str = "", user: str = Depends(requi
 @app.post("/api/nfs/apply")
 async def nfs_apply_mounts(user: str = Depends(require_user)):
     try:
+        await _stop_media_volume_apps()
         result = await asyncio.to_thread(nfs_exports.apply_mounts_via_agent)
     except RuntimeError as exc:
         raise HTTPException(502, str(exc)) from exc
@@ -664,6 +673,7 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
     nfs_mount = None
     if nfs_changed:
         try:
+            await _stop_media_volume_apps()
             nfs_mount = await asyncio.to_thread(nfs_exports.apply_mounts_via_agent)
         except RuntimeError as exc:
             nfs_mount = {"ok": False, "log": str(exc)}

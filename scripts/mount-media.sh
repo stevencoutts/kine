@@ -75,7 +75,7 @@ mount_export() {
 
   if mountpoint -q "$mount_point" 2>/dev/null; then
     local current
-    current=$(findmnt -n -o SOURCE --target "$mount_point")
+    current=$(findmnt -n -o SOURCE --target "$mount_point" --direct)
     if [[ "$current" == "$spec" ]]; then
       ok "${label} already mounted at ${mount_point}"
       return 0
