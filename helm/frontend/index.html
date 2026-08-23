@@ -717,8 +717,8 @@ render.settings = async () => {
       <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
         When configured, Sonarr and Radarr notify these servers after imports
         so libraries refresh. Leave a server blank to disable its connection.
-        Domain-hosted Emby (e.g. <code>emby.${esc(s.KINE_DOMAIN||'example.com')}</code>)
-        is served by Traefik on <strong>port 443 with SSL</strong> — not 8096.</p>
+        Domain-hosted servers (e.g. <code>emby.${esc(s.KINE_DOMAIN||'example.com')}</code>)
+        are served by Traefik on <strong>port 443 with SSL</strong> — not 8096/32400.</p>
       <h3 style="margin:0 0 .35rem;font-size:.85rem">Plex</h3>
       <label>Host</label><input id="PLEX_HOST" value="${esc(s.PLEX_HOST)}" placeholder="10.100.100.20">
       <div class="row" style="gap:1rem;align-items:end">
@@ -804,8 +804,12 @@ render.settings = async () => {
     };
     try {
       const r = await api('/settings', {method:'POST', body: JSON.stringify(body)});
+      const log = r.media_wire?.log || '';
+      const notifyFails = log.split('\n').filter(l => /notification .* failed/i.test(l));
       if (r.media_wire && !r.media_wire.ok) {
-        msg.innerHTML = `<div class="banner bad">Saved, but wiring failed.<pre style="margin:.5rem 0 0;font-size:.75rem;white-space:pre-wrap">${esc(r.media_wire.log||'')}</pre></div>`;
+        msg.innerHTML = `<div class="banner bad">Saved, but wiring failed.<pre style="margin:.5rem 0 0;font-size:.75rem;white-space:pre-wrap">${esc(log)}</pre></div>`;
+      } else if (notifyFails.length) {
+        msg.innerHTML = `<div class="banner bad">Saved with warnings — some connections could not be verified.<pre style="margin:.5rem 0 0;font-size:.75rem;white-space:pre-wrap">${esc(notifyFails.join('\n'))}</pre></div>`;
       } else {
         msg.innerHTML = '<div class="banner ok">Saved. Sonarr and Radarr will notify these servers on new imports.</div>';
       }

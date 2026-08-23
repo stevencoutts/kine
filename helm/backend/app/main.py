@@ -728,7 +728,9 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
         code, out = await compose.run("run", "--rm", "provision", "wire", timeout=900)
         log = out[-2000:] if out else ""
         media_wire = {
-            "ok": code == 0 and "wiring failed" not in log.lower(),
+            "ok": code == 0 and "wiring failed" not in log.lower()
+            and "notification plex failed" not in log.lower()
+            and "notification emby failed" not in log.lower(),
             "log": log,
         }
     return {"ok": True, "nfs_mount": nfs_mount, "media_wire": media_wire}

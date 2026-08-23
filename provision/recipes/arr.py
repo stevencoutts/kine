@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import os
 
+import httpx
+
 from arrclient import ArrClient
 from keys import resolve_key
 
@@ -153,12 +155,11 @@ def _plex_config() -> tuple[str, int, str, bool] | None:
     token = os.environ.get("PLEX_TOKEN", "").strip()
     if not host or not token:
         return None
-    return (
-        host,
-        _env_int("PLEX_PORT", 32400),
-        token,
-        _env_bool("PLEX_USE_SSL"),
-    )
+    use_ssl = _env_bool("PLEX_USE_SSL")
+    port = _env_int("PLEX_PORT", 443 if use_ssl else 32400)
+    if use_ssl and port == 32400:
+        port = 443
+    return (host, port, token, use_ssl)
 
 
 def _emby_config(enabled: set[str]) -> tuple[str, int, str, bool] | None:
@@ -184,26 +185,42 @@ def _emby_config(enabled: set[str]) -> tuple[str, int, str, bool] | None:
     return (host, port, token, use_ssl)
 
 
+def _sync_one_notification(
+    client: ArrClient, app: str, log, name: str, payload: dict | None
+) -> None:
+    if payload:
+        try:
+            action = client.upsert("notification", payload)
+            log(f"{app}: notification {name} ({action})")
+        except httpx.HTTPStatusError as exc:
+            from arrclient import http_error_detail
+
+            log(f"{app}: notification {name} failed ({http_error_detail(exc)})")
+        return
+    if client.remove_named("notification", name):
+        log(f"{app}: removed notification {name}")
+
+
 def _sync_media_notifications(client: ArrClient, app: str, enabled: set[str], log) -> None:
     plex = _plex_config()
     if plex:
         host, port, token, use_ssl = plex
-        action = client.upsert(
-            "notification", plex_notification(app, host, port, token, use_ssl=use_ssl)
+        _sync_one_notification(
+            client, app, log, "Plex",
+            plex_notification(app, host, port, token, use_ssl=use_ssl),
         )
-        log(f"{app}: notification Plex ({action})")
-    elif client.remove_named("notification", "Plex"):
-        log(f"{app}: removed notification Plex")
+    else:
+        _sync_one_notification(client, app, log, "Plex", None)
 
     emby = _emby_config(enabled)
     if emby:
         host, port, key, use_ssl = emby
-        action = client.upsert(
-            "notification", emby_notification(app, host, port, key, use_ssl=use_ssl)
+        _sync_one_notification(
+            client, app, log, "Emby",
+            emby_notification(app, host, port, key, use_ssl=use_ssl),
         )
-        log(f"{app}: notification Emby ({action})")
-    elif client.remove_named("notification", "Emby"):
-        log(f"{app}: removed notification Emby")
+    else:
+        _sync_one_notification(client, app, log, "Emby", None)
 
 
 def configure(app: str, enabled: set[str], log) -> None:

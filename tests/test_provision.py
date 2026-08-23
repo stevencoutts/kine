@@ -414,6 +414,65 @@ def test_emby_config_uses_443_for_domain_ssl(monkeypatch):
     assert use_ssl is True
 
 
+def test_plex_config_uses_443_when_ssl(monkeypatch):
+    from recipes.arr import _plex_config
+
+    monkeypatch.setenv("PLEX_HOST", "plex.couttsnet.com")
+    monkeypatch.setenv("PLEX_TOKEN", "tok")
+    monkeypatch.setenv("PLEX_PORT", "32400")
+    monkeypatch.setenv("PLEX_USE_SSL", "true")
+    host, port, token, use_ssl = _plex_config()
+    assert port == 443
+    assert use_ssl is True
+
+
+def test_notification_failure_does_not_abort_other_connections(monkeypatch):
+    import httpx
+    import recipes.arr as arr
+
+    class FakeClient:
+        def __init__(self, base, key):
+            pass
+
+        def wait(self):
+            return True
+
+        def ensure(self, path, payload, match_on="name"):
+            return False
+
+        def upsert(self, path, payload, match_on="name"):
+            if payload.get("name") == "Plex":
+                req = httpx.Request("POST", "http://x/api/v3/notification")
+                resp = httpx.Response(400, request=req, json=[{
+                    "errorMessage": "Unable to connect to Plex Media Server",
+                }])
+                raise httpx.HTTPStatusError("bad", request=req, response=resp)
+            return "updated"
+
+        def remove_named(self, path, name, match_on="name"):
+            return False
+
+        def get(self, path):
+            return {"id": 1}
+
+        def put(self, path, payload):
+            return payload
+
+    monkeypatch.setattr(arr, "ArrClient", FakeClient)
+    monkeypatch.setattr(arr, "resolve_key", lambda app: "k")
+    monkeypatch.setenv("PLEX_HOST", "bad.example")
+    monkeypatch.setenv("PLEX_TOKEN", "tok")
+    monkeypatch.setenv("EMBY_HOST", "emby.couttsnet.com")
+    monkeypatch.setenv("EMBY_PORT", "443")
+    monkeypatch.setenv("EMBY_API_KEY", "key")
+    monkeypatch.setenv("EMBY_USE_SSL", "true")
+    logs = []
+    arr.configure("radarr", {"radarr"}, logs.append)
+    assert any("notification Plex failed" in m for m in logs)
+    assert any("notification Emby (updated)" in m for m in logs)
+    assert not any("wiring failed" in m for m in logs)
+
+
 def test_emby_config_defaults_bundled_to_domain_443(monkeypatch):
     from recipes.arr import _emby_config
 

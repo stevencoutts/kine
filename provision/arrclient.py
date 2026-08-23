@@ -4,6 +4,17 @@ import time
 import httpx
 
 
+def http_error_detail(exc: httpx.HTTPStatusError) -> str:
+    try:
+        body = exc.response.json()
+        if isinstance(body, list) and body:
+            item = body[0]
+            return item.get("errorMessage") or item.get("detailedDescription") or str(item)
+    except (ValueError, TypeError, AttributeError):
+        pass
+    return str(exc)
+
+
 class ArrClient:
     def __init__(self, base: str, key: str, api: str = "v3", timeout: float = 30.0):
         self.base = base.rstrip("/")

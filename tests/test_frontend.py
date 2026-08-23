@@ -113,6 +113,8 @@ def test_settings_media_servers_section():
     assert "_MEDIA_SERVER_KEYS" in BACKEND
     assert "EMBY_DEFAULT_HOST" in BACKEND
     assert 'wiring failed" not in log.lower()' in BACKEND
+    assert "notification plex failed" in BACKEND
+    assert "notifyFails" in FRONTEND
     assert 'provision", "wire"' in BACKEND
 
 
