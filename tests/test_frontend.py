@@ -31,10 +31,15 @@ def test_vpn_api_derives_display_from_tunnel_type():
     assert '"connection_type": _connection_label(env.get("VPN_TYPE", ""))' in BACKEND
 
 
-def test_app_sections_start_collapsed():
-    assert "collapsed:{media:true,acquisition:true,process:true,live:true,platform:true}" in FRONTEND
-    assert "manualCollapse" in FRONTEND
-    assert "meta.enabled && !state.manualCollapse[tier]" in FRONTEND
+def test_app_overview_buttons_show_running_counts():
+    assert "overview-bar" in FRONTEND
+    assert "overview-btn" in FRONTEND
+    assert "overview-stat" in FRONTEND
+    assert "activeTier" in FRONTEND
+    assert "tierStats" in FRONTEND
+    assert "/ ${stats.total} running" in FRONTEND
+    assert "manualCollapse" not in FRONTEND
+    assert "section-head" not in FRONTEND
 
 
 def test_tier_section_enabled_when_any_app_on():

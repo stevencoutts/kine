@@ -32,9 +32,13 @@ header{display:flex;align-items:center;gap:.85rem;padding:1rem 1.5rem;
 header h1{font-size:1.05rem;margin:0;letter-spacing:.04em;font-weight:600;
   color:var(--accent-strong)}
 nav{display:flex;gap:.25rem;margin-left:auto}
-nav button{background:none;border:1px solid transparent;color:var(--muted);
-  padding:.5rem 1rem;border-radius:999px;cursor:pointer;font-size:.9rem}
-nav button.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+nav button{background:color-mix(in srgb, var(--panel) 50%, transparent);
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  border:1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  color:var(--muted);padding:.5rem 1rem;border-radius:999px;cursor:pointer;font-size:.9rem}
+nav button.active{background:color-mix(in srgb, var(--accent) 85%, transparent);
+  color:#fff;border-color:color-mix(in srgb, var(--accent) 70%, transparent);
+  box-shadow:0 2px 12px color-mix(in srgb, var(--accent) 25%, transparent)}
 main{padding:1.5rem;padding-bottom:4rem;max-width:1100px;margin:0 auto}
 footer#vpnbar{position:fixed;left:0;right:0;bottom:0;z-index:10;
   display:flex;align-items:center;gap:.5rem;padding:.6rem 1.5rem;
@@ -45,17 +49,20 @@ footer#vpnbar b{color:var(--text)}
 footer#vpnbar .dot.on{animation:pulse 2s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
-.card{background:color-mix(in srgb, var(--panel) 80%, transparent);
-      backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
-      border:1px solid var(--line);border-radius:var(--radius);
+.card{background:color-mix(in srgb, var(--panel) 52%, transparent);
+      backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+      border:1px solid color-mix(in srgb, var(--line) 55%, transparent);
+      border-radius:var(--radius);box-shadow:0 4px 24px color-mix(in srgb, #000 6%, transparent);
       padding:1.1rem;display:flex;flex-direction:column;gap:.5rem}
 .card h3{margin:0;font-size:.95rem;display:flex;align-items:center;gap:.5rem}
 .card p{margin:0;color:var(--muted);font-size:.85rem;flex:1}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--muted);flex:none}
 .dot.on{background:var(--ok)} .dot.off{background:var(--line)}
 .row{display:flex;gap:.5rem;align-items:center}
-button.act{background:var(--panel-2);border:1px solid var(--line);color:var(--text);
-  padding:.4rem .85rem;border-radius:999px;cursor:pointer;font-size:.8rem}
+button.act{background:color-mix(in srgb, var(--panel-2) 65%, transparent);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border:1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  color:var(--text);padding:.4rem .85rem;border-radius:999px;cursor:pointer;font-size:.8rem}
 button.act:hover{border-color:var(--accent-strong)}
 button.act.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 button.act.primary:hover{background:var(--accent-strong);border-color:var(--accent-strong);color:#18191b}
@@ -63,15 +70,33 @@ a.link{color:var(--accent-strong);text-decoration:none;font-size:.8rem}
 pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius);
     padding:.75rem;overflow:auto;font-size:.8rem;max-height:420px}
 .section{margin-bottom:2rem}
-.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem}
-.section-head h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;
-  color:var(--muted);margin:0}
-.tier-toggle{gap:.5rem;cursor:pointer;flex:1}
-.tier-toggle input{width:auto;margin:0}
-button.collapse{background:none;border:none;color:var(--muted);cursor:pointer;
-  font-size:.75rem;padding:.25rem .5rem}
 .section h2{font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;
   color:var(--muted);margin:0 0 .75rem}
+.overview-bar{display:flex;flex-wrap:wrap;gap:.75rem;margin-bottom:1.25rem}
+.overview-btn{flex:1;min-width:150px;position:relative;text-align:left;cursor:pointer;
+  background:color-mix(in srgb, var(--panel) 48%, transparent);
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  border:1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  border-radius:var(--radius);padding:.85rem 1rem 1rem;
+  box-shadow:0 4px 20px color-mix(in srgb, #000 5%, transparent);
+  transition:border-color .15s,box-shadow .15s,background .15s}
+.overview-btn:hover{border-color:color-mix(in srgb, var(--accent) 45%, transparent)}
+.overview-btn.active{border-color:color-mix(in srgb, var(--accent) 65%, transparent);
+  background:color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow:0 6px 28px color-mix(in srgb, var(--accent) 18%, transparent)}
+.overview-btn.off-tier{opacity:.72}
+.overview-top{display:flex;align-items:center;gap:.45rem;margin-bottom:.35rem}
+.overview-btn h2{margin:0;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;
+  color:var(--muted);font-weight:600}
+.overview-stat{font-size:1.15rem;font-weight:600;line-height:1.2}
+.overview-stat span{color:var(--muted);font-weight:400;font-size:.82rem}
+.tier-check{display:flex;align-items:center;cursor:pointer;flex:none}
+.tier-check input{width:auto;margin:0;cursor:pointer}
+.apps-panel{background:color-mix(in srgb, var(--panel) 38%, transparent);
+  backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
+  border:1px solid color-mix(in srgb, var(--line) 45%, transparent);
+  border-radius:var(--radius);padding:1.25rem;
+  box-shadow:0 8px 32px color-mix(in srgb, #000 7%, transparent)}
 label{display:block;font-size:.8rem;color:var(--muted);margin:.75rem 0 .25rem}
 input,select,textarea{width:100%;background:var(--panel-2);border:1px solid var(--line);
   color:var(--text);padding:.5rem;border-radius:6px;font:inherit}
@@ -105,9 +130,7 @@ const api = async (path, opts={}) => {
   return data;
 };
 
-const state = { tab:'apps', apps:[], tiers:{},
-  collapsed:{media:true,acquisition:true,process:true,live:true,platform:true},
-  manualCollapse:{} };
+const state = { tab:'apps', apps:[], tiers:{}, activeTier:null };
 const TAB_LABELS = {apps:'Apps', updates:'Updates', vpn:'VPN', status:'Status', settings:'Settings'};
 const TIER_ORDER = ['media','acquisition','process','live','platform'];
 
@@ -295,77 +318,82 @@ render.login = () => {
   };
 };
 
+const tierStats = items => {
+  const enabled = items.filter(a => a.enabled);
+  return { running: enabled.filter(a => a.running).length, total: enabled.length };
+};
+const appCard = a => `
+  <div class="card">
+    <h3><span class="dot ${a.running?'on':'off'}"></span>${a.name}</h3>
+    <p>${a.summary}</p>
+    ${a.tunnelled==='forced'?'<p style="color:var(--warn)">Always Tunnelled</p>':''}
+    ${a.dev_supported ? `<label class="row" style="margin:0">
+      <input type="checkbox" data-dev="${a.id}" ${a.dev_enabled?'checked':''} style="width:auto">
+      Dev Version${a.dev_enabled && a.dev_tag ? ` <span style="color:var(--muted)">(${a.dev_tag})</span>` : ''}
+    </label>` : ''}
+    <div class="row">
+      ${a.enabled
+        ? `<button class="act" data-act="disable" data-id="${a.id}">Disable</button>
+           <button class="act" data-act="restart" data-id="${a.id}">Restart</button>`
+        : `<button class="act primary" data-act="enable" data-id="${a.id}">Enable</button>`}
+      ${a.url && a.enabled ? `<button class="act" data-open="${a.id}">Open</button>`:''}
+    </div>
+  </div>`;
+
 render.apps = async () => {
   const data = await api('/apps');
   state.apps = data.apps;
   state.tiers = data.tiers;
-  // Enabled sections open by default; keep a manual collapse for this session.
-  TIER_ORDER.forEach(tier => {
+  const visibleTiers = TIER_ORDER.filter(tier => {
     const meta = state.tiers[tier];
-    if (!meta) return;
-    if (meta.enabled && !state.manualCollapse[tier]) state.collapsed[tier] = false;
-    if (!meta.enabled && !state.manualCollapse[tier]) state.collapsed[tier] = true;
+    return meta && state.apps.some(a => a.tier === tier && !a.hidden);
   });
-  const body = '<div id="tier-msg"></div>' + TIER_ORDER.map(tier => {
+  if (!visibleTiers.includes(state.activeTier))
+    state.activeTier = visibleTiers.find(t => state.tiers[t]?.enabled) || visibleTiers[0] || null;
+  const overview = visibleTiers.map(tier => {
     const meta = state.tiers[tier];
-    if (!meta) return '';
-    const items = state.apps.filter(a => a.tier===tier && !a.hidden);
-    if (!items.length) return '';
-    const collapsed = state.collapsed[tier];
-    return `<div class="section" data-tier="${tier}">
-      <div class="section-head">
-        <label class="tier-toggle row">
+    const stats = tierStats(state.apps.filter(a => a.tier === tier && !a.hidden));
+    const active = state.activeTier === tier;
+    return `<div class="overview-btn ${active?'active':''} ${!meta.enabled?'off-tier':''}"
+      data-overview="${tier}" role="button" tabindex="0" aria-pressed="${active}">
+      <div class="overview-top">
+        <label class="tier-check" aria-label="Enable ${meta.label}">
           <input type="checkbox" data-tier="${tier}" ${meta.enabled?'checked':''}>
-          <h2>${meta.label}</h2>
         </label>
-        <button class="collapse" data-tier="${tier}" aria-label="Toggle section">${collapsed?'&#9654;':'&#9660;'}</button>
+        <h2>${meta.label}</h2>
       </div>
-      <div class="grid tier-body" ${collapsed?'style="display:none"':''}>` +
-      items.map(a => `
-        <div class="card">
-          <h3><span class="dot ${a.running?'on':'off'}"></span>${a.name}</h3>
-          <p>${a.summary}</p>
-          ${a.tunnelled==='forced'?'<p style="color:var(--warn)">Always Tunnelled</p>':''}
-          ${a.dev_supported ? `<label class="row" style="margin:0">
-            <input type="checkbox" data-dev="${a.id}" ${a.dev_enabled?'checked':''} style="width:auto">
-            Dev Version${a.dev_enabled && a.dev_tag ? ` <span style="color:var(--muted)">(${a.dev_tag})</span>` : ''}
-          </label>` : ''}
-          <div class="row">
-            ${a.enabled
-              ? `<button class="act" data-act="disable" data-id="${a.id}">Disable</button>
-                 <button class="act" data-act="restart" data-id="${a.id}">Restart</button>`
-              : `<button class="act primary" data-act="enable" data-id="${a.id}">Enable</button>`}
-            ${a.url && a.enabled ? `<button class="act" data-open="${a.id}">Open</button>`:''}
-          </div>
-        </div>`).join('') + '</div></div>';
+      <div class="overview-stat">${stats.running}<span> / ${stats.total} running</span></div>
+    </div>`;
   }).join('');
+  const activeItems = state.activeTier
+    ? state.apps.filter(a => a.tier === state.activeTier && !a.hidden) : [];
+  const body = `<div id="tier-msg"></div>
+    <div class="overview-bar">${overview}</div>
+    <div class="apps-panel">${activeItems.length
+      ? `<div class="grid">${activeItems.map(appCard).join('')}</div>`
+      : '<p style="color:var(--muted);margin:0">No apps in this group.</p>'}</div>`;
   render.shell(body);
+  document.querySelectorAll('[data-overview]').forEach(el => {
+    const pick = () => { state.activeTier = el.dataset.overview; render.apps(); };
+    el.onclick = pick;
+    el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } };
+  });
   document.querySelectorAll('[data-tier]').forEach(el => {
-    if (el.type === 'checkbox') {
-      el.onchange = async () => {
-        el.disabled = true;
-        try {
-          await api(`/tiers/${el.dataset.tier}/${el.checked?'enable':'disable'}`, {method:'POST'});
-          if (el.checked) {
-            state.collapsed[el.dataset.tier] = false;
-            state.manualCollapse[el.dataset.tier] = false;
-          }
-          render.apps();
-        } catch (e) {
-          el.checked = !el.checked;
-          const tierMsg = $('#tier-msg');
-          tierMsg.className = 'banner bad';
-          tierMsg.textContent = e.message || 'Could not update section';
-          el.disabled = false;
-        }
-      };
-    } else if (el.classList.contains('collapse')) {
-      el.onclick = () => {
-        state.manualCollapse[el.dataset.tier] = true;
-        state.collapsed[el.dataset.tier] = !state.collapsed[el.dataset.tier];
+    el.onchange = async () => {
+      el.disabled = true;
+      try {
+        await api(`/tiers/${el.dataset.tier}/${el.checked?'enable':'disable'}`, {method:'POST'});
+        if (el.checked) state.activeTier = el.dataset.tier;
         render.apps();
-      };
-    }
+      } catch (e) {
+        el.checked = !el.checked;
+        const tierMsg = $('#tier-msg');
+        tierMsg.className = 'banner bad';
+        tierMsg.textContent = e.message || 'Could not update section';
+        el.disabled = false;
+      }
+    };
+    el.onclick = e => e.stopPropagation();
   });
   document.querySelectorAll('[data-dev]').forEach(el => {
     el.onchange = async () => {
