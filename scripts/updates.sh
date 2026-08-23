@@ -87,7 +87,7 @@ PY
 
 apply() {
   svc="$1"
-  echo "Snapshotting config before updating ${svc}..."
+  echo "1/4 Snapshotting config before updating ${svc}..."
   snap=$(./scripts/backup.sh)
   echo "  ${snap}"
 
@@ -95,10 +95,12 @@ apply() {
         | python3 -c "import json,sys;print(json.load(sys.stdin)['services']['$svc']['image'])")" \
         --format '{{index .RepoDigests 0}}' 2>/dev/null || echo "")
 
+  echo "2/4 Pulling ${svc} image..."
   docker compose pull "$svc"
+  echo "3/4 Recreating ${svc}..."
   docker compose up -d "$svc"
 
-  echo "Waiting up to 90s for ${svc} to come back healthy..."
+  echo "4/4 Waiting up to 90s for ${svc} to come back healthy..."
   for _ in $(seq 1 18); do
     state=$(docker inspect --format '{{.State.Health.Status}}' "kine-${svc}" 2>/dev/null || echo "none")
     [[ "$state" == "healthy" ]] && { echo "OK: ${svc} healthy on the new image"; exit 0; }

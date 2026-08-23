@@ -509,7 +509,7 @@ render.updates = async (refresh=false) => {
     b.disabled = true; b.textContent = 'updating…';
     const rep = $('#rep');
     rep.style.display = 'block';
-    rep.textContent = 'pulling and recreating ' + b.dataset.up + '…';
+    rep.textContent = 'snapshotting config, then pulling and recreating ' + b.dataset.up + '…\n(this can take a minute; progress appears when the job finishes)';
     try {
       const res = await api('/updates/'+b.dataset.up, {method:'POST'});
       rep.textContent = res.rolled_back ? 'ROLLED BACK\n\n' + res.log : res.log;
