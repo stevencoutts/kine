@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
-from recipes import arr, emby, envfiles, jackett, prowlarr, recyclarr, seerr, transmission  # noqa: E402
+from recipes import arr, bazarr, emby, envfiles, jackett, prowlarr, recyclarr, seerr, transmission  # noqa: E402
 from seed import seed_all  # noqa: E402
 
 STATE = pathlib.Path("/stack/provision.log")
@@ -103,6 +103,12 @@ def wire(enabled: set[str]) -> None:
             os.environ.get("KINE_SECRET", "")[:16],
             log,
         )
+
+    if "bazarr" in enabled:
+        try:
+            bazarr.configure(enabled, log)
+        except Exception as exc:  # noqa: BLE001
+            log(f"bazarr: wiring failed ({exc})")
 
     log("Provisioning complete")
 

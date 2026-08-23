@@ -19,6 +19,8 @@ import os
 import pathlib
 import xml.etree.ElementTree as ET
 
+import yaml
+
 STACK = pathlib.Path("/stack")
 
 
@@ -46,6 +48,22 @@ def resolve_key(app: str) -> str:
             if existing:
                 return existing
         return api_key("jackett")
+
+    if app == "bazarr":
+        for path in (
+            STACK / "config" / "bazarr" / "config" / "config.yaml",
+            STACK / "config" / "bazarr" / "config.yaml",
+        ):
+            if not path.is_file():
+                continue
+            try:
+                data = yaml.safe_load(path.read_text()) or {}
+                existing = (data.get("auth") or {}).get("apikey")
+            except (OSError, yaml.YAMLError):
+                existing = None
+            if existing:
+                return str(existing)
+        return api_key("bazarr")
 
     cfg = STACK / "config" / app / "config.xml"
     if cfg.exists():

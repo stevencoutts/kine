@@ -12,7 +12,9 @@ import os
 import pathlib
 import xml.etree.ElementTree as ET
 
-from keys import api_key
+import yaml
+
+from keys import api_key, resolve_key
 
 STACK = pathlib.Path("/stack")
 # Official Seerr image runs as node, not the stack PUID/PGID.
@@ -152,6 +154,52 @@ def seed_seerr() -> None:
     print("  seerr: prepared config for node (1000:1000)")
 
 
+def seed_bazarr(enabled: set[str]) -> None:
+    """Bazarr reads config from /config/config/config.yaml inside the container."""
+    cfg_dir = STACK / "config" / "bazarr" / "config"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = cfg_dir / "config.yaml"
+
+    if cfg.exists():
+        try:
+            data = yaml.safe_load(cfg.read_text()) or {}
+            existing = (data.get("auth") or {}).get("apikey")
+        except (OSError, yaml.YAMLError):
+            existing = None
+        if existing:
+            print("  bazarr: existing API key retained")
+            return
+
+    config = {
+        "auth": {
+            "type": "None",
+            "username": "",
+            "password": "",
+            "apikey": api_key("bazarr"),
+        },
+        "general": {
+            "use_sonarr": "sonarr" in enabled,
+            "use_radarr": "radarr" in enabled,
+        },
+        "sonarr": {
+            "ip": "127.0.0.1",
+            "port": 8989,
+            "base_url": "/",
+            "ssl": False,
+            "apikey": resolve_key("sonarr") if "sonarr" in enabled else "",
+        },
+        "radarr": {
+            "ip": "127.0.0.1",
+            "port": 7878,
+            "base_url": "/",
+            "ssl": False,
+            "apikey": resolve_key("radarr") if "radarr" in enabled else "",
+        },
+    }
+    cfg.write_text(yaml.safe_dump(config, sort_keys=False))
+    print("  bazarr: seeded config/config.yaml with derived API key")
+
+
 def seed_all(enabled: set[str]) -> None:
     print("Seeding application config...")
     for app in ARR_DEFAULTS:
@@ -167,3 +215,5 @@ def seed_all(enabled: set[str]) -> None:
         recyclarr.seed(print)
     if "seerr" in enabled:
         seed_seerr()
+    if "bazarr" in enabled:
+        seed_bazarr(enabled)

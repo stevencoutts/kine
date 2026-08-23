@@ -126,6 +126,44 @@ def test_seerr_seed_prepares_node_owned_config(stack, monkeypatch):
     assert cfg in {path for path, _, _ in calls}
 
 
+def test_bazarr_seed_writes_nested_config_with_derived_key(stack):
+    import yaml
+    import seed
+    from keys import api_key, resolve_key
+
+    seed.seed_arr("sonarr")
+    seed.seed_arr("radarr")
+    seed.seed_bazarr({"sonarr", "radarr", "bazarr"})
+    cfg = stack / "config" / "bazarr" / "config" / "config.yaml"
+    assert cfg.is_file()
+    data = yaml.safe_load(cfg.read_text())
+    assert data["auth"]["apikey"] == api_key("bazarr")
+    assert data["general"]["use_sonarr"] is True
+    assert data["sonarr"]["ip"] == "127.0.0.1"
+    assert data["sonarr"]["apikey"] == resolve_key("sonarr")
+    assert data["radarr"]["port"] == 7878
+
+
+def test_resolve_key_reads_bazarr_yaml(stack, monkeypatch):
+    import yaml
+    import keys
+
+    monkeypatch.setattr(keys, "STACK", stack)
+    cfg = stack / "config" / "bazarr" / "config"
+    cfg.mkdir(parents=True)
+    (cfg / "config.yaml").write_text(yaml.safe_dump({"auth": {"apikey": "live-bazarr-key"}}))
+    assert keys.resolve_key("bazarr") == "live-bazarr-key"
+
+
+def test_bazarr_webhook_points_at_loopback_with_api_key():
+    from recipes.arr import _bazarr_webhook
+
+    payload = _bazarr_webhook("sonarr", "baz-key")
+    fields = {f["name"]: f["value"] for f in payload["fields"]}
+    assert payload["implementation"] == "Webhook"
+    assert "127.0.0.1:6767/api/webhooks/sonarr?apikey=baz-key" in fields["url"]
+
+
 def test_transmission_configure_sets_paths_via_rpc(monkeypatch):
     import recipes.transmission as transmission
 
@@ -657,6 +695,12 @@ def test_provision_compose_passes_media_server_env():
     assert "PLEX_TOKEN" in text
     assert "EMBY_HOST" in text
     assert "EMBY_API_KEY" in text
+
+
+def test_provision_wire_includes_bazarr():
+    text = (ROOT / "provision" / "provision.py").read_text()
+    assert "bazarr.configure" in text
+    assert "recipes/bazarr.py" in str(list((ROOT / "provision" / "recipes").glob("bazarr.py"))[0])
 
 
 def test_env_example_documents_media_servers():

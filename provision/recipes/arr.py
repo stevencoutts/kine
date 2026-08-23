@@ -223,6 +223,23 @@ def _sync_media_notifications(client: ArrClient, app: str, enabled: set[str], lo
         _sync_one_notification(client, app, log, "Emby", None)
 
 
+def _bazarr_webhook(app: str, bazarr_key: str) -> dict:
+    hook = "sonarr" if app == "sonarr" else "radarr"
+    return {
+        "name": "Bazarr",
+        "implementation": "Webhook",
+        "configContract": "WebhookSettings",
+        **_app_events(app),
+        "fields": [
+            {
+                "name": "url",
+                "value": f"http://127.0.0.1:6767/api/webhooks/{hook}?apikey={bazarr_key}",
+            },
+            {"name": "method", "value": 1},
+        ],
+    }
+
+
 def configure(app: str, enabled: set[str], log) -> None:
     client = ArrClient(
         # The provisioner sits on kine_internal, outside the tunnel, so it
@@ -258,3 +275,10 @@ def configure(app: str, enabled: set[str], log) -> None:
         client.put(f"{cfg}/{current['id']}", current)
 
     _sync_media_notifications(client, app, enabled, log)
+
+    if "bazarr" in enabled:
+        _sync_one_notification(
+            client, app, log, "Bazarr", _bazarr_webhook(app, resolve_key("bazarr"))
+        )
+    else:
+        _sync_one_notification(client, app, log, "Bazarr", None)
