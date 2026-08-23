@@ -63,6 +63,43 @@ async def _refresh_mdns() -> None:
     await compose.run("up", "-d", "--force-recreate", "mdns", timeout=60)
 
 
+_MEDIA_VOLUME_APPS = (
+    "sonarr", "radarr", "prowlarr", "transmission", "bazarr",
+    "nzbget", "unpackerr", "emby", "tdarr", "dispatcharr",
+)
+
+
+async def _recreate_media_volume_apps() -> None:
+    """Recreate apps that bind DATA_ROOT so they see host NFS mounts.
+
+    Docker captures the bind source at container create time. Mounting NFS on
+    the host afterwards leaves running containers on the old local directories.
+    """
+    profiles = set(config.profiles())
+    wanted = [a for a in _MEDIA_VOLUME_APPS if a in profiles]
+    if not wanted:
+        return
+    env = config.read()
+    tunnelled = {
+        a.strip()
+        for a in env.get("VPN_TUNNELLED_APPS", "").split(",")
+        if a.strip()
+    } & profiles
+    media_tunnelled = [a for a in wanted if a in tunnelled]
+    standalone = [a for a in wanted if a not in tunnelled]
+    if media_tunnelled and "gluetun" in profiles:
+        all_tunnelled = [
+            a.strip()
+            for a in env.get("VPN_TUNNELLED_APPS", "").split(",")
+            if a.strip() and a.strip() in profiles
+        ]
+        await compose.run(
+            "up", "-d", "--force-recreate", "gluetun", *all_tunnelled, timeout=300,
+        )
+    if standalone:
+        await compose.run("up", "-d", "--force-recreate", *standalone, timeout=300)
+
+
 async def _apply_domain_routing() -> None:
     """Recreate services whose Traefik Host() rules embed KINE_DOMAIN.
 
@@ -595,6 +632,7 @@ async def nfs_apply_mounts(user: str = Depends(require_user)):
     except RuntimeError as exc:
         raise HTTPException(502, str(exc)) from exc
     if result.get("ok"):
+        await _recreate_media_volume_apps()
         result["rescan"] = await _queue_library_sync()
     return result
 
@@ -630,6 +668,7 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
         except RuntimeError as exc:
             nfs_mount = {"ok": False, "log": str(exc)}
         if nfs_mount and nfs_mount.get("ok"):
+            await _recreate_media_volume_apps()
             changed = set(body) & set(_NFS_KEYS)
             nfs_mount["rescan"] = await _queue_library_sync(changed)
     return {"ok": True, "nfs_mount": nfs_mount}

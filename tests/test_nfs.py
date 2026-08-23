@@ -35,6 +35,11 @@ def test_helm_applies_nfs_mounts_via_agent():
     assert 'compose.script("mount-media.sh")' not in MAIN
 
 
+def test_helm_recreates_media_apps_after_nfs_mount():
+    assert "_recreate_media_volume_apps" in MAIN
+    assert "await _recreate_media_volume_apps()" in MAIN
+
+
 def test_mount_script_supports_host_root_for_agent():
     assert "KINE_HOST_ROOT" in MOUNT_SCRIPT
     assert 'host_path /etc/fstab' in MOUNT_SCRIPT
