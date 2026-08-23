@@ -224,12 +224,35 @@ def _sync_media_notifications(client: ArrClient, app: str, enabled: set[str], lo
 
 
 def _bazarr_webhook(app: str, bazarr_key: str) -> dict:
+    """Sonarr/Radarr Webhook → Bazarr. No updateLibrary (Plex/Emby only)."""
     hook = "sonarr" if app == "sonarr" else "radarr"
+    events = {
+        "onGrab": False,
+        "onDownload": True,
+        "onUpgrade": True,
+        "onRename": True,
+        "onHealthIssue": False,
+        "onApplicationUpdate": False,
+        "includeHealthWarnings": False,
+    }
+    if app == "sonarr":
+        events.update({
+            "onSeriesDelete": False,
+            "onEpisodeFileDelete": False,
+            "onEpisodeFileDeleteForUpgrade": True,
+        })
+    else:
+        events.update({
+            "onMovieAdded": False,
+            "onMovieDelete": False,
+            "onMovieFileDelete": False,
+            "onMovieFileDeleteForUpgrade": True,
+        })
     return {
         "name": "Bazarr",
         "implementation": "Webhook",
         "configContract": "WebhookSettings",
-        **_app_events(app),
+        **events,
         "fields": [
             {
                 "name": "url",
