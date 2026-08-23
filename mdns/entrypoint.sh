@@ -9,8 +9,7 @@
 # under network_mode: host.
 set -e
 
-HOST_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1)}')
-[ -n "$HOST_IP" ] || HOST_IP=$(hostname -i | awk '{print $1}')
+HOST_IP=$(python3 /pick_ip.py)
 
 mkdir -p /var/run/dbus
 dbus-daemon --system --fork

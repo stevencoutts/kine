@@ -16,5 +16,6 @@ services:
     environment:
       KINE_DOMAIN: ${KINE_DOMAIN}
       COMPOSE_PROFILES: ${COMPOSE_PROFILES}
+      MDNS_HOST_IP: ${MDNS_HOST_IP:-}
     volumes:
       - ../catalogue.yml:/catalogue.yml:ro

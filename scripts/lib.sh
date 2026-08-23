@@ -131,6 +131,11 @@ local_ip() {
   if is_darwin; then
     ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "127.0.0.1"
   else
+    local script
+    script="$(dirname "${BASH_SOURCE[0]}")/../mdns/pick_ip.py"
+    if [[ -f "$script" ]] && command -v python3 >/dev/null 2>&1; then
+      python3 "$script" 2>/dev/null || true
+    fi
     hostname -I 2>/dev/null | awk '{print $1}'
   fi
 }
