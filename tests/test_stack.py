@@ -331,6 +331,25 @@ def test_traefik_uses_socket_proxy_for_docker_discovery():
     assert str(proxy["environment"]["CONTAINERS"]) == "1"
 
 
+def test_traefik_publishes_configurable_host_ports():
+    _, traefik = SERVICES["traefik"]
+    ports = traefik.get("ports", [])
+    assert "${TRAEFIK_HTTP_PORT:-8080}:${TRAEFIK_HTTP_PORT:-8080}" in ports
+    assert "${TRAEFIK_HTTPS_PORT:-8443}:${TRAEFIK_HTTPS_PORT:-8443}" in ports
+    assert "80:80" not in ports
+    assert "443:443" not in ports
+    cmd = " ".join(traefik["command"])
+    assert "--entrypoints.web.address=:${TRAEFIK_HTTP_PORT:-8080}" in cmd
+    assert "--entrypoints.websecure.address=:${TRAEFIK_HTTPS_PORT:-8443}" in cmd
+    env = {}
+    for line in (ROOT / ".env.example").read_text().splitlines():
+        if "=" in line and not line.startswith("#"):
+            key, value = line.split("=", 1)
+            env[key] = value
+    assert env["TRAEFIK_HTTP_PORT"] == "8080"
+    assert env["TRAEFIK_HTTPS_PORT"] == "8443"
+
+
 def test_helm_mounts_repository_root():
     """Include-relative paths must mount the repo, not compose/."""
     _, helm = SERVICES["helm"]

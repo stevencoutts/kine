@@ -14,18 +14,18 @@ services:
       - --providers.docker.network=kine_edge
       - --providers.file.directory=/etc/traefik/dynamic
       - --providers.file.watch=true
-      - --entrypoints.web.address=:80
+      - --entrypoints.web.address=:${TRAEFIK_HTTP_PORT:-8080}
       - --entrypoints.web.http.redirections.entrypoint.to=websecure
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
-      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.address=:${TRAEFIK_HTTPS_PORT:-8443}
       - --entrypoints.websecure.http.tls=true
       - --api.dashboard=true
       - --log.level=INFO
       - --accesslog=true
       - --ping=true
     ports:
-      - "80:80"
-      - "443:443"
+      - "${TRAEFIK_HTTP_PORT:-8080}:${TRAEFIK_HTTP_PORT:-8080}"
+      - "${TRAEFIK_HTTPS_PORT:-8443}:${TRAEFIK_HTTPS_PORT:-8443}"
     volumes:
       - ${STACK_ROOT}/config/traefik:/etc/traefik
     networks: [kine_edge, kine_ctrl]

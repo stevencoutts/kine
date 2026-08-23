@@ -28,7 +28,9 @@ below.
 - Linux x86_64 with Bash, Python 3, PyYAML, OpenSSL, and standard GNU user and
   filesystem tools
 - Docker Engine and Docker Compose **2.20+** (`include:` is required)
-- free TCP ports 80 and 443
+- free TCP ports for Traefik (defaults **8080** / **8443**; set
+  `TRAEFIK_HTTP_PORT` / `TRAEFIK_HTTPS_PORT` in `.env`, or use `80` / `443`
+  when those are free)
 - `/dev/net/tun` for gluetun
 - one filesystem mounted at `DATA_ROOT` for both media and downloads if you
   want hardlinks and atomic imports

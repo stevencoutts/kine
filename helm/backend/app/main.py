@@ -204,6 +204,7 @@ async def apps(request: Request, user: str = Depends(require_user)):
                 env.get("KINE_DOMAIN", ""),
                 request.url.hostname,
                 env.get("KINE_LOCAL_DOMAIN", "127.0.0.1.nip.io"),
+                env.get("TRAEFIK_HTTPS_PORT", "8443"),
             ),
             "releases": meta.get("releases"),
             "requires": meta.get("requires", []),

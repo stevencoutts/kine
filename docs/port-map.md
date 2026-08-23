@@ -1,3 +1,14 @@
+# Host ports (Traefik)
+
+| Port | Service | Notes |
+|---|---|---|
+| `${TRAEFIK_HTTP_PORT}` (default 8080) | Traefik HTTP | Redirects to HTTPS |
+| `${TRAEFIK_HTTPS_PORT}` (default 8443) | Traefik HTTPS | App hostnames |
+| `${HELM_PORT}` (default 8600) | Helm admin UI | Also via `admin.${KINE_DOMAIN}` |
+
+Set `TRAEFIK_HTTP_PORT=80` and `TRAEFIK_HTTPS_PORT=443` in `.env` when those
+ports are free on the host.
+
 # Port map inside the tunnel
 
 Every tier 2 application shares gluetun's network namespace, which
