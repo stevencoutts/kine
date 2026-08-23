@@ -301,12 +301,14 @@ def test_recyclarr_image_uses_published_tag():
     assert env["RECYCLARR_TAG"] == "8"
 
 
-def test_recyclarr_is_tunnelled_with_config_healthcheck():
+def test_recyclarr_runs_on_internal_network_with_config_healthcheck():
     _, recyclarr = SERVICES["recyclarr"]
-    assert recyclarr.get("network_mode") == "service:gluetun"
+    assert recyclarr.get("network_mode") != "service:gluetun"
+    assert "kine_internal" in recyclarr.get("networks", [])
     assert recyclarr["volumes"] == ["${STACK_ROOT}/config/recyclarr:/config"]
     health = recyclarr.get("healthcheck", {})
     assert "recyclarr.yml" in str(health.get("test", ""))
+    assert "recyclarr" not in TUNNELLED
 
 
 # ── everything else ─────────────────────────────────────────────

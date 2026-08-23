@@ -1,3 +1,6 @@
+# Recyclarr needs GitHub for TRaSH Guides and only talks to Sonarr/Radarr
+# over HTTP. It stays on kine_internal (not inside gluetun) so profile sync
+# still works when the VPN tunnel is down or DNS inside the namespace fails.
 services:
   recyclarr:
     image: ghcr.io/recyclarr/recyclarr:${RECYCLARR_TAG}
@@ -7,7 +10,7 @@ services:
     depends_on:
       gluetun:
         condition: service_healthy
-    network_mode: "service:gluetun"
+    networks: [kine_internal]
     user: "${PUID}:${PGID}"
     environment:
       TZ: ${KINE_TIMEZONE}

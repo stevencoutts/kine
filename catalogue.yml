@@ -143,7 +143,6 @@ apps:
     releases: https://github.com/recyclarr/recyclarr/releases
     wires: [pvr-link]
     requires: [gluetun]
-    tunnelled: forced
     # ghcr.io/recyclarr/recyclarr edge is the continuous build channel.
     dev_tag: edge
     default: true

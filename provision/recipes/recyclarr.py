@@ -1,8 +1,9 @@
 """Seed and wire Recyclarr TRaSH Guide sync for Sonarr and Radarr.
 
-Recyclarr reads recyclarr.yml plus secrets.yml from /config. Inside the
-gluetun namespace Sonarr and Radarr are reached on loopback, the same
-convention Unpackerr uses.
+Recyclarr reads recyclarr.yml plus secrets.yml from /config. Sonarr and
+Radarr are reached via gluetun on kine_internal; Recyclarr itself runs
+outside the VPN namespace so it can still reach GitHub when the tunnel
+is down.
 """
 import pathlib
 
@@ -50,9 +51,9 @@ def _config_dir() -> pathlib.Path:
 
 def _secrets(sonarr_key: str, radarr_key: str) -> dict[str, str]:
     return {
-        "sonarr_url": "http://127.0.0.1:8989",
+        "sonarr_url": "http://gluetun:8989",
         "sonarr_apikey": sonarr_key,
-        "radarr_url": "http://127.0.0.1:7878",
+        "radarr_url": "http://gluetun:7878",
         "radarr_apikey": radarr_key,
     }
 

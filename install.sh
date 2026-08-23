@@ -159,6 +159,16 @@ echo
 bold "Waiting for applications and wiring them together"
 docker compose run --rm provision wire
 
+# Recyclarr only runs on a daily cron; sync once now so TRaSH profiles exist
+# before the user opens Sonarr/Radarr.
+if [[ ",${COMPOSE_PROFILES}," == *",recyclarr,"* ]]; then
+  if docker exec kine-recyclarr recyclarr sync; then
+    ok "recyclarr synced TRaSH Guide profiles"
+  else
+    warn "recyclarr sync failed; retry: docker exec kine-recyclarr recyclarr sync"
+  fi
+fi
+
 # ── 8. Done ─────────────────────────────────────────────────────
 echo
 bold "Ready"
