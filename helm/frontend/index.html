@@ -96,9 +96,10 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   box-shadow:0 6px 28px color-mix(in srgb, var(--ok) 22%, transparent)}
 .overview-top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;
   margin-bottom:.45rem;min-height:1.35rem}
+/* The global label margin would make toggle-bearing cards taller than Watching. */
+.overview-top .tier-switch{margin:0}
 .overview-btn h2{margin:0;font-size:.72rem;line-height:1.35rem;text-transform:uppercase;
   letter-spacing:.08em;color:var(--muted);font-weight:600;text-align:left}
-.overview-spacer{visibility:hidden;pointer-events:none}
 .overview-stat{font-size:1.15rem;font-weight:600;line-height:1.2}
 .overview-stat span{color:var(--muted);font-weight:400;font-size:.82rem}
 .watch-list{display:flex;flex-direction:column;gap:.75rem}
@@ -445,12 +446,7 @@ render.apps = async () => {
   const watchCount = watch.count || 0;
   const watchBtn = `<div class="overview-btn ${watchingActive?'active':''}${watchCount?' watching-live':''}"
       data-overview="watching" role="button" tabindex="0" aria-pressed="${watchingActive}">
-      <div class="overview-top">
-        <h2>Watching</h2>
-        <span class="tier-switch overview-spacer" aria-hidden="true">
-          <span class="tier-switch-ui"></span>
-        </span>
-      </div>
+      <div class="overview-top"><h2>Watching</h2></div>
       <div class="overview-stat">${watchCount}<span> ${watchCount===1?'session':'sessions'}</span></div>
     </div>`;
   const overview = visibleTiers.map(tier => {
