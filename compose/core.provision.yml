@@ -22,6 +22,8 @@ services:
       EMBY_PORT: ${EMBY_PORT:-8096}
       EMBY_API_KEY: ${EMBY_API_KEY:-}
       EMBY_USE_SSL: ${EMBY_USE_SSL:-false}
+      OPENSUBTITLES_USERNAME: ${OPENSUBTITLES_USERNAME:-}
+      OPENSUBTITLES_PASSWORD: ${OPENSUBTITLES_PASSWORD:-}
     volumes:
       - ${STACK_ROOT}:/stack
       - ${DATA_ROOT}/media:/data/media

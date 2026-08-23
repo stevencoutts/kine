@@ -747,6 +747,21 @@ render.settings = async () => {
         <button class="act primary" id="save-media-servers" type="button">Save Media Servers</button>
       </div>
       <div id="media-msg"></div>
+    </div></div>
+    <div class="section"><h2>Subtitles</h2><div class="card">
+      <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
+        Bazarr enables Gestdown, TVSubtitles and YIFY by default, with an
+        English profile that also collects <code>en:forced</code>.
+        Add a free <a class="link" href="https://www.opensubtitles.com/" target="_blank" rel="noopener">OpenSubtitles.com</a>
+        account for better coverage (username, not email).</p>
+      <label>OpenSubtitles Username</label>
+      <input id="OPENSUBTITLES_USERNAME" value="${esc(s.OPENSUBTITLES_USERNAME)}" autocomplete="username">
+      <label>OpenSubtitles Password</label>
+      <input id="OPENSUBTITLES_PASSWORD" type="password" value="${esc(s.OPENSUBTITLES_PASSWORD)}" autocomplete="current-password">
+      <div class="row" style="margin-top:1rem">
+        <button class="act primary" id="save-subtitles" type="button">Save Subtitles</button>
+      </div>
+      <div id="subtitles-msg"></div>
     </div></div>`);
   const sharesBox = $('#nfs-shares');
   if (sharesBox) sharesBox.style.display = 'block';
@@ -812,6 +827,25 @@ render.settings = async () => {
         msg.innerHTML = `<div class="banner bad">Saved with warnings — some connections could not be verified.<pre style="margin:.5rem 0 0;font-size:.75rem;white-space:pre-wrap">${esc(notifyFails.join('\n'))}</pre></div>`;
       } else {
         msg.innerHTML = '<div class="banner ok">Saved. Sonarr and Radarr will notify these servers on new imports.</div>';
+      }
+    } catch (e) {
+      msg.innerHTML = `<div class="banner bad">${esc(e.message || 'Could not save')}</div>`;
+    }
+  };
+  $('#save-subtitles').onclick = async () => {
+    const msg = $('#subtitles-msg');
+    msg.innerHTML = '<div class="banner" style="border:1px solid var(--line)">Saving and wiring Bazarr…</div>';
+    const body = {
+      OPENSUBTITLES_USERNAME: $('#OPENSUBTITLES_USERNAME').value.trim(),
+      OPENSUBTITLES_PASSWORD: $('#OPENSUBTITLES_PASSWORD').value,
+    };
+    try {
+      const r = await api('/settings', {method:'POST', body: JSON.stringify(body)});
+      const log = r.media_wire?.log || '';
+      if (r.media_wire && !r.media_wire.ok) {
+        msg.innerHTML = `<div class="banner bad">Saved, but wiring failed.<pre style="margin:.5rem 0 0;font-size:.75rem;white-space:pre-wrap">${esc(log)}</pre></div>`;
+      } else {
+        msg.innerHTML = '<div class="banner ok">Saved. Bazarr providers and language defaults will be applied on wire.</div>';
       }
     } catch (e) {
       msg.innerHTML = `<div class="banner bad">${esc(e.message || 'Could not save')}</div>`;

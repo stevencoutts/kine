@@ -164,6 +164,42 @@ def test_bazarr_webhook_points_at_loopback_with_api_key():
     assert "127.0.0.1:6767/api/webhooks/sonarr?apikey=baz-key" in fields["url"]
 
 
+def test_bazarr_english_profile_includes_forced():
+    from recipes.bazarr import english_forced_profile
+
+    profile = english_forced_profile()
+    assert profile["name"] == "English"
+    assert profile["profileId"] == 1
+    items = {(i["language"], i["forced"]) for i in profile["items"]}
+    assert ("en", "False") in items
+    assert ("en", "True") in items
+
+
+def test_bazarr_wanted_providers_include_opensubtitles_when_creds(monkeypatch):
+    from recipes import bazarr
+
+    monkeypatch.delenv("OPENSUBTITLES_USERNAME", raising=False)
+    monkeypatch.delenv("OPENSUBTITLES_PASSWORD", raising=False)
+    assert "opensubtitlescom" not in bazarr._wanted_providers()
+    assert "gestdown" in bazarr._wanted_providers()
+
+    monkeypatch.setenv("OPENSUBTITLES_USERNAME", "user")
+    monkeypatch.setenv("OPENSUBTITLES_PASSWORD", "pass")
+    assert bazarr._wanted_providers()[-1] == "opensubtitlescom"
+
+
+def test_bazarr_providers_need_defaults_for_empty_or_joined():
+    from recipes.bazarr import _providers_need_defaults
+
+    assert _providers_need_defaults({"general": {"enabled_providers": []}}) is True
+    assert _providers_need_defaults({
+        "general": {"enabled_providers": ["gestdown,tvsubtitles"]},
+    }) is True
+    assert _providers_need_defaults({
+        "general": {"enabled_providers": ["gestdown", "tvsubtitles"]},
+    }) is False
+
+
 def test_transmission_configure_sets_paths_via_rpc(monkeypatch):
     import recipes.transmission as transmission
 

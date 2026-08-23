@@ -118,6 +118,20 @@ def test_settings_media_servers_section():
     assert 'provision", "wire"' in BACKEND
 
 
+def test_settings_subtitles_opensubtitles():
+    assert "OPENSUBTITLES_USERNAME" in FRONTEND
+    assert "OPENSUBTITLES_PASSWORD" in FRONTEND
+    assert "save-subtitles" in FRONTEND
+    assert "en:forced" in FRONTEND
+    assert "_SUBTITLE_KEYS" in BACKEND
+    assert "OPENSUBTITLES_USERNAME" in BACKEND
+    text = (ROOT / ".env.example").read_text()
+    assert "OPENSUBTITLES_USERNAME=" in text
+    assert "OPENSUBTITLES_PASSWORD=" in text
+    provision = (ROOT / "compose" / "core.provision.yml").read_text()
+    assert "OPENSUBTITLES_USERNAME" in provision
+
+
 def test_dev_channel_api_recreates_when_profile_enabled():
     assert '@app.post("/api/apps/{app_id}/dev/enable")' in BACKEND
     assert '@app.post("/api/apps/{app_id}/dev/disable")' in BACKEND
