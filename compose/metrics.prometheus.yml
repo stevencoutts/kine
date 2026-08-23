@@ -8,6 +8,14 @@ services:
     profiles: ["prometheus"]
     restart: unless-stopped
     user: "${PUID}:${PGID}"
+    # Helm starts only the visible app of a tier and lets Compose pull in
+    # the rest. Without this the exporters stay stopped and every
+    # infrastructure panel is silently empty.
+    depends_on:
+      cadvisor:
+        condition: service_started
+      node-exporter:
+        condition: service_started
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus

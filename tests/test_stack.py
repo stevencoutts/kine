@@ -516,3 +516,17 @@ def test_metrics_apps_are_not_tunnelled():
     for app_id, meta in CATALOGUE.items():
         if meta.get("tier") == "metrics":
             assert meta.get("tunnelled") != "forced"
+
+
+def test_starting_grafana_pulls_in_the_whole_metrics_chain():
+    """Helm runs `up -d` with a tier's visible apps only, so the hidden
+    exporters have to arrive as Compose dependencies or they never run."""
+    chain, queue = set(), ["grafana"]
+    while queue:
+        name = queue.pop()
+        if name in chain:
+            continue
+        chain.add(name)
+        _, svc = SERVICES[name]
+        queue.extend(svc.get("depends_on") or [])
+    assert chain == {"grafana", "prometheus", "cadvisor", "node-exporter"}
