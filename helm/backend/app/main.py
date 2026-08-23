@@ -32,6 +32,13 @@ app = FastAPI(title="Kine Helm", docs_url=None, redoc_url=None)
 COOKIE = "kine_session"
 
 
+async def _refresh_mdns() -> None:
+    """Recreate mdns so it re-reads COMPOSE_PROFILES and advertises new names."""
+    if "mdns" not in config.profiles():
+        return
+    await compose.run("up", "-d", "--force-recreate", "mdns", timeout=60)
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     config.normalize()
@@ -185,6 +192,7 @@ async def first_run(request: Request):
         await asyncio.to_thread(_remove_gluetun_conf, stack_root)
         config.write({"VPN_ENABLED": "false", **_empty_vpn_env()})
     config.set_profiles(wanted)
+    await _refresh_mdns()
 
     if vpn_enabled:
         code, out = await compose.run(
@@ -270,6 +278,7 @@ async def enable_tier(tier: str, user: str = Depends(require_user)):
         if app_id not in wanted:
             wanted.append(app_id)
     config.set_profiles(wanted)
+    await _refresh_mdns()
     # Seed config.xml with derived API keys before first start so wire
     # can authenticate. Safe no-op when configs already exist.
     await compose.run("run", "--rm", "provision", "seed")
@@ -306,6 +315,7 @@ async def disable_tier(tier: str, user: str = Depends(require_user)):
         [p for p in wanted if p not in to_remove], cat,
     )
     config.set_profiles(wanted)
+    await _refresh_mdns()
     return {"ok": True, "disabled": removed}
 
 
@@ -324,6 +334,7 @@ async def enable(app_id: str, user: str = Depends(require_user)):
     if app_id not in wanted:
         wanted.append(app_id)
     config.set_profiles(wanted)
+    await _refresh_mdns()
 
     # Seed before start so *arr apps adopt derived keys on first run.
     await compose.run("run", "--rm", "provision", "seed")
@@ -345,6 +356,7 @@ async def disable(app_id: str, user: str = Depends(require_user)):
     await compose.run("stop", app_id)
     await compose.run("rm", "-f", app_id)
     config.set_profiles([p for p in config.profiles() if p != app_id])
+    await _refresh_mdns()
     return {"ok": True}
 
 
@@ -540,9 +552,7 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
         await compose.script("tls-setup.sh")
         await compose.run("restart", "traefik")
     if "KINE_DOMAIN" in body:
-        # Best-effort: mdns may not be enabled, and a missing container
-        # is not a settings-save failure.
-        await compose.run("restart", "mdns")
+        await _refresh_mdns()
     nfs_changed = bool(set(_NFS_KEYS) & set(body))
     return {"ok": True, "nfs_requires_host_mount": nfs_changed}
 
