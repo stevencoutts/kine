@@ -11,6 +11,9 @@ stamp=$(date +%Y%m%d-%H%M%S)
 out="${STACK_ROOT}/backups/kine-${stamp}.tar.gz"
 mkdir -p "${STACK_ROOT}/backups"
 echo "Snapshotting config to ${out}..." >&2
+# GNU tar exits 1 when a file changes while reading (common for live *arr DBs).
+# That is a warning, not a failed backup — only treat exit >= 2 as fatal.
+set +e
 tar czf "$out" \
   --exclude='*/logs/*' \
   --exclude='*/cache/*' \
@@ -20,12 +23,15 @@ tar czf "$out" \
   --exclude='*/asp/*' \
   -C "${STACK_ROOT}" config \
   -C "$(pwd)" .env docker-compose.yml compose catalogue.yml
+tar_rc=$?
+set -e
+if (( tar_rc >= 2 )); then
+  echo "Snapshot failed (tar exit ${tar_rc})" >&2
+  rm -f "$out"
+  exit "$tar_rc"
+fi
 echo "Snapshot complete ($(du -h "$out" | cut -f1))." >&2
 echo "$out"
-# Keep the last 10
-# `-r`/`--no-run-if-empty` is GNU-only; `rm -f` with no args is a no-op
-# on BSD/macOS xargs too, so it's portable without the flag.
-ls -1t "${STACK_ROOT}"/backups/kine-*.tar.gz 2>/dev/null | tail -n +11 | xargs rm -f --
 # Keep the last 10
 # `-r`/`--no-run-if-empty` is GNU-only; `rm -f` with no args is a no-op
 # on BSD/macOS xargs too, so it's portable without the flag.
