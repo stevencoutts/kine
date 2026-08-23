@@ -85,11 +85,28 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   background:color-mix(in srgb, var(--accent) 14%, transparent);
   box-shadow:0 6px 28px color-mix(in srgb, var(--accent) 18%, transparent)}
 .overview-btn.off-tier{opacity:.72}
-.overview-top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;margin-bottom:.45rem}
-.overview-btn h2{margin:0;font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;
-  color:var(--muted);font-weight:600}
+.overview-btn.watching-live{
+  border-color:color-mix(in srgb, var(--ok) 55%, transparent);
+  background:color-mix(in srgb, var(--ok) 16%, transparent);
+  box-shadow:0 4px 20px color-mix(in srgb, var(--ok) 18%, transparent)}
+.overview-btn.watching-live.active{
+  border-color:color-mix(in srgb, var(--ok) 70%, transparent);
+  background:color-mix(in srgb, var(--ok) 22%, transparent);
+  box-shadow:0 6px 28px color-mix(in srgb, var(--ok) 22%, transparent)}
+.overview-top{display:grid;grid-template-columns:1fr 2.6rem;align-items:center;column-gap:.5rem;
+  margin-bottom:.45rem;min-height:1.35rem}
+.overview-top .tier-switch{justify-self:end}
+.overview-btn h2{margin:0;font-size:.72rem;line-height:1.35rem;text-transform:uppercase;
+  letter-spacing:.08em;color:var(--muted);font-weight:600}
 .overview-stat{font-size:1.15rem;font-weight:600;line-height:1.2}
 .overview-stat span{color:var(--muted);font-weight:400;font-size:.82rem}
+.watch-list{display:flex;flex-direction:column;gap:.75rem}
+.watch-row{padding:.15rem 0}
+.watch-row strong{display:block;font-size:.95rem}
+.watch-row .watch-sub{color:var(--muted);font-size:.8rem}
+.watch-bar{height:4px;margin-top:.45rem;border-radius:999px;
+  background:color-mix(in srgb, var(--line) 70%, transparent);overflow:hidden}
+.watch-bar i{display:block;height:100%;border-radius:999px;background:var(--ok)}
 .tier-switch{position:relative;display:inline-flex;align-items:center;flex:none;cursor:pointer}
 .tier-switch input{position:absolute;opacity:0;width:0;height:0;margin:0}
 .tier-switch-ui{display:inline-flex;align-items:center;width:2.6rem;height:1.35rem;
@@ -166,7 +183,10 @@ const api = async (path, opts={}) => {
   return data;
 };
 
-const state = { tab:'apps', apps:[], tiers:{}, activeTier:null };
+const state = { tab:'apps', apps:[], tiers:{}, activeTier:null, watchTimer:null };
+const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+}[c]));
 const TAB_LABELS = {apps:'Apps', updates:'Updates', vpn:'VPN', status:'Status', settings:'Settings'};
 const TIER_ORDER = ['media','acquisition','process','live','platform'];
 
@@ -198,6 +218,10 @@ const launchApp = (app) => {
 const render = {};
 
 render.shell = (body) => {
+  if (state.watchTimer && state.tab !== 'apps') {
+    clearInterval(state.watchTimer);
+    state.watchTimer = null;
+  }
   $('#app').innerHTML = `
     <header>
       <div class="brand">
@@ -358,6 +382,31 @@ const tierStats = items => {
   const enabled = items.filter(a => a.enabled);
   return { running: enabled.filter(a => a.running).length, total: enabled.length };
 };
+const watchPanel = (w) => {
+  const configured = w.configured || {};
+  if (!configured.plex && !configured.emby) {
+    return '<p style="color:var(--muted);margin:0">Add Plex or Emby credentials in Settings to see what is playing.</p>';
+  }
+  const sessions = w.sessions || [];
+  const errors = Object.entries(w.errors || {}).map(([k,v]) => `${k}: ${v}`).join(' · ');
+  if (!sessions.length) {
+    return `<p style="color:var(--muted);margin:0">Nothing is playing right now.</p>
+      ${errors ? `<p style="color:var(--warn);font-size:.8rem;margin:.5rem 0 0">${escHtml(errors)}</p>` : ''}`;
+  }
+  const rows = sessions.map(s => {
+    const server = s.server === 'plex' ? 'Plex' : 'Emby';
+    const st = s.state === 'paused' ? 'paused' : 'playing';
+    const pct = s.progress == null ? '' : ` · ${s.progress}%`;
+    const bar = s.progress == null ? '' : `<div class="watch-bar"><i style="width:${s.progress}%"></i></div>`;
+    return `<div class="watch-row">
+      <strong>${escHtml(s.title)}</strong>
+      <div class="watch-sub">${escHtml(s.user)} · ${escHtml(s.player)} · ${server} · ${st}${pct}</div>
+      ${bar}
+    </div>`;
+  }).join('');
+  return `<div class="watch-list">${rows}</div>
+    ${errors ? `<p style="color:var(--warn);font-size:.8rem;margin:.75rem 0 0">${escHtml(errors)}</p>` : ''}`;
+};
 const appCard = a => `
   <div class="card">
     <h3><span class="dot ${a.running?'on':'off'}"></span>${a.name}</h3>
@@ -378,15 +427,26 @@ const appCard = a => `
   </div>`;
 
 render.apps = async () => {
-  const data = await api('/apps');
+  if (state.watchTimer) { clearInterval(state.watchTimer); state.watchTimer = null; }
+  const [data, watch] = await Promise.all([
+    api('/apps'),
+    api('/watching').catch(() => ({count:0, sessions:[], configured:{}, errors:{}})),
+  ]);
   state.apps = data.apps;
   state.tiers = data.tiers;
   const visibleTiers = TIER_ORDER.filter(tier => {
     const meta = state.tiers[tier];
     return meta && state.apps.some(a => a.tier === tier && !a.hidden);
   });
-  if (!visibleTiers.includes(state.activeTier))
+  if (state.activeTier !== 'watching' && !visibleTiers.includes(state.activeTier))
     state.activeTier = visibleTiers.find(t => state.tiers[t]?.enabled) || visibleTiers[0] || null;
+  const watchingActive = state.activeTier === 'watching';
+  const watchCount = watch.count || 0;
+  const watchBtn = `<div class="overview-btn ${watchingActive?'active':''}${watchCount?' watching-live':''}"
+      data-overview="watching" role="button" tabindex="0" aria-pressed="${watchingActive}">
+      <div class="overview-top"><h2>Watching</h2><span aria-hidden="true"></span></div>
+      <div class="overview-stat">${watchCount}<span> ${watchCount===1?'session':'sessions'}</span></div>
+    </div>`;
   const overview = visibleTiers.map(tier => {
     const meta = state.tiers[tier];
     const stats = tierStats(state.apps.filter(a => a.tier === tier && !a.hidden));
@@ -403,14 +463,29 @@ render.apps = async () => {
       <div class="overview-stat">${stats.running}<span> / ${stats.total} running</span></div>
     </div>`;
   }).join('');
-  const activeItems = state.activeTier
+  const activeItems = (!watchingActive && state.activeTier)
     ? state.apps.filter(a => a.tier === state.activeTier && !a.hidden) : [];
-  const body = `<div id="tier-msg"></div>
-    <div class="overview-bar">${overview}</div>
-    <div class="apps-panel">${activeItems.length
+  const panel = watchingActive
+    ? `<div id="watch-panel">${watchPanel(watch)}</div>`
+    : (activeItems.length
       ? `<div class="grid">${activeItems.map(appCard).join('')}</div>`
-      : '<p style="color:var(--muted);margin:0">No apps in this group.</p>'}</div>`;
+      : '<p style="color:var(--muted);margin:0">No apps in this group.</p>');
+  const body = `<div id="tier-msg"></div>
+    <div class="overview-bar">${watchBtn}${overview}</div>
+    <div class="apps-panel">${panel}</div>`;
   render.shell(body);
+  if (watchingActive) {
+    state.watchTimer = setInterval(async () => {
+      const next = await api('/watching').catch(() => null);
+      if (!next || state.activeTier !== 'watching') return;
+      const box = $('#watch-panel');
+      if (box) box.innerHTML = watchPanel(next);
+      const btn = document.querySelector('[data-overview="watching"]');
+      const stat = btn && btn.querySelector('.overview-stat');
+      if (stat) stat.innerHTML = `${next.count||0}<span> ${(next.count||0)===1?'session':'sessions'}</span>`;
+      if (btn) btn.classList.toggle('watching-live', !!(next.count||0));
+    }, 15000);
+  }
   document.querySelectorAll('[data-overview]').forEach(el => {
     const pick = () => { state.activeTier = el.dataset.overview; render.apps(); };
     el.onclick = pick;

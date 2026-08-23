@@ -321,7 +321,9 @@ Traefik separately mounts the raw Docker socket read-only for discovery.
 Helm tabs map to the same operations as the CLI:
 
 - **Apps** — enable/disable sections and individual apps, toggle development
-  image channels, restart services.
+  image channels, restart services. A **Watching** overview button shows
+  active Plex and Emby sessions (from Settings credentials) and expands
+  into a combined now-playing list.
 - **Updates** — one row per container: prod or dev channel, configured tag,
   local vs registry digest, and an apply button when a newer image exists.
   Checks are cached overnight; **Check Now** refreshes live from registries.
