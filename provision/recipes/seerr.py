@@ -191,9 +191,10 @@ def _ensure_server(http: httpx.Client, app: str, log) -> None:
         ):
             return
         server_id = linked["id"]
+        # Seerr OpenAPI marks `id` read-only; it must not appear in the body.
         updated = http.put(
             f"/api/v1/settings/{meta['path']}/{server_id}",
-            json={**payload, "id": server_id},
+            json=payload,
         )
         if updated.status_code == 200:
             log(

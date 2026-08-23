@@ -548,9 +548,11 @@ def test_seerr_servers_use_gluetun_and_kine_paths():
     assert SERVERS["sonarr"]["hostname"] == "gluetun"
     assert SERVERS["sonarr"]["port"] == 8989
     assert SERVERS["sonarr"]["directory"] == "/data/media/tv"
+    assert SERVERS["sonarr"]["profiles"][0] == "WEB-1080p"
     assert SERVERS["radarr"]["hostname"] == "gluetun"
     assert SERVERS["radarr"]["port"] == 7878
     assert SERVERS["radarr"]["directory"] == "/data/media/movies"
+    assert SERVERS["radarr"]["profiles"][0] == "HD Bluray + WEB"
 
 
 def test_seerr_picks_1080p_profiles_preferring_trash_names():
@@ -668,10 +670,12 @@ def test_seerr_configure_posts_radarr_and_sonarr(stack, monkeypatch):
             return FakeResp(201, {**json, "id": 0})
 
         def put(self, path, json=None):
+            assert "id" not in json
             putted.append((path, json))
             app = "radarr" if "radarr" in path else "sonarr"
-            existing[app] = [{**json, "id": json["id"]}]
-            return FakeResp(200, json)
+            server_id = int(path.rstrip("/").split("/")[-1])
+            existing[app] = [{**json, "id": server_id}]
+            return FakeResp(200, {**json, "id": server_id})
 
     monkeypatch.setattr(seerr.httpx, "Client", FakeClient)
     monkeypatch.setattr(seerr, "resolve_key", lambda app: f"key-{app}")
@@ -783,6 +787,7 @@ def test_seerr_configure_updates_wrong_profile(stack, monkeypatch):
             )
 
         def put(self, path, json=None):
+            assert "id" not in json
             putted.append((path, json))
             return FakeResp(200, json)
 
