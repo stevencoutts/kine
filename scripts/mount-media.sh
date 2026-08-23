@@ -5,6 +5,7 @@ set -Eeuo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$REPO/scripts/lib.sh"
+source "$REPO/scripts/nfs-mount-opts.sh"
 
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 warn() { printf '\033[33m! %s\033[0m\n' "$*" >&2; }
@@ -15,7 +16,7 @@ ok()   { printf '\033[32m+ %s\033[0m\n' "$*"; }
 [[ -f "$REPO/.env" ]] || die ".env not found; run install.sh first"
 load_env "$REPO/.env"
 
-for value in "${NFS_SERVER:-}" "${NFS_TV:-}" "${NFS_MOVIES:-}" "${NFS_DOWNLOADS:-}" "${NFS_CACHE:-}"; do
+for value in "${NFS_SERVER:-}" "${NFS_MEDIA:-}" "${NFS_TV:-}" "${NFS_MOVIES:-}" "${NFS_DOWNLOADS:-}" "${NFS_CACHE:-}"; do
   [[ "$value" != *[[:space:]]* ]] || die "NFS server and export paths cannot contain whitespace"
 done
 
@@ -23,8 +24,8 @@ fstab_line() {
   local mount_point=$1
   local export_path=$2
   [[ -n "$export_path" ]] || return 0
-  printf '%s:%s %s nfs rw,_netdev,nofail,x-systemd.automount 0 0\n' \
-    "$NFS_SERVER" "$export_path" "$mount_point"
+  printf '%s:%s %s nfs %s 0 0\n' \
+    "$NFS_SERVER" "$export_path" "$mount_point" "$KINE_NFS_FSTAB_OPTS"
 }
 
 write_fstab() {
@@ -37,8 +38,13 @@ write_fstab() {
   ' /etc/fstab > "$tmp"
   {
     echo "# BEGIN kine-nfs"
-    fstab_line "${DATA_ROOT}/media/tv" "${NFS_TV:-}"
-    fstab_line "${DATA_ROOT}/media/movies" "${NFS_MOVIES:-}"
+    fstab_line "${DATA_ROOT}/media" "${NFS_MEDIA:-}"
+    if [[ -n "${NFS_TV:-}" && "${NFS_TV:-}" != "${NFS_MEDIA:-}" ]]; then
+      fstab_line "${DATA_ROOT}/media/tv" "${NFS_TV:-}"
+    fi
+    if [[ -n "${NFS_MOVIES:-}" && "${NFS_MOVIES:-}" != "${NFS_MEDIA:-}" ]]; then
+      fstab_line "${DATA_ROOT}/media/movies" "${NFS_MOVIES:-}"
+    fi
     fstab_line "${DATA_ROOT}/downloads" "${NFS_DOWNLOADS:-}"
     fstab_line "${DATA_ROOT}/cache/tdarr" "${NFS_CACHE:-}"
     echo "# END kine-nfs"
@@ -71,19 +77,22 @@ mount_export() {
     }
   fi
 
-  if mount "$mount_point"; then
+  if mount -t nfs -o "$KINE_NFS_FSTAB_OPTS" "$spec" "$mount_point"; then
     ok "mounted ${spec} -> ${mount_point}"
-  else
-    warn "could not mount ${spec} at ${mount_point}"
-    return 1
+    return 0
   fi
+  if mount "$mount_point"; then
+    ok "mounted ${spec} -> ${mount_point} (via fstab)"
+    return 0
+  fi
+  warn "could not mount ${spec} at ${mount_point}"
+  return 1
 }
 
 bold "Media storage mounts"
-# Always ensure local cache dir exists when NFS cache is unused.
 mkdir -p "${DATA_ROOT}/cache/tdarr"
 
-if [[ -z "${NFS_TV:-}${NFS_MOVIES:-}${NFS_DOWNLOADS:-}${NFS_CACHE:-}" ]]; then
+if [[ -z "${NFS_MEDIA:-}${NFS_TV:-}${NFS_MOVIES:-}${NFS_DOWNLOADS:-}${NFS_CACHE:-}" ]]; then
   echo "No NFS exports configured; using local directories."
   exit 0
 fi
@@ -91,7 +100,22 @@ fi
 command -v mountpoint >/dev/null || die "mountpoint is required (install util-linux)"
 command -v findmnt >/dev/null || die "findmnt is required (install util-linux)"
 write_fstab
-mount_export "${DATA_ROOT}/media/tv" "${NFS_TV:-}" "TV"
-mount_export "${DATA_ROOT}/media/movies" "${NFS_MOVIES:-}" "Movies"
+mount_export "${DATA_ROOT}/media" "${NFS_MEDIA:-}" "Media"
+if [[ -n "${NFS_TV:-}" && "${NFS_TV:-}" != "${NFS_MEDIA:-}" ]]; then
+  mount_export "${DATA_ROOT}/media/tv" "${NFS_TV:-}" "TV"
+fi
+if [[ -n "${NFS_MOVIES:-}" && "${NFS_MOVIES:-}" != "${NFS_MEDIA:-}" ]]; then
+  mount_export "${DATA_ROOT}/media/movies" "${NFS_MOVIES:-}" "Movies"
+fi
 mount_export "${DATA_ROOT}/downloads" "${NFS_DOWNLOADS:-}" "Downloads"
 mount_export "${DATA_ROOT}/cache/tdarr" "${NFS_CACHE:-}" "Tdarr cache"
+
+# Apps expect lowercase tv/movies paths; link when the share uses Title case.
+if [[ -n "${NFS_MEDIA:-}" ]] && [[ -d "${DATA_ROOT}/media/TV" ]] && [[ ! -e "${DATA_ROOT}/media/tv" ]]; then
+  ln -s TV "${DATA_ROOT}/media/tv"
+  ok "linked ${DATA_ROOT}/media/tv -> TV"
+fi
+if [[ -n "${NFS_MEDIA:-}" ]] && [[ -d "${DATA_ROOT}/media/Movies" ]] && [[ ! -e "${DATA_ROOT}/media/movies" ]]; then
+  ln -s Movies "${DATA_ROOT}/media/movies"
+  ok "linked ${DATA_ROOT}/media/movies -> Movies"
+fi

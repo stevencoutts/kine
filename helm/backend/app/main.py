@@ -527,7 +527,7 @@ async def vpn_leaktest(user: str = Depends(require_user)):
 
 
 # ── settings, backup, provisioning ──────────────────────────────
-_NFS_KEYS = ("NFS_SERVER", "NFS_TV", "NFS_MOVIES", "NFS_DOWNLOADS", "NFS_CACHE")
+_NFS_KEYS = ("NFS_SERVER", "NFS_MEDIA", "NFS_TV", "NFS_MOVIES", "NFS_DOWNLOADS", "NFS_CACHE")
 
 
 @app.get("/api/nfs/exports")

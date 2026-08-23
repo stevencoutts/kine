@@ -480,10 +480,11 @@ render.status = async () => {
 render.settings = async () => {
   const s = await api('/settings');
   const nfsRoles = [
-    ['NFS_TV', 'TV Export', '/media/TV'],
-    ['NFS_MOVIES', 'Movies Export', '/media/Movies'],
-    ['NFS_DOWNLOADS', 'Downloads Export', '/media/downloads'],
-    ['NFS_CACHE', 'Tdarr Cache Export', '/media/cache'],
+    ['NFS_MEDIA', 'Media library export', '/var/nfs/shared/media'],
+    ['NFS_TV', 'TV export (optional)', ''],
+    ['NFS_MOVIES', 'Movies export (optional)', ''],
+    ['NFS_DOWNLOADS', 'Downloads export', '/var/nfs/shared/Downloads'],
+    ['NFS_CACHE', 'Tdarr cache export', '/var/nfs/shared/cache'],
   ];
   const nfsRoleLabel = Object.fromEntries(nfsRoles.map(([id, label]) => [id, label]));
   const nfsRole = ([id, label, placeholder]) => `<label>${label}</label>
@@ -659,7 +660,7 @@ render.settings = async () => {
     loadNfsBrowse(next);
   };
   $('#save-nfs').onclick = async () => {
-    const keys = ['NFS_SERVER','NFS_TV','NFS_MOVIES','NFS_DOWNLOADS','NFS_CACHE'];
+    const keys = ['NFS_SERVER','NFS_MEDIA','NFS_TV','NFS_MOVIES','NFS_DOWNLOADS','NFS_CACHE'];
     await api('/settings', {method:'POST',
       body: JSON.stringify(Object.fromEntries(keys.map(k=>[k,$('#'+k).value])))});
     $('#nfs-msg').innerHTML = '<div class="banner ok">Saved. Apply on the host with <code>sudo ./scripts/mount-media.sh</code>.</div>';

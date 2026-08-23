@@ -12,8 +12,9 @@ import nfs_exports  # noqa: E402
 
 MAIN = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()
 INSTALL = (ROOT / "install.sh").read_text()
-MOUNT_SCRIPT = (ROOT / "scripts" / "mount-media.sh").read_text()
+MOUNT_OPTS = (ROOT / "scripts" / "nfs-mount-opts.sh").read_text()
 DOCKERFILE = (ROOT / "helm" / "Dockerfile").read_text()
+MOUNT_SCRIPT = (ROOT / "scripts" / "mount-media.sh").read_text()
 FRONTEND = (ROOT / "helm" / "frontend" / "index.html").read_text()
 ENV_EXAMPLE = (ROOT / ".env.example").read_text()
 
@@ -51,16 +52,25 @@ def test_changed_export_replaces_existing_mount():
 
 
 def test_mount_script_includes_tdarr_cache():
+    assert 'fstab_line "${DATA_ROOT}/media" "${NFS_MEDIA:-}"' in MOUNT_SCRIPT
     assert 'fstab_line "${DATA_ROOT}/cache/tdarr" "${NFS_CACHE:-}"' in MOUNT_SCRIPT
     assert 'mount_export "${DATA_ROOT}/cache/tdarr" "${NFS_CACHE:-}" "Tdarr cache"' in MOUNT_SCRIPT
 
 
-def test_env_example_documents_nfs_cache():
+def test_mount_script_uses_shared_nfs_options():
+    assert "nfs-mount-opts.sh" in MOUNT_SCRIPT
+    assert "nolock,intr,tcp,actimeo=1800" in MOUNT_OPTS
+    assert 'mount -t nfs -o "$KINE_NFS_FSTAB_OPTS"' in MOUNT_SCRIPT
+
+
+def test_env_example_documents_nfs_media():
+    assert "NFS_MEDIA=" in ENV_EXAMPLE
     assert "NFS_CACHE=" in ENV_EXAMPLE
 
 
 def test_settings_api_includes_nfs_cache():
     assert "NFS_CACHE" in MAIN
+    assert "NFS_MEDIA" in MAIN
     assert "/api/nfs/exports" in MAIN
     assert "/api/nfs/browse" in MAIN
 
@@ -123,12 +133,20 @@ def test_browse_root_lists_exports_without_mount(monkeypatch):
     assert [e["name"] for e in data["entries"]] == ["downloads", "media"]
 
 
+def test_sort_exports_prefers_var_nfs_shared():
+    exports = [
+        "/volume/x/.srv/.unifi-drive/media/.data",
+        "/var/nfs/shared/media",
+        "/var/nfs/shared/cache",
+    ]
+    sorted_exports = nfs_exports.sort_exports(exports)
+    assert sorted_exports[0].startswith("/var/nfs/shared/")
+    assert sorted_exports[-1].endswith("/.data")
+
+
 def test_export_label_unwraps_unifi_data_suffix():
-    assert (
-        nfs_exports.export_label(
-            "/volume/uuid/.srv/.unifi-drive/media/.data"
-        )
-        == "media"
+    assert "media" in nfs_exports.export_label(
+        "/volume/uuid/.srv/.unifi-drive/media/.data"
     )
     assert nfs_exports.export_label("/exports/tv") == "tv"
 

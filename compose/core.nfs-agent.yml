@@ -13,6 +13,7 @@ services:
       NFS_BROWSE_PORT: ${NFS_BROWSE_PORT:-8611}
       DATA_ROOT: ${DATA_ROOT}
       NFS_SERVER: ${NFS_SERVER:-}
+      NFS_MEDIA: ${NFS_MEDIA:-}
       NFS_TV: ${NFS_TV:-}
       NFS_MOVIES: ${NFS_MOVIES:-}
       NFS_DOWNLOADS: ${NFS_DOWNLOADS:-}

@@ -79,8 +79,24 @@ def export_label(path: str) -> str:
     if not parts:
         return path or "/"
     if len(parts) >= 2 and parts[-1] == ".data":
-        return parts[-2]
+        return f"{parts[-2]} (UniFi .data — prefer /var/nfs/shared/* if listed)"
+    if len(parts) >= 3 and parts[-3:-1] == ["shared", "nfs"]:
+        return "/".join(parts[-2:])
     return parts[-1]
+
+
+def sort_exports(exports: list[str]) -> list[str]:
+    """Prefer plain server exports (e.g. /var/nfs/shared/*) over UniFi paths."""
+
+    def rank(path: str) -> tuple[int, str]:
+        lower = path.lower()
+        if "/var/nfs/shared" in lower:
+            return (0, path)
+        if ".unifi-drive" in lower or lower.endswith("/.data"):
+            return (2, path)
+        return (1, path)
+
+    return sorted(exports, key=rank)
 
 
 def export_root_for(path: str, exports: list[str]) -> str:
@@ -138,7 +154,7 @@ def _showmount(server: str, timeout: float = 10.0) -> str:
 
 def list_exports(server: str, timeout: float = 10.0) -> list[str]:
     """Return export paths advertised by ``server``."""
-    return parse_showmount(_showmount(server, timeout=timeout))
+    return sort_exports(parse_showmount(_showmount(server, timeout=timeout)))
 
 
 def list_export_rows(server: str, timeout: float = 10.0) -> list[tuple[str, str]]:
@@ -155,7 +171,19 @@ def _nfs_mount(server: str, export: str, clients: str = ""):
 
     mount_point = pathlib.Path(tempfile.mkdtemp(prefix="kine-nfs-browse-"))
     spec = f"{server}:{export}"
-    opts_base = ["ro", "soft", "timeo=10", "retrans=2", "nolock"]
+    opts_base = [
+        "ro",
+        "nofail",
+        "_netdev",
+        "noatime",
+        "nolock",
+        "intr",
+        "tcp",
+        "actimeo=1800",
+        "soft",
+        "timeo=10",
+        "retrans=2",
+    ]
     last_error = "mount failed"
     mounted = False
     try:
@@ -282,7 +310,7 @@ def browse(server: str, path: str = "", timeout: float = 10.0) -> dict:
                     "detail": export,
                     "kind": "dir",
                 }
-                for export in sorted(exports)
+                for export in sorted(sort_exports(exports))
             ],
         }
 
