@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Mount optional NFS exports onto the local DATA_ROOT tree.
-# Called from install.sh; re-run with sudo after changing settings in Helm.
+# Called from install.sh and from Helm via the host nfs-browse-agent.
 set -Eeuo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -11,6 +11,15 @@ bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 warn() { printf '\033[33m! %s\033[0m\n' "$*" >&2; }
 die()  { printf '\033[31mx %s\033[0m\n' "$*" >&2; exit 1; }
 ok()   { printf '\033[32m+ %s\033[0m\n' "$*"; }
+
+HOST_ROOT="${KINE_HOST_ROOT:-}"
+host_path() {
+  if [[ -n "$HOST_ROOT" ]]; then
+    printf '%s%s' "${HOST_ROOT%/}" "$1"
+  else
+    printf '%s' "$1"
+  fi
+}
 
 [[ $EUID -eq 0 ]] || die "run with sudo"
 [[ -f "$REPO/.env" ]] || die ".env not found; run install.sh first"
@@ -29,13 +38,14 @@ fstab_line() {
 }
 
 write_fstab() {
-  local tmp
+  local tmp fstab
+  fstab="$(host_path /etc/fstab)"
   tmp=$(mktemp)
   awk '
     /^# BEGIN kine-nfs$/ { managed=1; next }
     /^# END kine-nfs$/ { managed=0; next }
     !managed { print }
-  ' /etc/fstab > "$tmp"
+  ' "$fstab" > "$tmp"
   {
     echo "# BEGIN kine-nfs"
     fstab_line "${DATA_ROOT}/media" "${NFS_MEDIA:-}"
@@ -49,7 +59,7 @@ write_fstab() {
     fstab_line "${DATA_ROOT}/cache/tdarr" "${NFS_CACHE:-}"
     echo "# END kine-nfs"
   } >> "$tmp"
-  install -m 644 "$tmp" /etc/fstab
+  install -m 644 "$tmp" "$fstab"
   rm -f "$tmp"
 }
 
@@ -89,8 +99,14 @@ mount_export() {
   return 1
 }
 
+MEDIA_ROOT="$(host_path "${DATA_ROOT}/media")"
+TV_ROOT="$(host_path "${DATA_ROOT}/media/tv")"
+MOVIES_ROOT="$(host_path "${DATA_ROOT}/media/movies")"
+DOWNLOADS_ROOT="$(host_path "${DATA_ROOT}/downloads")"
+CACHE_ROOT="$(host_path "${DATA_ROOT}/cache/tdarr")"
+
 bold "Media storage mounts"
-mkdir -p "${DATA_ROOT}/cache/tdarr"
+mkdir -p "$CACHE_ROOT"
 
 if [[ -z "${NFS_MEDIA:-}${NFS_TV:-}${NFS_MOVIES:-}${NFS_DOWNLOADS:-}${NFS_CACHE:-}" ]]; then
   echo "No NFS exports configured; using local directories."
@@ -100,22 +116,22 @@ fi
 command -v mountpoint >/dev/null || die "mountpoint is required (install util-linux)"
 command -v findmnt >/dev/null || die "findmnt is required (install util-linux)"
 write_fstab
-mount_export "${DATA_ROOT}/media" "${NFS_MEDIA:-}" "Media"
+mount_export "$MEDIA_ROOT" "${NFS_MEDIA:-}" "Media"
 if [[ -n "${NFS_TV:-}" && "${NFS_TV:-}" != "${NFS_MEDIA:-}" ]]; then
-  mount_export "${DATA_ROOT}/media/tv" "${NFS_TV:-}" "TV"
+  mount_export "$TV_ROOT" "${NFS_TV:-}" "TV"
 fi
 if [[ -n "${NFS_MOVIES:-}" && "${NFS_MOVIES:-}" != "${NFS_MEDIA:-}" ]]; then
-  mount_export "${DATA_ROOT}/media/movies" "${NFS_MOVIES:-}" "Movies"
+  mount_export "$MOVIES_ROOT" "${NFS_MOVIES:-}" "Movies"
 fi
-mount_export "${DATA_ROOT}/downloads" "${NFS_DOWNLOADS:-}" "Downloads"
-mount_export "${DATA_ROOT}/cache/tdarr" "${NFS_CACHE:-}" "Tdarr cache"
+mount_export "$DOWNLOADS_ROOT" "${NFS_DOWNLOADS:-}" "Downloads"
+mount_export "$CACHE_ROOT" "${NFS_CACHE:-}" "Tdarr cache"
 
 # Apps expect lowercase tv/movies paths; link when the share uses Title case.
-if [[ -n "${NFS_MEDIA:-}" ]] && [[ -d "${DATA_ROOT}/media/TV" ]] && [[ ! -e "${DATA_ROOT}/media/tv" ]]; then
-  ln -s TV "${DATA_ROOT}/media/tv"
-  ok "linked ${DATA_ROOT}/media/tv -> TV"
+if [[ -n "${NFS_MEDIA:-}" ]] && [[ -d "${MEDIA_ROOT}/TV" ]] && [[ ! -e "${MEDIA_ROOT}/tv" ]]; then
+  ln -s TV "${MEDIA_ROOT}/tv"
+  ok "linked ${MEDIA_ROOT}/tv -> TV"
 fi
-if [[ -n "${NFS_MEDIA:-}" ]] && [[ -d "${DATA_ROOT}/media/Movies" ]] && [[ ! -e "${DATA_ROOT}/media/movies" ]]; then
-  ln -s Movies "${DATA_ROOT}/media/movies"
-  ok "linked ${DATA_ROOT}/media/movies -> Movies"
+if [[ -n "${NFS_MEDIA:-}" ]] && [[ -d "${MEDIA_ROOT}/Movies" ]] && [[ ! -e "${MEDIA_ROOT}/movies" ]]; then
+  ln -s Movies "${MEDIA_ROOT}/movies"
+  ok "linked ${MEDIA_ROOT}/movies -> Movies"
 fi

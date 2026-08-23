@@ -7,10 +7,13 @@ services:
     container_name: kine-nfs-browse-agent
     restart: unless-stopped
     network_mode: host
+    privileged: true
+    pid: host
     cap_add: [SYS_ADMIN]
     environment:
       NFS_BROWSE_BIND: ${NFS_BROWSE_BIND:-0.0.0.0}
       NFS_BROWSE_PORT: ${NFS_BROWSE_PORT:-8611}
+      KINE_HOST_ROOT: /host
       DATA_ROOT: ${DATA_ROOT}
       NFS_SERVER: ${NFS_SERVER:-}
       NFS_MEDIA: ${NFS_MEDIA:-}
@@ -20,6 +23,6 @@ services:
       NFS_CACHE: ${NFS_CACHE:-}
       KINE_SECRET: ${KINE_SECRET}
     volumes:
+      - /:/host
       - ../:/repo:ro
-      - ${DATA_ROOT}:${DATA_ROOT}:ro
     entrypoint: ["python3", "/repo/scripts/nfs-browse-agent.py"]

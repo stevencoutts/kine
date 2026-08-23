@@ -14,6 +14,7 @@ MAIN = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()
 INSTALL = (ROOT / "install.sh").read_text()
 MOUNT_OPTS = (ROOT / "scripts" / "nfs-mount-opts.sh").read_text()
 DOCKERFILE = (ROOT / "helm" / "Dockerfile").read_text()
+AGENT = (ROOT / "scripts" / "nfs-browse-agent.py").read_text()
 MOUNT_SCRIPT = (ROOT / "scripts" / "mount-media.sh").read_text()
 FRONTEND = (ROOT / "helm" / "frontend" / "index.html").read_text()
 ENV_EXAMPLE = (ROOT / ".env.example").read_text()
@@ -27,8 +28,15 @@ Export list for 192.168.1.10:
 """
 
 
-def test_helm_only_saves_nfs_settings():
+def test_helm_applies_nfs_mounts_via_agent():
+    assert "apply_mounts_via_agent" in MAIN
+    assert "nfs_mount" in MAIN
     assert 'compose.script("mount-media.sh")' not in MAIN
+
+
+def test_mount_script_supports_host_root_for_agent():
+    assert "KINE_HOST_ROOT" in MOUNT_SCRIPT
+    assert 'host_path /etc/fstab' in MOUNT_SCRIPT
 
 
 def test_installer_mounts_after_local_ownership_is_set():
@@ -54,7 +62,7 @@ def test_changed_export_replaces_existing_mount():
 def test_mount_script_includes_tdarr_cache():
     assert 'fstab_line "${DATA_ROOT}/media" "${NFS_MEDIA:-}"' in MOUNT_SCRIPT
     assert 'fstab_line "${DATA_ROOT}/cache/tdarr" "${NFS_CACHE:-}"' in MOUNT_SCRIPT
-    assert 'mount_export "${DATA_ROOT}/cache/tdarr" "${NFS_CACHE:-}" "Tdarr cache"' in MOUNT_SCRIPT
+    assert 'mount_export "$CACHE_ROOT" "${NFS_CACHE:-}" "Tdarr cache"' in MOUNT_SCRIPT
 
 
 def test_mount_script_uses_shared_nfs_options():
@@ -73,12 +81,19 @@ def test_settings_api_includes_nfs_cache():
     assert "NFS_MEDIA" in MAIN
     assert "/api/nfs/exports" in MAIN
     assert "/api/nfs/browse" in MAIN
+    assert "/api/nfs/apply" in MAIN
 
 
-def test_nfs_agent_runs_on_host_network():
+def test_nfs_agent_can_apply_mounts_on_host():
     text = (ROOT / "compose" / "core.nfs-agent.yml").read_text()
     assert "network_mode: host" in text
     assert "nfs-browse-agent" in text
+    assert "privileged: true" in text
+    assert "pid: host" in text
+    assert "/:/host" in text
+    assert "KINE_HOST_ROOT" in text
+    assert "/apply-mounts" in AGENT
+    assert "mount-media.sh" in AGENT
 
 
 def test_helm_container_can_mount_for_browse():
@@ -90,10 +105,13 @@ def test_helm_image_includes_showmount():
 
 
 def test_frontend_can_browse_and_pick_exports():
-    assert "browse-nfs" in FRONTEND
-    assert "/nfs/browse" in FRONTEND
-    assert "nfs-browser-select" in FRONTEND
+    assert "load-nfs-shares" in FRONTEND
+    assert "/nfs/exports" in FRONTEND
+    assert "data-nfs-select" in FRONTEND
     assert "NFS_CACHE" in FRONTEND
+    assert "mount-media.sh" not in FRONTEND
+    assert "browse-nfs" not in FRONTEND
+    assert "explore only" not in FRONTEND
 
 
 def test_export_root_for_longest_matching_prefix():
@@ -131,6 +149,34 @@ def test_browse_root_lists_exports_without_mount(monkeypatch):
         "/exports/media",
     ]
     assert [e["name"] for e in data["entries"]] == ["downloads", "media"]
+
+
+def test_filter_pickable_exports_prefers_var_nfs_shared():
+    exports = [
+        "/volume/x/.srv/.unifi-drive/media/.data",
+        "/var/nfs/shared/media",
+        "/var/nfs/shared/cache",
+        "/var/nfs/shared/Downloads",
+    ]
+    pickable = nfs_exports.filter_pickable_exports(exports)
+    assert pickable == sorted([
+        "/var/nfs/shared/media",
+        "/var/nfs/shared/cache",
+        "/var/nfs/shared/Downloads",
+    ])
+
+
+def test_suggest_assignments_maps_share_names():
+    exports = [
+        "/var/nfs/shared/media",
+        "/var/nfs/shared/Downloads",
+        "/var/nfs/shared/cache",
+    ]
+    assert nfs_exports.suggest_assignments(exports) == {
+        "NFS_MEDIA": "/var/nfs/shared/media",
+        "NFS_DOWNLOADS": "/var/nfs/shared/Downloads",
+        "NFS_CACHE": "/var/nfs/shared/cache",
+    }
 
 
 def test_sort_exports_prefers_var_nfs_shared():

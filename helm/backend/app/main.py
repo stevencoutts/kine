@@ -542,7 +542,13 @@ async def nfs_list_exports(server: str = "", user: str = Depends(require_user)):
         raise HTTPException(400, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(502, str(exc)) from exc
-    return {"server": nfs_exports.validate_server(server), "exports": exports}
+    host = nfs_exports.validate_server(server)
+    return {
+        "server": host,
+        "exports": exports,
+        "labels": {path: nfs_exports.export_label(path) for path in exports},
+        "suggestions": nfs_exports.suggest_assignments(exports),
+    }
 
 
 @app.get("/api/nfs/browse")
@@ -552,6 +558,14 @@ async def nfs_browse(server: str = "", path: str = "", user: str = Depends(requi
         return await asyncio.to_thread(nfs_exports.browse, server, path)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@app.post("/api/nfs/apply")
+async def nfs_apply_mounts(user: str = Depends(require_user)):
+    try:
+        return await asyncio.to_thread(nfs_exports.apply_mounts_via_agent)
     except RuntimeError as exc:
         raise HTTPException(502, str(exc)) from exc
 
@@ -580,7 +594,13 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
     elif {"KINE_TLS_MODE", "KINE_ACME_EMAIL"} & set(body):
         await compose.run("restart", "traefik")
     nfs_changed = bool(set(_NFS_KEYS) & set(body))
-    return {"ok": True, "nfs_requires_host_mount": nfs_changed}
+    nfs_mount = None
+    if nfs_changed:
+        try:
+            nfs_mount = await asyncio.to_thread(nfs_exports.apply_mounts_via_agent)
+        except RuntimeError as exc:
+            nfs_mount = {"ok": False, "log": str(exc)}
+    return {"ok": True, "nfs_mount": nfs_mount}
 
 
 @app.post("/api/backup")

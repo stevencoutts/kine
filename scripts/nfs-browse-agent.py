@@ -107,7 +107,7 @@ def showmount_exports(server: str) -> list[str]:
             exports.append(path)
     if not exports:
         raise RuntimeError(f"no exports on {server}")
-    return sort_exports(exports)
+    return filter_pickable_exports(exports)
 
 
 def sort_exports(exports: list[str]) -> list[str]:
@@ -120,6 +120,19 @@ def sort_exports(exports: list[str]) -> list[str]:
         return (1, path)
 
     return sorted(exports, key=rank)
+
+
+def filter_pickable_exports(exports: list[str]) -> list[str]:
+    ordered = sort_exports(exports)
+    shared = [export for export in ordered if "/var/nfs/shared" in export.lower()]
+    if shared:
+        return shared
+    return [
+        export
+        for export in ordered
+        if ".unifi-drive" not in export.lower()
+        and not export.rstrip("/").endswith("/.data")
+    ]
 
 
 def export_root_for(path: str, exports: list[str]) -> str:
@@ -200,6 +213,23 @@ def unmount(mount_point: pathlib.Path) -> None:
         timeout=30,
         check=False,
     )
+
+
+def apply_mounts() -> dict:
+    env = os.environ.copy()
+    env.setdefault("KINE_HOST_ROOT", "/host")
+    script = ROOT / "scripts" / "mount-media.sh"
+    proc = subprocess.run(
+        ["/bin/bash", str(script)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+        env=env,
+        cwd=str(ROOT),
+    )
+    log = (proc.stdout or "") + (proc.stderr or "")
+    return {"ok": proc.returncode == 0, "log": log.strip()}
 
 
 def browse(server: str, path: str) -> dict:
@@ -288,6 +318,20 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, browse(server, path))
         except ValueError as exc:
             self._send(400, {"detail": str(exc)})
+        except RuntimeError as exc:
+            self._send(502, {"detail": str(exc)})
+
+    def do_POST(self) -> None:  # noqa: N802
+        auth = self.headers.get("Authorization", "")
+        if auth != f"Bearer {_TOKEN}":
+            self._unauthorized()
+            return
+        parsed = urlparse(self.path)
+        if parsed.path != "/apply-mounts":
+            self._send(404, {"detail": "not found"})
+            return
+        try:
+            self._send(200, apply_mounts())
         except RuntimeError as exc:
             self._send(502, {"detail": str(exc)})
 

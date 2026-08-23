@@ -99,6 +99,38 @@ def sort_exports(exports: list[str]) -> list[str]:
     return sorted(exports, key=rank)
 
 
+def filter_pickable_exports(exports: list[str]) -> list[str]:
+    """Drop UniFi internal paths when normal shared exports are advertised."""
+    ordered = sort_exports(exports)
+    shared = [export for export in ordered if "/var/nfs/shared" in export.lower()]
+    if shared:
+        return shared
+    return [
+        export
+        for export in ordered
+        if ".unifi-drive" not in export.lower()
+        and not export.rstrip("/").endswith("/.data")
+    ]
+
+
+def suggest_assignments(exports: list[str]) -> dict[str, str]:
+    """Guess Helm NFS_* keys from export path names."""
+    suggestions: dict[str, str] = {}
+    for export in filter_pickable_exports(exports):
+        name = export.rstrip("/").split("/")[-1].lower()
+        if name == "media" or export.lower().endswith("/shared/media"):
+            suggestions.setdefault("NFS_MEDIA", export)
+        elif name == "downloads":
+            suggestions.setdefault("NFS_DOWNLOADS", export)
+        elif name == "cache":
+            suggestions.setdefault("NFS_CACHE", export)
+        elif name == "tv":
+            suggestions.setdefault("NFS_TV", export)
+        elif name == "movies":
+            suggestions.setdefault("NFS_MOVIES", export)
+    return suggestions
+
+
 def export_root_for(path: str, exports: list[str]) -> str:
     """Return the longest advertised export prefix for ``path``."""
     matches = [
@@ -154,7 +186,7 @@ def _showmount(server: str, timeout: float = 10.0) -> str:
 
 def list_exports(server: str, timeout: float = 10.0) -> list[str]:
     """Return export paths advertised by ``server``."""
-    return sort_exports(parse_showmount(_showmount(server, timeout=timeout)))
+    return filter_pickable_exports(parse_showmount(_showmount(server, timeout=timeout)))
 
 
 def list_export_rows(server: str, timeout: float = 10.0) -> list[tuple[str, str]]:
@@ -253,8 +285,41 @@ def _agent_token() -> str:
     return os.environ.get("KINE_SECRET") or os.environ.get("NFS_BROWSE_TOKEN") or ""
 
 
+def apply_mounts_via_agent(timeout: float = 120.0) -> dict:
+    """Apply NFS mounts on the host via the browse agent."""
+    base = _agent_url()
+    token = _agent_token()
+    if not base or not token:
+        raise RuntimeError(
+            "NFS host agent is not available. On Linux ensure nfs-browse-agent "
+            "is running; on Docker Desktop run `sudo ./kine nfs-agent`."
+        )
+    req = urllib.request.Request(
+        f"{base}/apply-mounts",
+        method="POST",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")
+        try:
+            detail = json.loads(detail).get("detail", detail)
+        except json.JSONDecodeError:
+            pass
+        raise RuntimeError(str(detail) or f"host agent HTTP {exc.code}") from exc
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            "NFS host agent is not reachable. Recreate nfs-browse-agent after "
+            "changing compose, or on Docker Desktop run `sudo ./kine nfs-agent`."
+        ) from exc
+    if not isinstance(data, dict):
+        raise RuntimeError("invalid response from NFS host agent")
+    return data
+
+
 def browse_via_agent(server: str, path: str = "", timeout: float = 15.0) -> dict | None:
-    """Return browse payload from the host agent, or None if unavailable."""
     base = _agent_url()
     token = _agent_token()
     if not base or not token:
@@ -299,6 +364,7 @@ def browse(server: str, path: str = "", timeout: float = 10.0) -> dict:
     clients_by_export = dict(rows)
 
     if not path:
+        pickable = filter_pickable_exports(exports)
         return {
             "server": host,
             "path": "",
@@ -310,7 +376,7 @@ def browse(server: str, path: str = "", timeout: float = 10.0) -> dict:
                     "detail": export,
                     "kind": "dir",
                 }
-                for export in sorted(sort_exports(exports))
+                for export in pickable
             ],
         }
 
