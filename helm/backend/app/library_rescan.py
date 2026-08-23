@@ -1,17 +1,14 @@
 """Import and rescan libraries after NFS media mounts are applied."""
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import pathlib
-import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import httpx
-import yaml
 
-from . import catalogue, config
+from . import appkeys, catalogue, config
 
 STACK = pathlib.Path(os.environ.get("KINE_ROOT", "/stack"))
 MEDIA_NFS_KEYS = frozenset({"NFS_MEDIA", "NFS_TV", "NFS_MOVIES"})
@@ -38,47 +35,14 @@ SKIP_DIR_NAMES = frozenset({
 })
 
 
-def _secret() -> str:
-    secret = os.environ.get("KINE_SECRET") or config.read().get("KINE_SECRET", "")
-    if not secret:
-        raise RuntimeError("KINE_SECRET is not set")
-    return secret
-
-
-def _derived_key(app: str) -> str:
-    return hashlib.sha256(f"{_secret()}:{app}".encode()).hexdigest()[:32]
-
-
+# Key resolution lives in appkeys so the metrics exporter can share it.
+# STACK stays a module-level seam here because tests rebind it.
 def _arr_key(app: str) -> str | None:
-    cfg = STACK / "config" / app / "config.xml"
-    if cfg.is_file():
-        try:
-            existing = ET.parse(cfg).getroot().findtext("ApiKey")
-            if existing:
-                return existing
-        except ET.ParseError:
-            pass
-    try:
-        return _derived_key(app)
-    except RuntimeError:
-        return None
+    return appkeys.arr_key(app, STACK)
 
 
 def _bazarr_key() -> str | None:
-    for path in (
-        STACK / "config" / "bazarr" / "config" / "config.yaml",
-        STACK / "config" / "bazarr" / "config.yaml",
-    ):
-        if not path.is_file():
-            continue
-        try:
-            data = yaml.safe_load(path.read_text()) or {}
-            key = (data.get("auth") or {}).get("apikey")
-            if key:
-                return str(key)
-        except (OSError, yaml.YAMLError):
-            continue
-    return None
+    return appkeys.bazarr_key(STACK)
 
 
 def _arr_url(base: str, api: str, path: str) -> str:
