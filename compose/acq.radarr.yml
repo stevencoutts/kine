@@ -21,9 +21,8 @@ services:
       TZ: ${KINE_TIMEZONE}
     volumes:
       - ${STACK_ROOT}/config/radarr:/config
-      # Single /data mount, not separate media and downloads mounts.
-      # Anything else costs you hardlinks and atomic moves.
-      - ${DATA_ROOT}:/data
+      - ${DATA_ROOT}/media:/data/media
+      - ${DATA_ROOT}/downloads:/data/downloads
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:7878/ping || exit 1"]
       interval: 30s

@@ -358,15 +358,15 @@ def test_traefik_supports_modern_docker_api_negotiation():
     assert version >= (3, 6, 14)
 
 
-def test_arr_apps_get_one_data_mount_not_two():
-    """Split media and downloads mounts cost hardlinks silently: the
-    import still succeeds, it is just a full copy every time."""
-    for app in ("sonarr", "radarr", "transmission"):
+def test_arr_apps_mount_media_and_downloads_directly():
+    """Bind media and downloads paths directly so host NFS submounts
+    are visible inside containers. Both still sit on one host filesystem."""
+    for app in ("sonarr", "radarr", "transmission", "prowlarr", "bazarr"):
         _, svc = SERVICES[app]
-        targets = [v.split(":")[1] for v in svc["volumes"] if ":" in v]
-        data = [t for t in targets if t.startswith("/data")]
-        assert data == ["/data"], \
-            f"{app} mounts {data}; it must be a single /data mount"
+        vols = svc["volumes"]
+        assert "${DATA_ROOT}/media:/data/media" in vols, app
+        assert "${DATA_ROOT}/downloads:/data/downloads" in vols, app
+        assert "${DATA_ROOT}:/data" not in vols, app
 
 
 def test_helm_never_touches_the_raw_docker_socket():
