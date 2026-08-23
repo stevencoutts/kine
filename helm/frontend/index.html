@@ -74,6 +74,7 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   color:var(--muted);margin:0 0 .75rem}
 .overview-bar{display:flex;flex-wrap:wrap;gap:.75rem;margin-bottom:1.25rem}
 .overview-btn{flex:1;min-width:150px;position:relative;text-align:left;cursor:pointer;
+  display:flex;flex-direction:column;align-items:stretch;
   background:color-mix(in srgb, var(--panel) 48%, transparent);
   backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
   border:1px solid color-mix(in srgb, var(--line) 50%, transparent);
@@ -93,11 +94,11 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   border-color:color-mix(in srgb, var(--ok) 70%, transparent);
   background:color-mix(in srgb, var(--ok) 22%, transparent);
   box-shadow:0 6px 28px color-mix(in srgb, var(--ok) 22%, transparent)}
-.overview-top{display:grid;grid-template-columns:1fr 2.6rem;align-items:center;column-gap:.5rem;
+.overview-top{display:flex;align-items:center;justify-content:space-between;gap:.5rem;
   margin-bottom:.45rem;min-height:1.35rem}
-.overview-top .tier-switch{justify-self:end}
 .overview-btn h2{margin:0;font-size:.72rem;line-height:1.35rem;text-transform:uppercase;
-  letter-spacing:.08em;color:var(--muted);font-weight:600}
+  letter-spacing:.08em;color:var(--muted);font-weight:600;text-align:left}
+.overview-spacer{visibility:hidden;pointer-events:none}
 .overview-stat{font-size:1.15rem;font-weight:600;line-height:1.2}
 .overview-stat span{color:var(--muted);font-weight:400;font-size:.82rem}
 .watch-list{display:flex;flex-direction:column;gap:.75rem}
@@ -444,7 +445,12 @@ render.apps = async () => {
   const watchCount = watch.count || 0;
   const watchBtn = `<div class="overview-btn ${watchingActive?'active':''}${watchCount?' watching-live':''}"
       data-overview="watching" role="button" tabindex="0" aria-pressed="${watchingActive}">
-      <div class="overview-top"><h2>Watching</h2><span aria-hidden="true"></span></div>
+      <div class="overview-top">
+        <h2>Watching</h2>
+        <span class="tier-switch overview-spacer" aria-hidden="true">
+          <span class="tier-switch-ui"></span>
+        </span>
+      </div>
       <div class="overview-stat">${watchCount}<span> ${watchCount===1?'session':'sessions'}</span></div>
     </div>`;
   const overview = visibleTiers.map(tier => {
