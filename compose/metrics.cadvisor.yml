@@ -1,0 +1,31 @@
+# Per-container CPU, memory, network and disk. Talks to Docker through
+# the same socket proxy Traefik and Helm use, so nothing here holds the
+# raw socket. The stock housekeeping interval is wasteful on a box that
+# also transcodes, hence the flags.
+services:
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:${CADVISOR_TAG}
+    container_name: kine-cadvisor
+    profiles: ["cadvisor"]
+    restart: unless-stopped
+    command:
+      - --docker=tcp://dockerproxy:2375
+      - --docker_only=true
+      - --housekeeping_interval=15s
+      - --store_container_labels=false
+    environment:
+      TZ: ${KINE_TIMEZONE}
+    volumes:
+      - /:/rootfs:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    privileged: true
+    networks: [kine_internal, kine_ctrl]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s

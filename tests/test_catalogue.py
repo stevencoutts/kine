@@ -83,3 +83,14 @@ def test_load_reads_repo_catalogue():
     apps = catalogue.load()
     assert "emby" in apps
     assert apps["emby"]["tier"] == "media"
+
+
+def test_metrics_tier_is_labelled_for_the_gui():
+    assert catalogue.TIER_LABELS["metrics"] == "Metrics"
+
+
+def test_enabling_metrics_pulls_in_the_exporters():
+    wanted = []
+    for app_id in catalogue.tier_default_apps("metrics"):
+        wanted = catalogue.resolve_deps(app_id, CATALOGUE, wanted + [app_id])
+    assert set(wanted) == {"grafana", "prometheus", "cadvisor", "node-exporter"}

@@ -1,0 +1,39 @@
+# Dashboards. Anonymous Viewer access is deliberate: it is what lets the
+# Helm GUI embed panels without a login dance. Editing still needs the
+# admin account. Provisioning is read-only and comes from the repo, so
+# dashboards live in git rather than inside grafana.db.
+services:
+  grafana:
+    image: grafana/grafana:${GRAFANA_TAG}
+    container_name: kine-grafana
+    profiles: ["grafana"]
+    restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      TZ: ${KINE_TIMEZONE}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_USERS_DEFAULT_THEME: "dark"
+      GF_SERVER_ROOT_URL: "https://grafana.${KINE_DOMAIN}"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - ${STACK_ROOT}/config/grafana/data:/var/lib/grafana
+      - ${STACK_ROOT}/config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ${STACK_ROOT}/config/grafana/dashboards:/etc/grafana/dashboards:ro
+    networks: [kine_internal, kine_edge]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.grafana.rule=Host(`grafana.${KINE_DOMAIN}`) || Host(`grafana.${KINE_LOCAL_DOMAIN}`)
+      - traefik.http.services.grafana.loadbalancer.server.port=3000

@@ -1,0 +1,28 @@
+# Metrics store. Internal only: Grafana and Helm are its sole clients,
+# so it needs no certificate and no edge exposure. Retention is capped
+# on both axes because this disk also holds the media library.
+services:
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_TAG}
+    container_name: kine-prometheus
+    profiles: ["prometheus"]
+    restart: unless-stopped
+    user: "${PUID}:${PGID}"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=2GB
+      - --web.enable-lifecycle
+    environment:
+      TZ: ${KINE_TIMEZONE}
+    volumes:
+      - ${STACK_ROOT}/config/prometheus:/etc/prometheus
+      - ${STACK_ROOT}/config/prometheus/data:/prometheus
+    networks: [kine_internal]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s

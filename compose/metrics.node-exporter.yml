@@ -1,0 +1,27 @@
+# Host CPU, memory, filesystems, network and sensors. Needs the host PID
+# namespace and read-only host filesystems; it changes nothing.
+services:
+  node-exporter:
+    image: prom/node-exporter:${NODE_EXPORTER_TAG}
+    container_name: kine-node-exporter
+    profiles: ["node-exporter"]
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc|rootfs/var/lib/docker)($$|/)
+    environment:
+      TZ: ${KINE_TIMEZONE}
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    networks: [kine_internal]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9100/metrics >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s

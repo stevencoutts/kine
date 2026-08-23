@@ -198,6 +198,45 @@ apps:
     dev_tag: dev
     default: true
 
+  grafana:
+    name: Grafana
+    tier: metrics
+    summary: Dashboards for stack and application statistics. Readable without a login so Helm can embed panels.
+    url: https://grafana.com/docs/grafana/latest/
+    releases: https://github.com/grafana/grafana/releases
+    internal: http://grafana:3000
+    subdomain: grafana
+    requires: [prometheus]
+    default: true
+
+  prometheus:
+    name: Prometheus
+    tier: metrics
+    summary: Metrics store, scraped from cAdvisor, node-exporter and Helm.
+    releases: https://github.com/prometheus/prometheus/releases
+    internal: http://prometheus:9090
+    requires: [cadvisor, node-exporter]
+    default: true
+    hidden: true
+
+  cadvisor:
+    name: cAdvisor
+    tier: metrics
+    summary: Per-container CPU, memory, network and disk statistics.
+    releases: https://github.com/google/cadvisor/releases
+    internal: http://cadvisor:8080
+    default: true
+    hidden: true
+
+  node-exporter:
+    name: Node Exporter
+    tier: metrics
+    summary: Host CPU, memory, disk and network statistics.
+    releases: https://github.com/prometheus/node_exporter/releases
+    internal: http://node-exporter:9100
+    default: true
+    hidden: true
+
   gluetun:
     name: VPN gateway
     tier: platform

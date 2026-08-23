@@ -10,6 +10,7 @@ TIER_LABELS = {
     "acquisition": "Acquisition",
     "process": "Process",
     "live": "Live TV",
+    "metrics": "Metrics",
     "platform": "Platform",
 }
 

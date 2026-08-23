@@ -29,6 +29,10 @@ include:
   - compose/live.dispatcharr.yml
   - compose/live.ecm.yml
   - compose/live.teamarr.yml
+  - compose/metrics.cadvisor.yml
+  - compose/metrics.node-exporter.yml
+  - compose/metrics.prometheus.yml
+  - compose/metrics.grafana.yml
 
 networks:
   kine_edge:

@@ -474,3 +474,45 @@ def test_socket_proxy_denies_the_dangerous_endpoints():
     env = proxy["environment"]
     for denied in ("SECRETS", "SWARM", "NODES", "SERVICES", "CONFIGS"):
         assert str(env[denied]) == "0", f"socket proxy allows {denied}"
+
+
+# ── metrics tier ────────────────────────────────────────────────
+def test_prometheus_stays_off_the_edge_network():
+    _, svc = SERVICES["prometheus"]
+    assert "kine_edge" not in (svc.get("networks") or [])
+    assert not [l for l in (svc.get("labels") or []) if "traefik" in l]
+
+
+def test_prometheus_retention_is_capped_by_time_and_size():
+    _, svc = SERVICES["prometheus"]
+    command = " ".join(svc.get("command") or [])
+    assert "--storage.tsdb.retention.time=30d" in command
+    assert "--storage.tsdb.retention.size=2GB" in command
+
+
+def test_cadvisor_never_mounts_the_raw_docker_socket():
+    _, svc = SERVICES["cadvisor"]
+    assert "docker.sock" not in " ".join(svc.get("volumes") or [])
+    assert "--docker=tcp://dockerproxy:2375" in (svc.get("command") or [])
+
+
+def test_grafana_allows_anonymous_viewing_and_embedding():
+    _, svc = SERVICES["grafana"]
+    env = svc["environment"]
+    assert env["GF_AUTH_ANONYMOUS_ENABLED"] == "true"
+    assert env["GF_AUTH_ANONYMOUS_ORG_ROLE"] == "Viewer"
+    assert env["GF_SECURITY_ALLOW_EMBEDDING"] == "true"
+
+
+def test_only_grafana_is_visible_in_the_metrics_tier():
+    visible = [
+        app_id for app_id, meta in CATALOGUE.items()
+        if meta.get("tier") == "metrics" and not meta.get("hidden")
+    ]
+    assert visible == ["grafana"]
+
+
+def test_metrics_apps_are_not_tunnelled():
+    for app_id, meta in CATALOGUE.items():
+        if meta.get("tier") == "metrics":
+            assert meta.get("tunnelled") != "forced"
