@@ -17,6 +17,18 @@ GRAFANA_UID = 472
 GRAFANA_GID = 472
 ASSETS = pathlib.Path(__file__).resolve().parents[1] / "assets" / "grafana"
 
+
+def _stack_owner() -> tuple[int, int]:
+    """Prometheus runs as the stack PUID, so its data dir must match.
+
+    Provision runs as root, so anything it creates is root-owned and
+    Prometheus cannot write its own TSDB.
+    """
+    try:
+        return int(os.environ.get("PUID", 1000)), int(os.environ.get("PGID", 1000))
+    except ValueError:
+        return 1000, 1000
+
 PROMETHEUS_CONFIG = {
     "global": {"scrape_interval": "15s", "evaluation_interval": "15s"},
     "scrape_configs": [
@@ -101,6 +113,9 @@ def seed(stack: pathlib.Path, enabled: set[str], log=print) -> None:
     prom_dir = stack / "config" / "prometheus"
     (prom_dir / "data").mkdir(parents=True, exist_ok=True)
     _write_yaml(prom_dir / "prometheus.yml", PROMETHEUS_CONFIG)
+    uid, gid = _stack_owner()
+    for path in (prom_dir, prom_dir / "data", prom_dir / "prometheus.yml"):
+        _chown(path, uid, gid)
     log("  prometheus: wrote scrape config")
 
     grafana = stack / "config" / "grafana"

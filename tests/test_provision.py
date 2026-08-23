@@ -1291,3 +1291,21 @@ def test_metrics_seed_creates_the_provisioning_dirs_grafana_expects(tmp_path):
     provisioning = tmp_path / "config" / "grafana" / "provisioning"
     for name in ("plugins", "alerting", "notifiers", "access-control"):
         assert (provisioning / name).is_dir(), f"grafana logs an error without {name}/"
+
+
+def test_metrics_seed_hands_the_tsdb_to_the_stack_user(tmp_path, monkeypatch):
+    """Provision runs as root; Prometheus does not. Without this the
+    TSDB directory is unwritable and Prometheus restart-loops."""
+    from recipes import metrics as metrics_recipe
+    monkeypatch.setenv("PUID", "1000")
+    monkeypatch.setenv("PGID", "1000")
+    chowned = {}
+    monkeypatch.setattr(
+        metrics_recipe, "_chown",
+        lambda path, uid, gid: chowned.__setitem__(str(path), (uid, gid)),
+    )
+    metrics_recipe.seed(tmp_path, {"prometheus"}, log=lambda *_: None)
+    data_dir = str(tmp_path / "config" / "prometheus" / "data")
+    assert chowned.get(data_dir) == (1000, 1000)
+    grafana_data = str(tmp_path / "config" / "grafana" / "data")
+    assert chowned.get(grafana_data) == (472, 472)
