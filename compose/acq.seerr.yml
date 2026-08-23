@@ -10,6 +10,7 @@ services:
     profiles: ["seerr"]
     restart: unless-stopped
     init: true
+    user: "1000:1000"
     environment:
       TZ: ${KINE_TIMEZONE}
       LOG_LEVEL: info

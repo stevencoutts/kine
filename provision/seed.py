@@ -8,12 +8,16 @@ our settings instead. This must happen before the container starts,
 which is why install.sh runs `seed` before `docker compose up`.
 """
 import json
+import os
 import pathlib
 import xml.etree.ElementTree as ET
 
 from keys import api_key
 
 STACK = pathlib.Path("/stack")
+# Official Seerr image runs as node, not the stack PUID/PGID.
+SEERR_UID = 1000
+SEERR_GID = 1000
 
 ARR_DEFAULTS = {
     "sonarr": {"Port": "8989", "UrlBase": ""},
@@ -127,6 +131,27 @@ def seed_transmission() -> None:
     print("  transmission: seeded settings.json with /data download paths")
 
 
+def seed_seerr() -> None:
+    """Prepare /app/config for the official image (node 1000:1000).
+
+    Docker creates the bind-mount source as root when the directory is
+    missing; Seerr then cannot mkdir logs/ and crashes on start.
+    """
+    cfg_dir = STACK / "config" / "seerr"
+    logs_dir = cfg_dir / "logs"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    for path in (cfg_dir, logs_dir):
+        os.chown(path, SEERR_UID, SEERR_GID)
+    for root, dirs, files in os.walk(cfg_dir):
+        os.chown(root, SEERR_UID, SEERR_GID)
+        for name in dirs:
+            os.chown(os.path.join(root, name), SEERR_UID, SEERR_GID)
+        for name in files:
+            os.chown(os.path.join(root, name), SEERR_UID, SEERR_GID)
+    print("  seerr: prepared config for node (1000:1000)")
+
+
 def seed_all(enabled: set[str]) -> None:
     print("Seeding application config...")
     for app in ARR_DEFAULTS:
@@ -140,3 +165,5 @@ def seed_all(enabled: set[str]) -> None:
         from recipes import recyclarr
 
         recyclarr.seed(print)
+    if "seerr" in enabled:
+        seed_seerr()

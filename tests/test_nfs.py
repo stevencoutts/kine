@@ -63,6 +63,8 @@ def test_mount_script_links_title_case_media_dirs():
 def test_installer_mounts_after_local_ownership_is_set():
     mount = INSTALL.index("./scripts/mount-media.sh")
     assert mount > INSTALL.index('chmod -R g+rwX "${DATA_ROOT}"')
+    assert 'chown -R 1000:1000 "${STACK_ROOT}/config/seerr"' in INSTALL
+    assert "seerr/logs" in INSTALL
 
 
 def test_mount_script_is_self_contained():

@@ -112,6 +112,20 @@ def test_transmission_seed_never_overwrites_existing_settings(stack):
     assert json.loads((d / "settings.json").read_text())["download-dir"] == "/downloads/complete"
 
 
+def test_seerr_seed_prepares_node_owned_config(stack, monkeypatch):
+    import seed
+
+    calls = []
+    monkeypatch.setattr(seed.os, "chown", lambda path, uid, gid: calls.append((path, uid, gid)))
+    seed.seed_seerr()
+    cfg = stack / "config" / "seerr"
+    logs = cfg / "logs"
+    assert cfg.is_dir()
+    assert logs.is_dir()
+    assert all(uid == seed.SEERR_UID and gid == seed.SEERR_GID for _, uid, gid in calls)
+    assert cfg in {path for path, _, _ in calls}
+
+
 def test_transmission_configure_sets_paths_via_rpc(monkeypatch):
     import recipes.transmission as transmission
 

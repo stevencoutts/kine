@@ -267,6 +267,7 @@ def test_seerr_is_untunnelled_with_official_image_and_traefik():
     _, seerr = SERVICES["seerr"]
     assert seerr["image"] == "ghcr.io/seerr-team/seerr:${SEERR_TAG}"
     assert seerr.get("init") is True
+    assert seerr.get("user") == "1000:1000"
     assert seerr.get("network_mode") != "service:gluetun"
     assert "kine_internal" in seerr.get("networks", [])
     assert seerr["volumes"] == ["${STACK_ROOT}/config/seerr:/app/config"]
