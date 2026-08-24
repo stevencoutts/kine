@@ -67,3 +67,23 @@ def test_delete_active_refused(tmp_path):
         assert False, "expected ValueError"
     except ValueError:
         pass
+
+
+def test_vpn_profile_routes_exist():
+    main = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()
+    assert '@app.post("/api/vpn/profiles")' in main
+    assert '@app.put("/api/vpn/profiles/{profile_id}")' in main
+    assert '@app.delete("/api/vpn/profiles/{profile_id}")' in main
+    assert '@app.post("/api/vpn/profiles/{profile_id}/activate")' in main
+    assert '@app.post("/api/vpn/disable")' in main
+    assert "vpn_profiles.migrate_from_wg0" in main
+    assert "VPN_ENABLED" in main.split("vpn_profile_activate", 1)[1][:800]
+
+
+def test_vpn_ui_has_profile_cards():
+    frontend = (ROOT / "helm" / "frontend" / "index.html").read_text()
+    assert "vpn-card" in frontend
+    assert "vpn-profiles" in frontend
+    assert "data-vpn-activate" in frontend
+    assert "promptVpnProfile" in frontend
+    assert "/vpn/profiles" in frontend

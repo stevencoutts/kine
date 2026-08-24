@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, catalogue, channels, compose, config, downloads, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, updates_info, watching
+from . import auth, catalogue, channels, compose, config, downloads, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, updates_info, vpn_profiles, watching
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -806,9 +806,37 @@ async def apply_update(app_id: str, user: str = Depends(require_user)):
 
 
 # ── VPN ─────────────────────────────────────────────────────────
+def _vpn_stack_root() -> str:
+    env = config.read()
+    return env.get("STACK_ROOT") or os.environ.get("KINE_ROOT", "/stack")
+
+
+def _vpn_tunnel_group(env: dict) -> list[str]:
+    return ["gluetun", "vpn-portsync"] + [
+        a for a in env.get("VPN_TUNNELLED_APPS", "").split(",") if a
+    ]
+
+
+async def _vpn_recreate_tunnel(env: dict) -> tuple[int, str, list[str]]:
+    group = _vpn_tunnel_group(env)
+    code, out = await compose.run("up", "-d", "--force-recreate", *group, timeout=300)
+    return code, out, group
+
+
+def _vpn_profile_public(profile: dict) -> dict:
+    return {
+        "id": profile.get("id"),
+        "name": profile.get("name") or "Unnamed",
+        "type": profile.get("type") or "wireguard",
+        "updated_at": profile.get("updated_at"),
+        "conf": vpn_profiles.redact_conf(profile.get("conf") or ""),
+    }
+
+
 @app.get("/api/vpn")
 async def vpn_status(user: str = Depends(require_user)):
     env = config.read()
+    stack = _vpn_stack_root()
     code, out = await compose.run("exec", "-T", "gluetun",
                                   "wget", "-qO-",
                                   "http://127.0.0.1:8000/v1/openvpn/portforwarded",
@@ -817,14 +845,16 @@ async def vpn_status(user: str = Depends(require_user)):
                                         "wget", "-qO-",
                                         "http://127.0.0.1:8000/v1/publicip/ip",
                                         timeout=30)
+    store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
     return {
         "enabled": env.get("VPN_ENABLED") == "true",
         "provider": env.get("VPN_SERVICE_PROVIDER"),
         "connection_type": _connection_label(env.get("VPN_TYPE", "")),
         "countries": env.get("VPN_SERVER_COUNTRIES"),
-        "tunnelled": env.get("VPN_TUNNELLED_APPS", "").split(","),
+        "tunnelled": [a for a in env.get("VPN_TUNNELLED_APPS", "").split(",") if a],
         "forwarded_port": _parse_forwarded_port(out) if code == 0 else None,
         "public_ip": _parse_public_ip(ip_out) if ip_code == 0 else None,
+        "profiles": vpn_profiles.summary(store),
     }
 
 
@@ -843,12 +873,115 @@ async def vpn_settings(request: Request, user: str = Depends(require_user)):
     return {"ok": True, "note": "restart the tunnel group to apply"}
 
 
+@app.get("/api/vpn/profiles/{profile_id}")
+async def vpn_profile_get(profile_id: str, user: str = Depends(require_user)):
+    stack = _vpn_stack_root()
+    store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+    profile = next((p for p in store["profiles"] if p.get("id") == profile_id), None)
+    if not profile:
+        raise HTTPException(404, "profile not found")
+    return {
+        "ok": True,
+        "profile": {
+            "id": profile.get("id"),
+            "name": profile.get("name") or "Unnamed",
+            "type": profile.get("type") or "wireguard",
+            "updated_at": profile.get("updated_at"),
+            "active": profile.get("id") == store.get("active_id"),
+            "conf": profile.get("conf") or "",
+        },
+    }
+
+
+@app.post("/api/vpn/profiles")
+async def vpn_profile_add(request: Request, user: str = Depends(require_user)):
+    body = await request.json()
+    stack = _vpn_stack_root()
+    try:
+        profile = await asyncio.to_thread(
+            vpn_profiles.add_profile,
+            stack,
+            body.get("name") or "Unnamed",
+            body.get("conf") or "",
+            type=body.get("type") or "wireguard",
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "profile": _vpn_profile_public(profile)}
+
+
+@app.put("/api/vpn/profiles/{profile_id}")
+async def vpn_profile_update(profile_id: str, request: Request, user: str = Depends(require_user)):
+    body = await request.json()
+    stack = _vpn_stack_root()
+    kwargs = {}
+    if "name" in body:
+        kwargs["name"] = body.get("name")
+    if "conf" in body:
+        kwargs["conf"] = body.get("conf")
+    try:
+        profile = await asyncio.to_thread(
+            vpn_profiles.update_profile, stack, profile_id, **kwargs
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "profile": _vpn_profile_public(profile)}
+
+
+@app.delete("/api/vpn/profiles/{profile_id}")
+async def vpn_profile_delete(profile_id: str, user: str = Depends(require_user)):
+    stack = _vpn_stack_root()
+    try:
+        await asyncio.to_thread(vpn_profiles.delete_profile, stack, profile_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True}
+
+
+@app.post("/api/vpn/profiles/{profile_id}/activate")
+async def vpn_profile_activate(profile_id: str, user: str = Depends(require_user)):
+    stack = _vpn_stack_root()
+    try:
+        conf_text, patch = await asyncio.to_thread(
+            vpn_profiles.prepare_activate, stack, profile_id
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    await asyncio.to_thread(_write_gluetun_conf, conf_text, stack)
+    config.write({"VPN_ENABLED": "true", **patch})
+    env2 = config.read()
+    code, out, group = await _vpn_recreate_tunnel(env2)
+    return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
+
+
+@app.post("/api/vpn/disable")
+async def vpn_disable(user: str = Depends(require_user)):
+    stack = _vpn_stack_root()
+
+    def _clear_active():
+        store = vpn_profiles.migrate_from_wg0(stack)
+        store["active_id"] = None
+        vpn_profiles.save(stack, store)
+
+    await asyncio.to_thread(_clear_active)
+    await asyncio.to_thread(_remove_gluetun_conf, stack)
+    config.write({"VPN_ENABLED": "false", **_empty_vpn_env()})
+    env2 = config.read()
+    code, out, group = await _vpn_recreate_tunnel(env2)
+    return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
+
+
 @app.post("/api/vpn/restart")
 async def vpn_restart(user: str = Depends(require_user)):
     env = config.read()
-    group = ["gluetun", "vpn-portsync"] + [
-        a for a in env.get("VPN_TUNNELLED_APPS", "").split(",") if a
-    ]
+    group = _vpn_tunnel_group(env)
     code, out = await compose.run("restart", *group, timeout=300)
     return {"ok": code == 0, "restarted": group, "log": out[-2000:]}
 
