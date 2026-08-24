@@ -68,8 +68,7 @@ write_fstab() {
       fstab_line "${DATA_ROOT}/media/movies" "${NFS_MOVIES:-}"
     fi
     if downloads_under_media; then
-      printf '%s %s none bind,nofail 0 0\n' \
-        "${DATA_ROOT}/media/$(downloads_media_subdir)" "${DATA_ROOT}/downloads"
+      : # symlink created at apply time — no fstab entry
     else
       fstab_line "${DATA_ROOT}/downloads" "${NFS_DOWNLOADS:-}"
     fi
@@ -121,33 +120,41 @@ mount_downloads() {
   [[ -n "$export_path" ]] || return 0
 
   if downloads_under_media; then
-    local src="${MEDIA_ROOT}/$(downloads_media_subdir)"
-    local media_spec="${NFS_SERVER}:${NFS_MEDIA}"
-    local subdir="/$(downloads_media_subdir)"
-    mkdir -p "$src" "$DOWNLOADS_ROOT"
+    local subdir
+    subdir="$(downloads_media_subdir)"
+    local src="${MEDIA_ROOT}/${subdir}"
+    local link_target="media/${subdir}"
+    mkdir -p "$src"
     if mountpoint -q "$DOWNLOADS_ROOT" 2>/dev/null; then
-      local current fsroot
-      current=$(findmnt -n -o SOURCE -M "$DOWNLOADS_ROOT")
-      fsroot=$(findmnt -n -o FSROOT -M "$DOWNLOADS_ROOT")
-      fsroot="${fsroot%/}"
-      # Bind of media/downloads shares the media NFS source with FSROOT=/downloads.
-      if [[ "$current" == "$media_spec" && "$fsroot" == "${subdir%/}" ]] \
-        || [[ "$current" == "$src" || "$current" == "${src}/" ]]; then
-        ok "Downloads already bind-mounted at ${DOWNLOADS_ROOT}"
-        return 0
-      fi
-      warn "Downloads remounting as bind of ${src} (was ${current} fsroot=${fsroot})"
+      warn "unmounting ${DOWNLOADS_ROOT} so it can symlink into the media tree"
       umount "$DOWNLOADS_ROOT" || {
         warn "could not unmount ${DOWNLOADS_ROOT}; stop dependent apps and retry"
         return 1
       }
     fi
-    if mount --bind "$src" "$DOWNLOADS_ROOT"; then
-      ok "bind-mounted ${src} -> ${DOWNLOADS_ROOT}"
-      return 0
+    if [[ -L "$DOWNLOADS_ROOT" ]]; then
+      local cur
+      cur=$(readlink "$DOWNLOADS_ROOT")
+      if [[ "$cur" == "$link_target" || "$cur" == "${DATA_ROOT}/${link_target}" || "$cur" == "$src" ]]; then
+        ok "Downloads already linked at ${DOWNLOADS_ROOT} -> ${cur}"
+        return 0
+      fi
+      rm -f "$DOWNLOADS_ROOT"
     fi
-    warn "could not bind-mount ${src} at ${DOWNLOADS_ROOT}"
-    return 1
+    if [[ -e "$DOWNLOADS_ROOT" ]]; then
+      if [[ -d "$DOWNLOADS_ROOT" ]] && [[ -z "$(ls -A "$DOWNLOADS_ROOT" 2>/dev/null)" ]]; then
+        rmdir "$DOWNLOADS_ROOT" || {
+          warn "could not remove empty ${DOWNLOADS_ROOT}"
+          return 1
+        }
+      else
+        warn "${DOWNLOADS_ROOT} exists and is not empty; move it aside, then re-run"
+        return 1
+      fi
+    fi
+    ln -s "$link_target" "$DOWNLOADS_ROOT"
+    ok "linked ${DOWNLOADS_ROOT} -> ${link_target}"
+    return 0
   fi
 
   mount_export "$DOWNLOADS_ROOT" "$export_path" "Downloads"

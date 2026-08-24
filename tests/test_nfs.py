@@ -106,8 +106,8 @@ def test_mount_script_includes_tdarr_cache():
 
 def test_mount_script_bind_mounts_downloads_under_media():
     assert "downloads_under_media" in MOUNT_SCRIPT
-    assert "mount --bind" in MOUNT_SCRIPT
     assert "mount_downloads" in MOUNT_SCRIPT
+    assert 'ln -s "$link_target" "$DOWNLOADS_ROOT"' in MOUNT_SCRIPT
 
 
 def test_mount_script_uses_shared_nfs_options():

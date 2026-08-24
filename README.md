@@ -272,8 +272,9 @@ Separate NFS mount points cannot hardlink to one another, even when they are
 exports from the same server. For Sonarr/Radarr hardlinks, mount one media
 export, set `NFS_DOWNLOADS` to a folder under that export (for example
 `…/media/downloads`), and leave nested `NFS_TV` / `NFS_MOVIES` empty.
-`mount-media.sh` then **bind-mounts** downloads from the media tree (a second
-NFS mount of the same folder still cannot hardlink). Verify:
+`mount-media.sh` then **symlinks** `${DATA_ROOT}/downloads` into that media
+folder (a second NFS/bind mount of the same folder still cannot hardlink).
+Verify:
 
 ```bash
 stat -c '%d' /srv/media-data/media /srv/media-data/downloads /srv/media-data/media/Movies
