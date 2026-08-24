@@ -666,7 +666,9 @@ async def apply_update(app_id: str, user: str = Depends(require_user)):
         raise HTTPException(status_code=409, detail=HOST_ONLY_UPDATES[app_id])
     # `compose up -d <svc>` starts a named service even when its profile is
     # off, which is how a disabled Grafana came back after Update All.
-    if app_id not in config.profiles():
+    # Always-on plumbing (Traefik, Helm, …) is not catalogue/profile-gated.
+    cat = catalogue.load()
+    if app_id in cat and app_id not in config.profiles():
         raise HTTPException(
             status_code=409,
             detail=f"{app_id} is disabled — enable it before updating, "

@@ -794,8 +794,9 @@ render.updates = async (refresh=false) => {
     </tr>`;
   }).join('');
   const section = (title, list, key) => {
-    // host_only rows are listed but never included in Update All.
-    const pending = list.filter(c => c.update_available && !c.host_only);
+    // host_only and profile-disabled rows are listed but not in Update All.
+    const pending = list.filter(c =>
+      c.update_available && !c.host_only && c.enabled !== false);
     const allBtn = pending.length
       ? `<button class="act primary" data-up-all="${key}">Update All (${pending.length})</button>`
       : '';

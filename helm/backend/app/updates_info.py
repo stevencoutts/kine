@@ -55,6 +55,10 @@ def enrich(rows: list[dict], *, running: set[str] | None = None) -> list[dict]:
         # Helm talks to Docker through dockerproxy; applying an update to
         # it from Helm stops the proxy mid-recreate and leaves it down.
         host_only = app_id == "dockerproxy"
+        # Catalogue apps (including hidden metrics deps) are profile-gated.
+        # Always-on plumbing (Traefik, Helm, dockerproxy, …) is not in the
+        # catalogue and has no COMPOSE_PROFILES entry — treat as enabled.
+        is_enabled = (app_id in enabled) if (app_id in cat) else True
         item = {
             **row,
             "name": meta.get("name", app_id),
@@ -62,7 +66,7 @@ def enrich(rows: list[dict], *, running: set[str] | None = None) -> list[dict]:
             "configured_tag": env_tag or row.get("tag") or "latest",
             "stable_tag": env.get(channels.stable_tag_key(app_id), "") if app_id in dev_on else "",
             "dev_supported": channels.supported(meta),
-            "enabled": app_id in enabled,
+            "enabled": is_enabled,
             "running": is_running,
             "core": core,
             "host_only": host_only,

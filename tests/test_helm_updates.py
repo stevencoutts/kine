@@ -48,6 +48,22 @@ def test_enrich_marks_hidden_and_unknown_as_core(monkeypatch):
     assert by_id["traefik"]["core"] is True
     assert by_id["dockerproxy"]["host_only"] is True
     assert by_id["sonarr"]["host_only"] is False
+    # Catalogue apps honour COMPOSE_PROFILES; Traefik has no profile.
+    assert by_id["sonarr"]["enabled"] is True
+    assert by_id["cadvisor"]["enabled"] is True
+    assert by_id["traefik"]["enabled"] is True
+    assert by_id["dockerproxy"]["enabled"] is True
+
+    # cadvisor is in the catalogue but not in profiles → disabled;
+    # traefik is always-on plumbing → still enabled.
+    monkeypatch.setattr(updates_info.config, "profiles", lambda: [])
+    rows2 = updates_info.enrich([
+        {"id": "cadvisor", "tag": "latest", "update_available": True},
+        {"id": "traefik", "tag": "latest", "update_available": True},
+    ])
+    by2 = {r["id"]: r for r in rows2}
+    assert by2["cadvisor"]["enabled"] is False
+    assert by2["traefik"]["enabled"] is True
 
 
 def test_mark_container_current_clears_pending(tmp_path, monkeypatch):
