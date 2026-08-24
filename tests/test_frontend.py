@@ -104,9 +104,10 @@ def test_open_embeds_arr_apps_same_origin():
 
 def test_media_overview_uses_settings_servers():
     assert "/media-servers" in FRONTEND
-    assert "mediaServersPanel" in FRONTEND
-    assert "mediaStatHtml" in FRONTEND
+    assert "mediaServerCard" in FRONTEND
+    assert "mediaPanelHtml" in FRONTEND
     assert "media-live" in FRONTEND
+    assert "data-media-url" in FRONTEND
 
 
 def test_dev_version_checkbox_only_when_supported():

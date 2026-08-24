@@ -666,25 +666,32 @@ const downloadsPanel = (d) => {
   }
   return `<div class="watch-list">${blocks.join('')}</div>`;
 };
-const mediaServersPanel = (m) => {
+const mediaServerCard = (s) => {
+  const title = s.name || s.label || 'Media Server';
+  const summary = s.ok
+    ? (s.version ? `${s.label} · ${s.version}` : (s.detail || s.label || 'Online'))
+    : (s.error || 'Unreachable');
+  const hostLine = s.host
+    ? `<p style="color:var(--muted);font-size:.8rem;margin:.35rem 0 0">${escHtml(s.host)}</p>`
+    : '';
+  return `<div class="card">
+    <h3><span class="dot ${s.ok?'on':'off'}"></span>${escHtml(title)}</h3>
+    <p>${escHtml(summary)}</p>
+    ${hostLine}
+    <div class="row">
+      ${s.url ? `<button class="act" data-media-url="${escAttr(s.url)}">Open</button>` : ''}
+    </div>
+  </div>`;
+};
+const mediaServersCards = (m) => {
   const configured = m.configured || {};
-  if (!configured.plex && !configured.emby) {
-    return '<p style="color:var(--muted);margin:0">Add Plex or Emby credentials in Settings to see media servers here.</p>';
-  }
-  const servers = m.servers || [];
-  const rows = servers.map(s => {
-    if (s.ok) {
-      return `<div class="watch-row"><strong>${escHtml(s.label)}</strong>
-        <div class="watch-sub">${escHtml(s.detail || 'online')}`
-          + (s.host ? ` · ${escHtml(s.host)}` : '')
-          + `</div></div>`;
-    }
-    return `<div class="watch-row"><strong>${escHtml(s.label)}</strong>
-      <div class="watch-sub" style="color:var(--warn)">${escHtml(s.error || 'unreachable')}`
-        + (s.host ? ` · ${escHtml(s.host)}` : '')
-        + `</div></div>`;
-  }).join('');
-  return `<div class="watch-list">${rows}</div>`;
+  if (!configured.plex && !configured.emby) return '';
+  return (m.servers || []).map(mediaServerCard).join('');
+};
+const mediaPanelHtml = (m, items) => {
+  const cards = `${mediaServersCards(m)}${items.map(appCard).join('')}`;
+  if (cards) return `<div id="media-panel" class="grid">${cards}</div>`;
+  return '<p style="color:var(--muted);margin:0">Add Plex or Emby credentials in Settings, or enable a media app.</p>';
 };
 const mediaStatHtml = (m, stats) => {
   const configured = m.configured || {};
@@ -778,10 +785,7 @@ render.apps = async () => {
   if (watchingActive) panel = `<div id="watch-panel">${watchPanel(watch)}</div>`;
   else if (downloadsActive) panel = `<div id="downloads-panel">${downloadsPanel(dl)}</div>`;
   else if (mediaActive) {
-    const grid = activeItems.length
-      ? `<div class="grid" style="margin-top:1rem">${activeItems.map(appCard).join('')}</div>`
-      : '';
-    panel = `<div id="media-panel">${mediaServersPanel(media)}</div>${grid}`;
+    panel = mediaPanelHtml(media, activeItems);
   } else panel = activeItems.length
     ? `<div class="grid">${activeItems.map(appCard).join('')}</div>`
     : '<p style="color:var(--muted);margin:0">No apps in this group.</p>';
@@ -817,13 +821,29 @@ render.apps = async () => {
     state.watchTimer = setInterval(async () => {
       const next = await api('/media-servers').catch(() => null);
       if (!next || state.activeTier !== 'media') return;
-      const box = $('#media-panel');
-      if (box) box.innerHTML = mediaServersPanel(next);
+      const wrap = document.querySelector('.apps-panel');
+      const tierApps = state.apps.filter(a => a.tier === 'media' && !a.hidden);
+      if (wrap) wrap.innerHTML = mediaPanelHtml(next, tierApps);
       const btn = document.querySelector('[data-overview="media"]');
       const statEl = btn && btn.querySelector('.overview-stat');
-      const tierApps = state.apps.filter(a => a.tier === 'media' && !a.hidden);
       if (statEl) statEl.innerHTML = mediaStatHtml(next, tierStats(tierApps));
       if (btn) btn.classList.toggle('media-live', !!(next.online||0));
+      document.querySelectorAll('[data-media-url]').forEach(b => {
+        b.onclick = () => {
+          const w = window.open(b.dataset.mediaUrl, '_blank');
+          if (w) w.opener = null;
+        };
+      });
+      document.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
+        const id = b.dataset.id;
+        const act = b.dataset.act;
+        b.disabled = true; b.textContent = 'Working...';
+        await api(`/apps/${id}/${act}`, {method:'POST'});
+        render.apps();
+      });
+      document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
+        launchApp(state.apps.find(a => a.id === b.dataset.open));
+      });
     }, 15000);
   }
   document.querySelectorAll('[data-overview]').forEach(el => {
@@ -886,6 +906,12 @@ render.apps = async () => {
   });
   document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
     launchApp(state.apps.find(a => a.id === b.dataset.open));
+  });
+  document.querySelectorAll('[data-media-url]').forEach(b => {
+    b.onclick = () => {
+      const w = window.open(b.dataset.mediaUrl, '_blank');
+      if (w) w.opener = null;
+    };
   });
 };
 

@@ -39,6 +39,7 @@ async def _plex_status(env: dict) -> dict | None:
         "id": "plex",
         "label": "Plex",
         "host": host,
+        "url": f"{base}/web",
         "ok": False,
         "name": None,
         "version": None,
@@ -81,10 +82,12 @@ async def _emby_status(env: dict) -> dict | None:
     if not candidates:
         return None
 
+    display_host, base = candidates[0]
     row = {
         "id": "emby",
         "label": "Emby",
-        "host": host or "emby",
+        "host": display_host,
+        "url": f"{base}/web",
         "ok": False,
         "name": None,
         "version": None,
@@ -104,6 +107,7 @@ async def _emby_status(env: dict) -> dict | None:
             row.update({
                 "ok": True,
                 "host": display_host,
+                "url": f"{base}/web",
                 "name": info["name"],
                 "version": info["version"],
                 "detail": _detail(info),
