@@ -14,9 +14,14 @@ Two of them, and both are deliberately conservative:
   seerr-wire     re-runs provision wire when Seerr's wizard has finished
                  but Sonarr/Radarr are not linked yet (enable runs wire
                  before Sign In, so the first link needs a later pass).
+
+  dispatcharr-wire
+                 after DISPATCHARR_TOKEN is set in Settings, links Emby
+                 HDHomeRun and fills ECM/Teamarr env tokens.
 """
 import asyncio
 import contextlib
+import hashlib
 import json
 import pathlib
 import time
@@ -170,6 +175,108 @@ async def _seerr_wire_loop() -> None:
         await asyncio.sleep(120)
 
 
+def _dispatcharr_token() -> str | None:
+    token = (config.read().get("DISPATCHARR_TOKEN") or "").strip()
+    return token or None
+
+
+def _dispatcharr_env_needs_token() -> bool:
+    """True when ecm/teamarr are enabled but still have an empty token."""
+    profiles = set(config.profiles())
+    for app in ("ecm", "teamarr"):
+        if app not in profiles:
+            continue
+        path = pathlib.Path(f"/stack/config/{app}/{app}.env")
+        token = ""
+        if path.is_file():
+            for line in path.read_text().splitlines():
+                if line.startswith("DISPATCHARR_TOKEN="):
+                    token = line.split("=", 1)[1].strip()
+                    break
+        if not token:
+            return True
+    return False
+
+
+async def _dispatcharr_needs_wire() -> bool:
+    if "dispatcharr" not in config.profiles():
+        return False
+    token = _dispatcharr_token()
+    if not token:
+        return False
+    # Token present: wire if dependents need it, or Emby may need tuner.
+    if _dispatcharr_env_needs_token():
+        return True
+    if "emby" not in config.profiles():
+        return False
+    emby_key = (config.read().get("EMBY_API_KEY") or "").strip()
+    if not emby_key:
+        return False
+    # Cheap check: ask Emby if tuner already linked.
+    try:
+        async with httpx.AsyncClient(timeout=8.0, verify=False) as client:
+            resp = await client.get(
+                "http://emby:8096/LiveTv/TunerHosts",
+                headers={"X-Emby-Token": emby_key},
+            )
+            if resp.status_code != 200:
+                return True
+            hosts = resp.json() if resp.content else []
+            if not isinstance(hosts, list):
+                return True
+            want = "http://dispatcharr:9191/hdhr"
+            for host in hosts:
+                if isinstance(host, dict) and str(host.get("Url") or "").rstrip("/") == want:
+                    return False
+            return True
+    except httpx.HTTPError:
+        return True
+
+
+async def wire_dispatcharr_if_ready() -> None:
+    if not await _dispatcharr_needs_wire():
+        return
+    if provision_lock.status().get("busy"):
+        return
+    token = _dispatcharr_token() or ""
+    try:
+        async with provision_lock.acquire(reason="dispatcharr auto-wire"):
+            code, out = await compose.run(
+                "run", "--rm",
+                "-e", f"DISPATCHARR_TOKEN={token}",
+                "provision", "wire",
+                timeout=900,
+            )
+    except provision_lock.ProvisionBusy:
+        return
+    data = _load()
+    fingerprint = data.get("dispatcharr_wire", {}).get("token_fp")
+    fp = hashlib.sha256(token.encode()).hexdigest()[:16]
+    data["dispatcharr_wire"] = {
+        "ran": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "ok": code == 0,
+        "log": out[-500:] if out else "",
+        "token_fp": fp,
+    }
+    _save(data)
+    if code == 0 and fp != fingerprint:
+        dependents = [a for a in ("ecm", "teamarr") if a in config.profiles()]
+        if dependents:
+            await compose.run("up", "-d", "--force-recreate", *dependents, timeout=180)
+
+
+async def _dispatcharr_wire_loop() -> None:
+    await asyncio.sleep(60)
+    while True:
+        try:
+            await wire_dispatcharr_if_ready()
+        except Exception as exc:  # noqa: BLE001
+            data = _load()
+            data.setdefault("errors", {})["dispatcharr_wire"] = str(exc)
+            _save(data)
+        await asyncio.sleep(120)
+
+
 async def _loop(name: str, cron_key: str, default: str, job) -> None:
     while True:
         expr = config.read().get(cron_key, default) or default
@@ -200,6 +307,7 @@ def start(app) -> None:
             _loop("backup", "HELM_BACKUP_CRON", "30 3 * * *", _backup)
         ),
         asyncio.create_task(_seerr_wire_loop()),
+        asyncio.create_task(_dispatcharr_wire_loop()),
         asyncio.create_task(metrics.collector_loop()),
     ]
 
