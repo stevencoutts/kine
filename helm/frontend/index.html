@@ -86,11 +86,13 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   background:color-mix(in srgb, var(--accent) 14%, transparent);
   box-shadow:0 6px 28px color-mix(in srgb, var(--accent) 18%, transparent)}
 .overview-btn.off-tier{opacity:.72}
-.overview-btn.watching-live{
+.overview-btn.watching-live,
+.overview-btn.downloads-live{
   border-color:color-mix(in srgb, var(--ok) 55%, transparent);
   background:color-mix(in srgb, var(--ok) 16%, transparent);
   box-shadow:0 4px 20px color-mix(in srgb, var(--ok) 18%, transparent)}
-.overview-btn.watching-live.active{
+.overview-btn.watching-live.active,
+.overview-btn.downloads-live.active{
   border-color:color-mix(in srgb, var(--ok) 70%, transparent);
   background:color-mix(in srgb, var(--ok) 22%, transparent);
   box-shadow:0 6px 28px color-mix(in srgb, var(--ok) 22%, transparent)}
@@ -542,6 +544,12 @@ const tierStats = items => {
   const enabled = items.filter(a => a.enabled);
   return { running: enabled.filter(a => a.running).length, total: enabled.length };
 };
+const formatRate = (bytesPerSec) => {
+  const n = Number(bytesPerSec) || 0;
+  if (n < 1024) return `${n} B/s`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB/s`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB/s`;
+};
 const watchPanel = (w) => {
   const configured = w.configured || {};
   if (!configured.plex && !configured.emby) {
@@ -567,6 +575,41 @@ const watchPanel = (w) => {
   return `<div class="watch-list">${rows}</div>
     ${errors ? `<p style="color:var(--warn);font-size:.8rem;margin:.75rem 0 0">${escHtml(errors)}</p>` : ''}`;
 };
+const downloadsPanel = (d) => {
+  const configured = d.configured || {};
+  if (!configured.transmission && !configured.nzbget) {
+    return '<p style="color:var(--muted);margin:0">Enable Transmission or NZBGet in Acquisition to see download activity.</p>';
+  }
+  const errors = d.errors || {};
+  const blocks = [];
+  if (configured.transmission) {
+    const t = d.transmission;
+    if (!t) {
+      blocks.push(`<div class="watch-row"><strong>Transmission</strong>
+        <div class="watch-sub" style="color:var(--warn)">${escHtml(errors.transmission || 'unreachable')}</div></div>`);
+    } else {
+      blocks.push(`<div class="watch-row"><strong>Transmission</strong>
+        <div class="watch-sub">${t.active} active / ${t.total} total`
+          + (t.paused ? ` · ${t.paused} paused` : '')
+          + ` · ↓ ${formatRate(t.download_rate)} · ↑ ${formatRate(t.upload_rate)}</div></div>`);
+    }
+  }
+  if (configured.nzbget) {
+    const n = d.nzbget;
+    if (!n) {
+      blocks.push(`<div class="watch-row"><strong>NZBGet</strong>
+        <div class="watch-sub" style="color:var(--warn)">${escHtml(errors.nzbget || 'unreachable')}</div></div>`);
+    } else {
+      const bits = [`${n.downloading} downloading`, `${n.queued} queued`];
+      if (n.postprocessing) bits.push(`${n.postprocessing} post-processing`);
+      bits.push(`↓ ${formatRate(n.download_rate)}`);
+      if (n.paused) bits.push('paused');
+      blocks.push(`<div class="watch-row"><strong>NZBGet</strong>
+        <div class="watch-sub">${bits.join(' · ')}</div></div>`);
+    }
+  }
+  return `<div class="watch-list">${blocks.join('')}</div>`;
+};
 const appCard = a => `
   <div class="card">
     <h3><span class="dot ${a.running?'on':'off'}"></span>${a.name}</h3>
@@ -588,9 +631,11 @@ const appCard = a => `
 
 render.apps = async () => {
   if (state.watchTimer) { clearInterval(state.watchTimer); state.watchTimer = null; }
-  const [data, watch] = await Promise.all([
+  const emptyDownloads = {active:0, configured:{}, transmission:null, nzbget:null, errors:{}};
+  const [data, watch, dl] = await Promise.all([
     api('/apps'),
     api('/watching').catch(() => ({count:0, sessions:[], configured:{}, errors:{}})),
+    api('/downloads').catch(() => emptyDownloads),
   ]);
   state.apps = data.apps;
   state.tiers = data.tiers;
@@ -598,14 +643,22 @@ render.apps = async () => {
     const meta = state.tiers[tier];
     return meta && state.apps.some(a => a.tier === tier && !a.hidden);
   });
-  if (state.activeTier !== 'watching' && !visibleTiers.includes(state.activeTier))
+  const special = new Set(['watching', 'downloads']);
+  if (!special.has(state.activeTier) && !visibleTiers.includes(state.activeTier))
     state.activeTier = visibleTiers.find(t => state.tiers[t]?.enabled) || visibleTiers[0] || null;
   const watchingActive = state.activeTier === 'watching';
+  const downloadsActive = state.activeTier === 'downloads';
   const watchCount = watch.count || 0;
+  const dlActive = dl.active || 0;
   const watchBtn = `<div class="overview-btn ${watchingActive?'active':''}${watchCount?' watching-live':''}"
       data-overview="watching" role="button" tabindex="0" aria-pressed="${watchingActive}">
       <div class="overview-top"><h2>Watching</h2></div>
       <div class="overview-stat">${watchCount}<span> ${watchCount===1?'session':'sessions'}</span></div>
+    </div>`;
+  const downloadsBtn = `<div class="overview-btn ${downloadsActive?'active':''}${dlActive?' downloads-live':''}"
+      data-overview="downloads" role="button" tabindex="0" aria-pressed="${downloadsActive}">
+      <div class="overview-top"><h2>Downloads</h2></div>
+      <div class="overview-stat">${dlActive}<span> active</span></div>
     </div>`;
   const overview = visibleTiers.map(tier => {
     const meta = state.tiers[tier];
@@ -623,15 +676,16 @@ render.apps = async () => {
       <div class="overview-stat">${stats.running}<span> / ${stats.total} running</span></div>
     </div>`;
   }).join('');
-  const activeItems = (!watchingActive && state.activeTier)
+  const activeItems = (!watchingActive && !downloadsActive && state.activeTier)
     ? state.apps.filter(a => a.tier === state.activeTier && !a.hidden) : [];
-  const panel = watchingActive
-    ? `<div id="watch-panel">${watchPanel(watch)}</div>`
-    : (activeItems.length
-      ? `<div class="grid">${activeItems.map(appCard).join('')}</div>`
-      : '<p style="color:var(--muted);margin:0">No apps in this group.</p>');
+  let panel;
+  if (watchingActive) panel = `<div id="watch-panel">${watchPanel(watch)}</div>`;
+  else if (downloadsActive) panel = `<div id="downloads-panel">${downloadsPanel(dl)}</div>`;
+  else panel = activeItems.length
+    ? `<div class="grid">${activeItems.map(appCard).join('')}</div>`
+    : '<p style="color:var(--muted);margin:0">No apps in this group.</p>';
   const body = `<div id="tier-msg"></div>
-    <div class="overview-bar">${watchBtn}${overview}</div>
+    <div class="overview-bar">${watchBtn}${downloadsBtn}${overview}</div>
     <div class="apps-panel">${panel}</div>`;
   render.shell(body);
   if (watchingActive) {
@@ -644,6 +698,18 @@ render.apps = async () => {
       const stat = btn && btn.querySelector('.overview-stat');
       if (stat) stat.innerHTML = `${next.count||0}<span> ${(next.count||0)===1?'session':'sessions'}</span>`;
       if (btn) btn.classList.toggle('watching-live', !!(next.count||0));
+    }, 15000);
+  }
+  if (downloadsActive) {
+    state.watchTimer = setInterval(async () => {
+      const next = await api('/downloads').catch(() => null);
+      if (!next || state.activeTier !== 'downloads') return;
+      const box = $('#downloads-panel');
+      if (box) box.innerHTML = downloadsPanel(next);
+      const btn = document.querySelector('[data-overview="downloads"]');
+      const stat = btn && btn.querySelector('.overview-stat');
+      if (stat) stat.innerHTML = `${next.active||0}<span> active</span>`;
+      if (btn) btn.classList.toggle('downloads-live', !!(next.active||0));
     }, 15000);
   }
   document.querySelectorAll('[data-overview]').forEach(el => {
