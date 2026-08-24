@@ -480,12 +480,19 @@ async def enable_tier(tier: str, user: str = Depends(require_user)):
     try:
         async with provision_lock.acquire(reason=f"enable tier {tier}"):
             await compose.run("run", "--rm", "provision", "seed")
-            mount = await _ensure_nfs_mounted()
-            if err := _nfs_mount_error(mount):
-                raise HTTPException(500, f"NFS mount failed: {err}")
+            # NFS remount stops every DATA_ROOT app. Only do that when this
+            # tier actually starts one — enabling Metrics used to stop Sonarr
+            # et al. and never bring them back, then hang in wire.
+            needs_media_nfs = bool(set(defaults) & set(_MEDIA_VOLUME_APPS))
+            if needs_media_nfs:
+                mount = await _ensure_nfs_mounted()
+                if err := _nfs_mount_error(mount):
+                    raise HTTPException(500, f"NFS mount failed: {err}")
             code, _ = await compose.run("up", "-d", *defaults)
             if code != 0:
                 raise HTTPException(500, f"Could not start {label} apps")
+            if needs_media_nfs:
+                await _recreate_media_volume_apps()
             await compose.run("run", "--rm", "provision", "wire")
     except provision_lock.ProvisionBusy as exc:
         raise HTTPException(409, exc.detail) from exc
@@ -553,13 +560,19 @@ async def enable(app_id: str, request: Request, user: str = Depends(require_user
     try:
         async with provision_lock.acquire(reason=f"enable {app_id}"):
             await compose.run("run", "--rm", "provision", "seed")
+            # Remount stops every media app; bring the whole set back after
+            # start so peers (Sonarr while enabling NZBGet, etc.) are not left down.
+            remounted = False
             if app_id in _MEDIA_VOLUME_APPS:
                 mount = await _ensure_nfs_mounted()
                 if err := _nfs_mount_error(mount):
                     raise HTTPException(500, f"NFS mount failed: {err}")
+                remounted = mount is not None
             code, out = await _start_app(app_id, wanted)
             if code != 0:
                 raise HTTPException(500, f"Could not start {app_id}")
+            if remounted:
+                await _recreate_media_volume_apps()
             await compose.run("run", "--rm", "provision", "wire")
     except provision_lock.ProvisionBusy as exc:
         raise HTTPException(409, exc.detail) from exc

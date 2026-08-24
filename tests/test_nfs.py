@@ -43,11 +43,27 @@ def test_helm_recreates_media_apps_after_nfs_mount():
     assert "await _recreate_media_volume_apps()" in MAIN
 
 
-def test_enable_tier_mounts_nfs_before_starting_apps():
+def test_enable_tier_mounts_nfs_only_for_media_apps():
+    """Metrics enable must not remount NFS — that stops Sonarr/Radarr and
+    never restarts them, then wire hangs on dead *arr APIs."""
     tier = MAIN.split('@app.post("/api/tiers/{tier}/enable")', 1)[1]
     tier = tier.split("@app.post(", 1)[0]
+    assert "needs_media_nfs" in tier
+    assert "_MEDIA_VOLUME_APPS" in tier
     assert "await _ensure_nfs_mounted()" in tier
-    assert tier.index("_ensure_nfs_mounted") < tier.index('up", "-d", *defaults')
+    assert "await _recreate_media_volume_apps()" in tier
+    assert tier.index("needs_media_nfs") < tier.index("_ensure_nfs_mounted")
+    assert tier.index('up", "-d", *defaults') < tier.index(
+        "_recreate_media_volume_apps"
+    )
+
+
+def test_app_enable_restarts_media_peers_after_nfs_remount():
+    enable = MAIN.split('@app.post("/api/apps/{app_id}/enable")', 1)[1]
+    enable = enable.split("@app.post(", 1)[0]
+    assert "remounted" in enable
+    assert "await _recreate_media_volume_apps()" in enable
+    assert enable.index("_start_app") < enable.index("_recreate_media_volume_apps")
 
 
 def test_mount_script_supports_host_root_for_agent():
