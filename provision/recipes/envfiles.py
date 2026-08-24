@@ -23,6 +23,39 @@ def _write(app: str, lines: dict[str, str], log) -> None:
     log(f"{app}: wrote {target.name}")
 
 
+def _read_env(path: pathlib.Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    if not path.is_file():
+        return out
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        out[key.strip()] = value
+    return out
+
+
+def write_dispatcharr_token(app: str, token: str, log) -> bool:
+    """Merge DISPATCHARR_URL/TOKEN into app.env. Return True if content changed."""
+    d = STACK / "config" / app
+    d.mkdir(parents=True, exist_ok=True)
+    target = d / f"{app}.env"
+    existing = _read_env(target)
+    order = list(existing.keys())
+    for key in ("DISPATCHARR_URL", "DISPATCHARR_TOKEN"):
+        if key not in order:
+            order.append(key)
+    existing["DISPATCHARR_URL"] = "http://dispatcharr:9191"
+    existing["DISPATCHARR_TOKEN"] = token or ""
+    body = "\n".join(f"{k}={existing[k]}" for k in order) + "\n"
+    if target.exists() and target.read_text() == body:
+        return False
+    target.write_text(body)
+    log(f"{app}: wrote {target.name}")
+    return True
+
+
 def configure(enabled: set[str], log) -> None:
     if "unpackerr" in enabled:
         _write("unpackerr", {
@@ -32,10 +65,7 @@ def configure(enabled: set[str], log) -> None:
 
     for app in ("ecm", "teamarr"):
         if app in enabled:
-            _write(app, {
-                "DISPATCHARR_URL": "http://dispatcharr:9191",
-                # Dispatcharr issues its own token on first login; the
-                # user pastes it once in the GUI and Helm writes it back
-                # here. We create the file so the container can start.
-                "DISPATCHARR_TOKEN": "",
-            }, log)
+            # Token may be filled later by dispatcharr.configure / Helm Settings.
+            write_dispatcharr_token(app, _read_env(STACK / "config" / app / f"{app}.env").get(
+                "DISPATCHARR_TOKEN", ""
+            ), log)
