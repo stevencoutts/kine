@@ -1,4 +1,5 @@
-# Generates per-team sports EPG and feeds the result to Dispatcharr.
+# Teamarr — tunnelled with Dispatcharr.
+# Traefik router lives on gluetun (port 9195).
 services:
   teamarr:
     image: ghcr.io/pharaoh-labs/teamarr:${TEAMARR_TAG}
@@ -6,19 +7,17 @@ services:
     profiles: ["teamarr"]
     restart: unless-stopped
     depends_on:
+      gluetun:
+        condition: service_healthy
       dispatcharr:
         condition: service_started
+    network_mode: "service:gluetun"
     environment:
       TZ: ${KINE_TIMEZONE}
       PUID: ${PUID}
       PGID: ${PGID}
-      DISPATCHARR_URL: http://dispatcharr:9191
+      DISPATCHARR_URL: http://127.0.0.1:9191
     env_file:
       - ${STACK_ROOT}/config/teamarr/teamarr.env
     volumes:
       - ${STACK_ROOT}/config/teamarr:/config
-    networks: [kine_internal, kine_edge]
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.teamarr.rule=Host(`sports.${KINE_DOMAIN}`) || Host(`sports.${KINE_LOCAL_DOMAIN}`)
-      - traefik.http.services.teamarr.loadbalancer.server.port=8080

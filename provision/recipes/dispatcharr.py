@@ -8,8 +8,9 @@ import httpx
 
 from recipes import envfiles
 
-DISPATCHARR_HDHR = "http://dispatcharr:9191/hdhr"
-DISPATCHARR_BASE = "http://dispatcharr:9191"
+# Emby and provision sit on kine_internal; Dispatcharr shares gluetun's namespace.
+DISPATCHARR_HDHR = "http://gluetun:9191/hdhr"
+DISPATCHARR_BASE = "http://gluetun:9191"
 EMBY_BASE = "http://emby:8096"
 
 

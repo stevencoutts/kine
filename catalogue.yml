@@ -171,12 +171,14 @@ apps:
   dispatcharr:
     name: Dispatcharr
     tier: live
-    summary: IPTV, EPG, VOD and DVR manager. Proxies streams to Emby.
+    summary: IPTV, EPG, VOD and DVR manager. Proxies streams to Emby over the VPN.
     releases: https://github.com/Dispatcharr/Dispatcharr/releases
-    internal: http://dispatcharr:9191
+    internal: http://gluetun:9191
     subdomain: tv
     provides: [iptv]
     wires: [emby-tuner]
+    requires: [gluetun]
+    tunnelled: forced
     # dispatcharr publishes a floating :dev image.
     dev_tag: dev
     default: true
@@ -186,10 +188,11 @@ apps:
     tier: live
     summary: Channel management front end for Dispatcharr.
     releases: https://github.com/MotWakorb/enhancedchannelmanager/releases
-    internal: http://ecm:8080
+    internal: http://gluetun:6100
     subdomain: channels
-    requires: [dispatcharr]
+    requires: [gluetun, dispatcharr]
     wires: [dispatcharr-link]
+    tunnelled: forced
     dev_tag: dev
     default: true
 
@@ -198,10 +201,11 @@ apps:
     tier: live
     summary: Generates per-team sports EPG channels for Dispatcharr.
     releases: https://github.com/Pharaoh-Labs/teamarr/releases
-    internal: http://teamarr:8080
+    internal: http://gluetun:9195
     subdomain: sports
-    requires: [dispatcharr]
+    requires: [gluetun, dispatcharr]
     wires: [dispatcharr-link]
+    tunnelled: forced
     dev_tag: dev
     default: true
 

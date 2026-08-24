@@ -1,13 +1,19 @@
+# Live TV apps share gluetun's network namespace so IPTV egress
+# uses the VPN kill switch. No ports, networks, or Traefik labels
+# here — those live on the gluetun service (port 9191).
+#
+# Do not pass PUID/PGID: remapping to a host nologin account breaks
+# embedded Postgres init ("This account is currently not available").
 services:
   dispatcharr:
     image: ghcr.io/dispatcharr/dispatcharr:${DISPATCHARR_TAG}
     container_name: kine-dispatcharr
     profiles: ["dispatcharr"]
     restart: unless-stopped
-    # All-in-one mode (embedded Postgres + Redis). Do not pass PUID/PGID:
-    # Dispatcharr remaps its user to those IDs, and host service accounts with
-    # /usr/sbin/nologin (e.g. kine) make Postgres init fail with
-    # "This account is currently not available".
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    network_mode: "service:gluetun"
     environment:
       TZ: ${KINE_TIMEZONE}
       DISPATCHARR_ENV: aio
@@ -17,14 +23,9 @@ services:
     volumes:
       - ${STACK_ROOT}/config/dispatcharr:/data
       - ${DATA_ROOT}/media/recordings:/data/recordings
-    networks: [kine_internal, kine_edge]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:9191/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 90s
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.dispatcharr.rule=Host(`tv.${KINE_DOMAIN}`) || Host(`tv.${KINE_LOCAL_DOMAIN}`)
-      - traefik.http.services.dispatcharr.loadbalancer.server.port=9191

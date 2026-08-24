@@ -40,7 +40,7 @@ def test_write_dispatcharr_token_sets_url_and_token(tmp_path, monkeypatch):
     changed = envfiles.write_dispatcharr_token("ecm", "abc-token", lambda m: None)
     assert changed is True
     text = (tmp_path / "config" / "ecm" / "ecm.env").read_text()
-    assert "DISPATCHARR_URL=http://dispatcharr:9191" in text
+    assert "DISPATCHARR_URL=http://127.0.0.1:9191" in text
     assert "DISPATCHARR_TOKEN=abc-token" in text
     changed2 = envfiles.write_dispatcharr_token("ecm", "abc-token", lambda m: None)
     assert changed2 is False

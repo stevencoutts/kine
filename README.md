@@ -299,9 +299,12 @@ global via `VPN_TUNNELLED_APPS`. OpenVPN can be stored as a type later; only
 WireGuard activates in this release.
 
 Most of the acquisition tier does not merely route through gluetun. Sonarr,
-Radarr, Prowlarr, Bazarr, Transmission, NZBGet, Unpackerr, and Recyclarr join
-gluetun's network namespace with `network_mode: service:gluetun`. Seerr stays
-on `kine_internal` and talks to those apps as `gluetun:<port>`.
+Radarr, Prowlarr, Bazarr, Transmission, NZBGet, and Unpackerr join
+gluetun's network namespace with `network_mode: service:gluetun`. Live TV
+(Dispatcharr, ECM, Teamarr) joins the same tunnel so IPTV egress uses the
+VPN. Seerr stays on `kine_internal` and talks to those apps as
+`gluetun:<port>`. Emby stays untunnelled and reaches Dispatcharr HDHomeRun
+at `gluetun:9191`.
 
 Consequences:
 

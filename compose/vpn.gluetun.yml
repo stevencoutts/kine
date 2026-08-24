@@ -92,6 +92,18 @@ services:
       - traefik.http.routers.nzbget.service=nzbget
       - traefik.http.services.nzbget.loadbalancer.server.port=6789
 
+      - traefik.http.routers.dispatcharr.rule=Host(`tv.${KINE_DOMAIN}`) || Host(`tv.${KINE_LOCAL_DOMAIN}`)
+      - traefik.http.routers.dispatcharr.service=dispatcharr
+      - traefik.http.services.dispatcharr.loadbalancer.server.port=9191
+
+      - traefik.http.routers.ecm.rule=Host(`channels.${KINE_DOMAIN}`) || Host(`channels.${KINE_LOCAL_DOMAIN}`)
+      - traefik.http.routers.ecm.service=ecm
+      - traefik.http.services.ecm.loadbalancer.server.port=6100
+
+      - traefik.http.routers.teamarr.rule=Host(`sports.${KINE_DOMAIN}`) || Host(`sports.${KINE_LOCAL_DOMAIN}`)
+      - traefik.http.routers.teamarr.service=teamarr
+      - traefik.http.services.teamarr.loadbalancer.server.port=9195
+
   # Keeps Transmission's listening port in step with the port Proton
   # forwards, which rotates. Without this you get no incoming peers.
   vpn-portsync:

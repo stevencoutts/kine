@@ -1,6 +1,5 @@
-# Enhanced Channel Manager: a channel-management front end for
-# Dispatcharr. Pointless without it, so the profile is gated in
-# catalogue.yml on dispatcharr being enabled.
+# Enhanced Channel Manager — tunnelled with Dispatcharr.
+# Traefik router lives on gluetun (port 6100).
 services:
   ecm:
     image: ghcr.io/motwakorb/enhancedchannelmanager:${ECM_TAG}
@@ -8,19 +7,18 @@ services:
     profiles: ["ecm"]
     restart: unless-stopped
     depends_on:
+      gluetun:
+        condition: service_healthy
       dispatcharr:
         condition: service_started
+    network_mode: "service:gluetun"
     environment:
       TZ: ${KINE_TIMEZONE}
       PUID: ${PUID}
       PGID: ${PGID}
-      DISPATCHARR_URL: http://dispatcharr:9191
+      ECM_PORT: "6100"
+      DISPATCHARR_URL: http://127.0.0.1:9191
     env_file:
       - ${STACK_ROOT}/config/ecm/ecm.env
     volumes:
       - ${STACK_ROOT}/config/ecm:/config
-    networks: [kine_internal, kine_edge]
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.ecm.rule=Host(`channels.${KINE_DOMAIN}`) || Host(`channels.${KINE_LOCAL_DOMAIN}`)
-      - traefik.http.services.ecm.loadbalancer.server.port=8080

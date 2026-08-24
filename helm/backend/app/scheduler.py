@@ -224,7 +224,7 @@ async def _dispatcharr_needs_wire() -> bool:
             hosts = resp.json() if resp.content else []
             if not isinstance(hosts, list):
                 return True
-            want = "http://dispatcharr:9191/hdhr"
+            want = "http://gluetun:9191/hdhr"
             for host in hosts:
                 if isinstance(host, dict) and str(host.get("Url") or "").rstrip("/") == want:
                     return False

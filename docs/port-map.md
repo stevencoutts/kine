@@ -18,6 +18,7 @@ start. Anything added to tier 2 must claim a free port here first.
 
 | Port | Application | Reached from outside as |
 |---|---|---|
+| 6100 | ECM | `gluetun:6100` |
 | 6767 | Bazarr | `gluetun:6767` |
 | 6789 | NZBGet | `gluetun:6789` |
 | 7878 | Radarr | `gluetun:7878` |
@@ -25,6 +26,8 @@ start. Anything added to tier 2 must claim a free port here first.
 | 8989 | Sonarr | `gluetun:8989` |
 | 9091 | Transmission | `gluetun:9091` |
 | 9117 | Jackett | `gluetun:9117` |
+| 9191 | Dispatcharr | `gluetun:9191` |
+| 9195 | Teamarr | `gluetun:9195` |
 | 9696 | Prowlarr | `gluetun:9696` |
 
 Inside the namespace, apps address each other as `127.0.0.1:<port>`.
@@ -39,9 +42,7 @@ Untunnelled, on their own service names as usual:
 | Emby | `emby:8096` |
 | Tdarr | `tdarr:8265` (UI), `tdarr:8266` (server) |
 | Seerr | `seerr:5055` |
-| Dispatcharr | `dispatcharr:9191` |
-| ECM | `ecm:8080` |
-| Teamarr | `teamarr:8080` |
 
 Seerr reaches tunnelled Sonarr/Radarr as `gluetun:8989` and
-`gluetun:7878` (see the table above).
+`gluetun:7878`. Emby reaches Dispatcharr HDHomeRun as
+`gluetun:9191/hdhr`.

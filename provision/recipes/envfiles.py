@@ -46,7 +46,8 @@ def write_dispatcharr_token(app: str, token: str, log) -> bool:
     for key in ("DISPATCHARR_URL", "DISPATCHARR_TOKEN"):
         if key not in order:
             order.append(key)
-    existing["DISPATCHARR_URL"] = "http://dispatcharr:9191"
+    # ECM/Teamarr share gluetun's namespace with Dispatcharr.
+    existing["DISPATCHARR_URL"] = "http://127.0.0.1:9191"
     existing["DISPATCHARR_TOKEN"] = token or ""
     body = "\n".join(f"{k}={existing[k]}" for k in order) + "\n"
     if target.exists() and target.read_text() == body:
