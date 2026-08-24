@@ -500,8 +500,8 @@ async def fetch_art(
                 f"{base}/photo/:/transcode",
                 {"X-Plex-Token": token, "Accept": "image/jpeg"},
                 {
-                    "width": 280,
-                    "height": 420,
+                    "width": 420,
+                    "height": 560,
                     "minSize": 1,
                     "upscale": 1,
                     "url": path,
