@@ -74,7 +74,17 @@ def test_embeddable_requires_flag_and_internal(monkeypatch):
     assert not embed_proxy.embeddable({"embed": True, "subdomain": "sonarr"})
 
 
-def test_mount_does_not_treat_request_as_query_param():
+def test_filter_request_headers_forces_identity_encoding():
+    out = embed_proxy._filter_request_headers([
+        ("Host", "admin.example"),
+        ("Accept-Encoding", "gzip, deflate, br"),
+        ("Cookie", "kine_session=abc"),
+        ("Connection", "keep-alive"),
+    ])
+    assert out["accept-encoding"] == "identity"
+    assert out["Cookie"] == "kine_session=abc"
+    assert "Connection" not in out and "connection" not in out
+
     """Regression: local Request import + future annotations made Open return
     {"detail":[{"loc":["query","request"],"msg":"field required"...}]}."""
     from fastapi import FastAPI

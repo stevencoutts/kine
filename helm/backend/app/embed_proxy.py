@@ -63,7 +63,14 @@ def _filter_request_headers(headers: Iterable[tuple[str, str]]) -> dict[str, str
     for key, value in headers:
         if key.lower() in _HOP_BY_HOP:
             continue
+        # Never forward Accept-Encoding: httpx may not decode brotli/zstd, and we
+        # strip Content-Encoding below — that leaves compressed bytes labeled as
+        # text/html (Safari then shows mojibake in the embed iframe).
+        if key.lower() == "accept-encoding":
+            continue
         out[key] = value
+    # Ask for encodings httpx always decompresses.
+    out["accept-encoding"] = "identity"
     return out
 
 
