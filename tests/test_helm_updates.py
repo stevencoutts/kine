@@ -25,9 +25,57 @@ def test_parse_report():
     assert rows[1]["update_available"] is True
 
 
-def test_pending_ids():
-    rows = updates_info.parse_report(SAMPLE_REPORT)
-    assert updates_info.pending_ids(rows) == ["radarr"]
+def test_enrich_marks_hidden_and_unknown_as_core(monkeypatch):
+    monkeypatch.setattr(updates_info.config, "read", lambda: {})
+    monkeypatch.setattr(updates_info.config, "profiles", lambda: ["sonarr", "cadvisor"])
+    monkeypatch.setattr(updates_info.channels, "channels", lambda: [])
+    monkeypatch.setattr(
+        updates_info.catalogue, "load",
+        lambda: {
+            "sonarr": {"name": "Sonarr", "hidden": False},
+            "cadvisor": {"name": "cAdvisor", "hidden": True},
+        },
+    )
+    rows = updates_info.enrich([
+        {"id": "sonarr", "tag": "latest", "update_available": False},
+        {"id": "cadvisor", "tag": "latest", "update_available": True},
+        {"id": "traefik", "tag": "latest", "update_available": False},
+    ])
+    by_id = {r["id"]: r for r in rows}
+    assert by_id["sonarr"]["core"] is False
+    assert by_id["cadvisor"]["core"] is True
+    assert by_id["traefik"]["core"] is True
+
+
+def test_mark_container_current_clears_pending(tmp_path, monkeypatch):
+    import types
+    sys.modules.setdefault(
+        "croniter",
+        types.SimpleNamespace(croniter=lambda *a, **k: None),
+    )
+    from app import scheduler
+
+    state = tmp_path / "helm-jobs.json"
+    state.write_text(json.dumps({
+        "updates": {
+            "ok": True,
+            "pending": ["cadvisor", "sonarr"],
+            "containers": [
+                {"id": "cadvisor", "update_available": True,
+                 "local_digest": "aaa", "remote_digest": "bbb"},
+                {"id": "sonarr", "update_available": True,
+                 "local_digest": "ccc", "remote_digest": "ddd"},
+            ],
+            "report": "",
+        }
+    }))
+    monkeypatch.setattr(scheduler, "STATE", state)
+    scheduler.mark_container_current("cadvisor")
+    data = json.loads(state.read_text())
+    by_id = {c["id"]: c for c in data["updates"]["containers"]}
+    assert by_id["cadvisor"]["update_available"] is False
+    assert by_id["cadvisor"]["local_digest"] == "bbb"
+    assert data["updates"]["pending"] == ["sonarr"]
 
 
 def test_parse_running_json_lines():

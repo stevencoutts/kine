@@ -599,22 +599,16 @@ render.updates = async (refresh=false) => {
       <button class="act" id="refresh">Check Now</button>
       <span id="age" style="color:var(--muted);font-size:.8rem"></span>
     </div>
-    <div class="updates-wrap"><table class="updates-table">
-      <thead><tr>
-        <th>Container</th><th>Channel</th><th>Tag</th>
-        <th>Current digest</th><th>Latest digest</th><th>Status</th><th></th>
-      </tr></thead>
-      <tbody id="rows"><tr><td colspan="7" style="color:var(--muted)">${
-        refresh ? 'checking registries…' : 'loading…'
-      }</td></tr></tbody>
-    </table></div>
+    <div id="updates-body"><p style="color:var(--muted)">${
+      refresh ? 'checking registries…' : 'loading…'
+    }</p></div>
     <pre id="rep" style="margin-top:1rem;display:none"></pre></div>`);
   $('#refresh').onclick = () => render.updates(true);
   const r = await api('/updates' + (refresh ? '?refresh=true' : ''));
   const rows = r.containers || [];
   $('#age').textContent = r.cached ? `cached, checked ${r.checked || 'unknown'}` : 'just checked';
   const fmtDigest = d => (!d || d === 'none' || d === '?') ? '—' : d;
-  const rowHtml = rows.map(c => {
+  const rowHtml = (list) => list.map(c => {
     const ch = c.channel === 'dev'
       ? `<span class="badge dev">dev</span>`
       : `<span class="badge muted">prod</span>`;
@@ -636,18 +630,73 @@ render.updates = async (refresh=false) => {
       <td>${btn}</td>
     </tr>`;
   }).join('');
-  $('#rows').innerHTML = rowHtml || `<tr><td colspan="7" style="color:var(--muted)">No updatable images in the active compose project.</td></tr>`;
+  const section = (title, list, key) => {
+    const pending = list.filter(c => c.update_available);
+    const allBtn = pending.length
+      ? `<button class="act primary" data-up-all="${key}">Update All (${pending.length})</button>`
+      : '';
+    const body = list.length
+      ? `<div class="updates-wrap"><table class="updates-table">
+          <thead><tr>
+            <th>Container</th><th>Channel</th><th>Tag</th>
+            <th>Current digest</th><th>Latest digest</th><th>Status</th><th></th>
+          </tr></thead>
+          <tbody>${rowHtml(list)}</tbody>
+        </table></div>`
+      : `<p style="color:var(--muted);font-size:.85rem">None in this group.</p>`;
+    return `<div class="section" style="margin-top:1.25rem">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <h3 style="margin:0">${title}</h3>${allBtn}
+      </div>${body}</div>`;
+  };
+  const apps = rows.filter(c => !c.core);
+  const core = rows.filter(c => c.core);
+  $('#updates-body').innerHTML = rows.length
+    ? section('Apps', apps, 'apps') + section('Core containers', core, 'core')
+    : `<p style="color:var(--muted)">No updatable images in the active compose project.</p>`;
+
+  const applyOne = async (id, log) => {
+    log.textContent += (log.textContent ? '\n' : '') +
+      `→ ${id}: snapshotting, pulling and recreating…`;
+    const res = await api('/updates/' + id, {method:'POST'});
+    log.textContent += res.rolled_back
+      ? `\nROLLED BACK ${id}\n${res.log}\n`
+      : `\nOK ${id}\n${res.log}\n`;
+    if (res.rolled_back || !res.ok) throw new Error(id + ' failed');
+  };
+
   document.querySelectorAll('[data-up]').forEach(b => b.onclick = async () => {
     b.disabled = true; b.textContent = 'updating…';
     const rep = $('#rep');
     rep.style.display = 'block';
-    rep.textContent = 'snapshotting config, then pulling and recreating ' + b.dataset.up + '…\n(this can take a minute; progress appears when the job finishes)';
+    rep.textContent = '';
     try {
-      const res = await api('/updates/'+b.dataset.up, {method:'POST'});
-      rep.textContent = res.rolled_back ? 'ROLLED BACK\n\n' + res.log : res.log;
-      render.updates(true);
+      await applyOne(b.dataset.up, rep);
+      // Reload from cache — apply already cleared this row server-side.
+      render.updates(false);
     } catch (e) {
-      rep.textContent = e.message;
+      rep.textContent += '\n' + (e.message || e);
+      b.disabled = false; b.textContent = 'Update';
+    }
+  });
+
+  document.querySelectorAll('[data-up-all]').forEach(b => b.onclick = async () => {
+    const group = b.dataset.upAll === 'core' ? core : apps;
+    const pending = group.filter(c => c.update_available).map(c => c.id);
+    if (!pending.length) return;
+    b.disabled = true;
+    document.querySelectorAll('[data-up], [data-up-all]').forEach(el => el.disabled = true);
+    const rep = $('#rep');
+    rep.style.display = 'block';
+    rep.textContent = `Updating ${pending.length} ${b.dataset.upAll} container(s) one at a time…\n`;
+    try {
+      for (const id of pending) {
+        await applyOne(id, rep);
+      }
+      render.updates(false);
+    } catch (e) {
+      rep.textContent += `\nStopped: ${e.message || e}\n`;
+      render.updates(false);
     }
   });
 };

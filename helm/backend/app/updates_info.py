@@ -37,15 +37,21 @@ def enrich(rows: list[dict], *, running: set[str] | None = None) -> list[dict]:
     cat = catalogue.load()
     dev_on = set(channels.channels())
     enabled = set(config.profiles())
-    running = running or set()
 
     out: list[dict] = []
     for row in rows:
         app_id = row["id"]
-        meta = cat.get(app_id, {})
+        meta = cat.get(app_id) or {}
         tkey = channels.tag_key(app_id)
         env_tag = env.get(tkey, "").strip()
         channel = "dev" if app_id in dev_on else "prod"
+        # Hidden catalogue entries are plumbing; anything compose lists that
+        # is not in the catalogue (Traefik, Helm, …) is plumbing too.
+        core = bool(meta.get("hidden")) if app_id in cat else True
+        if running is None:
+            is_running = bool(row.get("running"))
+        else:
+            is_running = app_id in running
         item = {
             **row,
             "name": meta.get("name", app_id),
@@ -54,7 +60,8 @@ def enrich(rows: list[dict], *, running: set[str] | None = None) -> list[dict]:
             "stable_tag": env.get(channels.stable_tag_key(app_id), "") if app_id in dev_on else "",
             "dev_supported": channels.supported(meta),
             "enabled": app_id in enabled,
-            "running": app_id in running,
+            "running": is_running,
+            "core": core,
         }
         out.append(item)
     return out
@@ -99,10 +106,12 @@ async def fetch(compose, *, refresh: bool = False) -> dict:
         cached = scheduler.status().get("updates")
         if cached:
             if cached.get("containers"):
+                # Re-enrich so new fields (core) appear without a registry hit.
+                containers = enrich(cached["containers"])
                 return {
                     "ok": cached["ok"],
-                    "containers": cached["containers"],
-                    "pending": cached.get("pending", []),
+                    "containers": containers,
+                    "pending": pending_ids(containers),
                     "checked": cached.get("checked"),
                     "report": cached.get("report", ""),
                     "cached": True,
@@ -141,4 +150,7 @@ async def fetch(compose, *, refresh: bool = False) -> dict:
         "report": report,
         "cached": False,
     }
+    # Check Now and cold-cache fills must update the overnight file too,
+    # otherwise the next page load reverts to a stale "update" badge.
+    scheduler.save_updates(payload)
     return payload

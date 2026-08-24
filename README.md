@@ -361,9 +361,11 @@ Helm tabs map to the same operations as the CLI:
   into a combined now-playing list.
 - **Stats** — embedded Grafana panels for the stack's own history. Offers to
   turn the Metrics tier on when it is off, so nothing else needs configuring.
-- **Updates** — one row per container: prod or dev channel, configured tag,
-  local vs registry digest, and an apply button when a newer image exists.
-  Checks are cached overnight; **Check Now** refreshes live from registries.
+- **Updates** — split into Apps and Core containers (catalogue `hidden`
+  entries and compose-only plumbing). Each section has an Update All that
+  runs one container at a time and stops on the first failure. Applying an
+  update clears that row in the overnight cache immediately; **Check Now**
+  is the only action that re-queries registries.
 - **Settings** — domain, TLS, NFS paths, Plex/Emby library notify, and
   OpenSubtitles credentials for Bazarr.
 

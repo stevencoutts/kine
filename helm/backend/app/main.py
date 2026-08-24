@@ -608,6 +608,10 @@ async def apply_update(app_id: str, user: str = Depends(require_user)):
     media stack breaks overnight, usually mid-import.
     """
     code, out = await compose.script("updates.sh", "apply", app_id, timeout=1200)
+    if code == 0:
+        # Clear the badge from the overnight cache immediately so the page
+        # does not still say "update" until the next full registry check.
+        scheduler.mark_container_current(app_id)
     return {"ok": code == 0, "rolled_back": code != 0, "log": out}
 
 

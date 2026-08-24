@@ -47,17 +47,52 @@ def _next(expr: str) -> float:
     return croniter(expr, datetime.now(timezone.utc)).get_next(float)
 
 
-async def _update_check() -> None:
-    payload = await updates_info.fetch(compose, refresh=True)
+def save_updates(payload: dict) -> None:
+    """Persist a digest-check result (overnight job or Check Now)."""
     data = _load()
     data["updates"] = {
-        "checked": payload["checked"],
-        "ok": payload["ok"],
-        "pending": payload["pending"],
-        "report": payload["report"],
-        "containers": payload["containers"],
+        "checked": payload.get("checked"),
+        "ok": payload.get("ok", True),
+        "pending": payload.get("pending", []),
+        "report": payload.get("report", ""),
+        "containers": payload.get("containers", []),
     }
     _save(data)
+
+
+def mark_container_current(app_id: str) -> None:
+    """After a successful apply, clear that row without re-querying registries.
+
+    The local digest is set to the remote one we already knew about — that
+    is what apply just pulled. Pending and the text report are recomputed
+    so the Metrics exporter and the next cached page load stay consistent.
+    """
+    data = _load()
+    updates = data.get("updates") or {}
+    containers = list(updates.get("containers") or [])
+    found = False
+    for row in containers:
+        if row.get("id") != app_id:
+            continue
+        remote = row.get("remote_digest")
+        if remote and remote not in ("?", "none"):
+            row["local_digest"] = remote
+        row["update_available"] = False
+        row["status"] = "current"
+        found = True
+        break
+    if not found:
+        return
+    updates["containers"] = containers
+    updates["pending"] = updates_info.pending_ids(containers)
+    updates["report"] = updates_info.text_report(containers)
+    data["updates"] = updates
+    _save(data)
+
+
+async def _update_check() -> None:
+    # fetch(refresh=True) already persists via save_updates.
+    await updates_info.fetch(compose, refresh=True)
 
 
 async def _backup() -> None:
