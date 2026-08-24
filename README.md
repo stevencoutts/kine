@@ -270,11 +270,14 @@ The script manages a `# BEGIN kine-nfs` block in `/etc/fstab` and mounts:
 
 Separate NFS mount points cannot hardlink to one another, even when they are
 exports from the same server. For Sonarr/Radarr hardlinks, mount one media
-export, put downloads under that same export (for example
-`…/media/downloads`), leave nested `NFS_TV` / `NFS_MOVIES` empty, and verify:
+export, set `NFS_DOWNLOADS` to a folder under that export (for example
+`…/media/downloads`), and leave nested `NFS_TV` / `NFS_MOVIES` empty.
+`mount-media.sh` then **bind-mounts** downloads from the media tree (a second
+NFS mount of the same folder still cannot hardlink). Verify:
 
 ```bash
 stat -c '%d' /srv/media-data/media /srv/media-data/downloads /srv/media-data/media/Movies
+ln /srv/media-data/downloads/.probe /srv/media-data/media/Movies/.probe && rm -f /srv/media-data/downloads/.probe /srv/media-data/media/Movies/.probe
 ```
 
 After changing NFS settings in Helm, run `mount-media.sh` on the host; Helm

@@ -37,6 +37,18 @@ fstab_line() {
     "$NFS_SERVER" "$export_path" "$mount_point" "$KINE_NFS_FSTAB_OPTS"
 }
 
+# Downloads under the media export must be a bind mount, not a second NFS
+# mount — separate NFS mounts cannot hardlink even on the same server path.
+downloads_under_media() {
+  local media="${NFS_MEDIA:-}"
+  local dl="${NFS_DOWNLOADS:-}"
+  [[ -n "$media" && -n "$dl" && "$dl" == "$media"/* ]]
+}
+
+downloads_media_subdir() {
+  printf '%s' "${NFS_DOWNLOADS#"${NFS_MEDIA}/"}"
+}
+
 write_fstab() {
   local tmp fstab
   fstab="$(host_path /etc/fstab)"
@@ -55,7 +67,12 @@ write_fstab() {
     if [[ -n "${NFS_MOVIES:-}" && "${NFS_MOVIES:-}" != "${NFS_MEDIA:-}" ]]; then
       fstab_line "${DATA_ROOT}/media/movies" "${NFS_MOVIES:-}"
     fi
-    fstab_line "${DATA_ROOT}/downloads" "${NFS_DOWNLOADS:-}"
+    if downloads_under_media; then
+      printf '%s %s none bind,nofail 0 0\n' \
+        "${DATA_ROOT}/media/$(downloads_media_subdir)" "${DATA_ROOT}/downloads"
+    else
+      fstab_line "${DATA_ROOT}/downloads" "${NFS_DOWNLOADS:-}"
+    fi
     fstab_line "${DATA_ROOT}/cache/tdarr" "${NFS_CACHE:-}"
     echo "# END kine-nfs"
   } >> "$tmp"
@@ -99,6 +116,43 @@ mount_export() {
   return 1
 }
 
+mount_downloads() {
+  local export_path="${NFS_DOWNLOADS:-}"
+  [[ -n "$export_path" ]] || return 0
+
+  if downloads_under_media; then
+    local src="${MEDIA_ROOT}/$(downloads_media_subdir)"
+    local media_spec="${NFS_SERVER}:${NFS_MEDIA}"
+    local subdir="/$(downloads_media_subdir)"
+    mkdir -p "$src" "$DOWNLOADS_ROOT"
+    if mountpoint -q "$DOWNLOADS_ROOT" 2>/dev/null; then
+      local current fsroot
+      current=$(findmnt -n -o SOURCE -M "$DOWNLOADS_ROOT")
+      fsroot=$(findmnt -n -o FSROOT -M "$DOWNLOADS_ROOT")
+      fsroot="${fsroot%/}"
+      # Bind of media/downloads shares the media NFS source with FSROOT=/downloads.
+      if [[ "$current" == "$media_spec" && "$fsroot" == "${subdir%/}" ]] \
+        || [[ "$current" == "$src" || "$current" == "${src}/" ]]; then
+        ok "Downloads already bind-mounted at ${DOWNLOADS_ROOT}"
+        return 0
+      fi
+      warn "Downloads remounting as bind of ${src} (was ${current} fsroot=${fsroot})"
+      umount "$DOWNLOADS_ROOT" || {
+        warn "could not unmount ${DOWNLOADS_ROOT}; stop dependent apps and retry"
+        return 1
+      }
+    fi
+    if mount --bind "$src" "$DOWNLOADS_ROOT"; then
+      ok "bind-mounted ${src} -> ${DOWNLOADS_ROOT}"
+      return 0
+    fi
+    warn "could not bind-mount ${src} at ${DOWNLOADS_ROOT}"
+    return 1
+  fi
+
+  mount_export "$DOWNLOADS_ROOT" "$export_path" "Downloads"
+}
+
 MEDIA_ROOT="$(host_path "${DATA_ROOT}/media")"
 TV_ROOT="$(host_path "${DATA_ROOT}/media/tv")"
 MOVIES_ROOT="$(host_path "${DATA_ROOT}/media/movies")"
@@ -140,7 +194,7 @@ fi
 if [[ -n "${NFS_MOVIES:-}" && "${NFS_MOVIES:-}" != "${NFS_MEDIA:-}" ]]; then
   mount_export "$MOVIES_ROOT" "${NFS_MOVIES:-}" "Movies"
 fi
-mount_export "$DOWNLOADS_ROOT" "${NFS_DOWNLOADS:-}" "Downloads"
+mount_downloads
 mount_export "$CACHE_ROOT" "${NFS_CACHE:-}" "Tdarr cache"
 
 # Apps expect lowercase tv/movies paths; link when the share uses Title case.
