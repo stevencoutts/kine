@@ -2,6 +2,8 @@
 import pathlib
 import sys
 
+import httpx
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "provision"))
 
@@ -54,3 +56,68 @@ def test_write_dispatcharr_token_preserves_extra_keys(tmp_path, monkeypatch):
     text = (d / "ecm.env").read_text()
     assert "OTHER=1" in text
     assert "DISPATCHARR_TOKEN=tok" in text
+
+
+class _FakeResp:
+    def __init__(self, status_code=200, payload=None):
+        self.status_code = status_code
+        self._payload = payload
+        self.content = b"x" if payload is not None else b""
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                "err", request=httpx.Request("GET", "http://x"), response=httpx.Response(self.status_code)
+            )
+
+    def json(self):
+        return self._payload
+
+
+class _FakeEmby:
+    def __init__(self):
+        self.hosts = []
+        self.posts = []
+
+    def get(self, path):
+        assert path == "/LiveTv/TunerHosts"
+        return _FakeResp(200, list(self.hosts))
+
+    def post(self, path, json=None):
+        assert path == "/LiveTv/TunerHosts"
+        self.posts.append(json)
+        self.hosts.append(json)
+        return _FakeResp(200, json)
+
+    def close(self):
+        pass
+
+
+def test_configure_links_emby_once(tmp_path, monkeypatch):
+    from recipes import dispatcharr, envfiles
+
+    monkeypatch.setattr(envfiles, "STACK", tmp_path)
+    monkeypatch.setenv("EMBY_API_KEY", "emby-key")
+    monkeypatch.setenv("DISPATCHARR_TOKEN", "disp-tok")
+    fake = _FakeEmby()
+    logs = []
+    enabled = {"dispatcharr", "emby", "ecm"}
+    r1 = dispatcharr.configure(enabled, "disp-tok", logs.append, emby_client=fake)
+    assert r1["emby_linked"] is True
+    assert fake.posts == [dispatcharr.tuner_host_payload()]
+    assert "ecm" in r1["env_changed"]
+    r2 = dispatcharr.configure(enabled, "disp-tok", logs.append, emby_client=fake)
+    assert r2["emby_linked"] is True
+    assert len(fake.posts) == 1
+    assert r2["env_changed"] == []
+
+
+def test_configure_skips_without_token(tmp_path, monkeypatch):
+    from recipes import dispatcharr, envfiles
+
+    monkeypatch.setattr(envfiles, "STACK", tmp_path)
+    monkeypatch.delenv("DISPATCHARR_TOKEN", raising=False)
+    logs = []
+    r = dispatcharr.configure({"dispatcharr", "ecm"}, None, logs.append)
+    assert r["env_changed"] == []
+    assert any("no API token" in m for m in logs)

@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
-from recipes import arr, bazarr, emby, envfiles, jackett, metrics, nzbget, prowlarr, recyclarr, seerr, transmission  # noqa: E402
+from recipes import arr, bazarr, dispatcharr, emby, envfiles, jackett, metrics, nzbget, prowlarr, recyclarr, seerr, transmission  # noqa: E402
 from seed import seed_all  # noqa: E402
 
 STATE = pathlib.Path("/stack/provision.log")
@@ -115,6 +115,16 @@ def wire(enabled: set[str]) -> None:
             nzbget.configure(enabled, log)
         except Exception as exc:  # noqa: BLE001
             log(f"nzbget: wiring failed ({exc})")
+
+    if "dispatcharr" in enabled:
+        try:
+            token = os.environ.get("DISPATCHARR_TOKEN", "").strip() or None
+            result = dispatcharr.configure(enabled, token, log)
+            changed = result.get("env_changed") or []
+            if changed:
+                log(f"dispatcharr: env updated for {', '.join(changed)} (recreate from Helm)")
+        except Exception as exc:  # noqa: BLE001
+            log(f"dispatcharr: wiring failed ({exc})")
 
     log("Provisioning complete")
 
