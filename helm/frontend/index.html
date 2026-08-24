@@ -628,6 +628,8 @@ render.updates = async (refresh=false) => {
     let btn = '';
     if (c.update_available && c.host_only) {
       btn = `<button class="act" data-host-up="${c.id}" title="Must be updated on the host">Host only</button>`;
+    } else if (c.update_available && c.enabled === false) {
+      btn = `<span style="color:var(--muted);font-size:.78rem">disabled</span>`;
     } else if (c.update_available) {
       btn = `<button class="act primary" data-up="${c.id}">Update</button>`;
     }
@@ -734,9 +736,9 @@ render.updates = async (refresh=false) => {
     }
   };
 
-  // dockerproxy is host_only: Helm reaches Docker through it, so applying
-  // an update from here stops the proxy mid-recreate and leaves it down.
-  const applyable = (c) => c.update_available && !c.host_only;
+  // dockerproxy is host_only; disabled apps must not be started by apply
+  // (`compose up -d <svc>` ignores COMPOSE_PROFILES when named explicitly).
+  const applyable = (c) => c.update_available && !c.host_only && c.enabled !== false;
 
   const bindUpdateButtons = () => {
     document.querySelectorAll('[data-up]').forEach(b => b.onclick = async () => {

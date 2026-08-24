@@ -449,16 +449,17 @@ async def disable_tier(tier: str, user: str = Depends(require_user)):
         if still_on:
             raise HTTPException(409, f"{', '.join(still_on)} depend on {app_id}")
     removed = sorted(to_remove & set(wanted))
-    for app_id in to_remove:
-        if app_id in wanted:
-            await compose.run("stop", app_id)
-            await compose.run("rm", "-f", app_id)
-    wanted = catalogue.prune_orphan_gluetun(
-        [p for p in wanted if p not in to_remove], cat,
-    )
-    config.set_profiles(wanted)
+    kept = [p for p in wanted if p not in to_remove]
+    pruned = catalogue.prune_orphan_deps(kept, cat)
+    # Stop both the visible apps and any hidden deps that became orphans
+    # (e.g. Prometheus after Grafana is gone).
+    stop_ids = sorted(set(wanted) - set(pruned))
+    for app_id in stop_ids:
+        await compose.run("stop", app_id)
+        await compose.run("rm", "-f", app_id)
+    config.set_profiles(pruned)
     await _refresh_mdns()
-    return {"ok": True, "disabled": removed}
+    return {"ok": True, "disabled": removed, "stopped": stop_ids}
 
 
 @app.post("/api/apps/{app_id}/enable")
@@ -470,9 +471,7 @@ async def enable(app_id: str, user: str = Depends(require_user)):
     wanted = config.profiles()
     # Pull in anything this app cannot work without, rather than
     # starting it into a broken state and letting the user find out.
-    for dep in cat[app_id].get("requires", []):
-        if dep not in wanted:
-            wanted.append(dep)
+    wanted = catalogue.resolve_deps(app_id, cat, list(wanted))
     if app_id not in wanted:
         wanted.append(app_id)
     config.set_profiles(wanted)
@@ -502,11 +501,16 @@ async def disable(app_id: str, user: str = Depends(require_user)):
     still_on = [d for d in dependants if d in config.profiles()]
     if still_on:
         raise HTTPException(409, f"{', '.join(still_on)} depend on {app_id}")
-    await compose.run("stop", app_id)
-    await compose.run("rm", "-f", app_id)
-    config.set_profiles([p for p in config.profiles() if p != app_id])
+    before = config.profiles()
+    kept = [p for p in before if p != app_id]
+    pruned = catalogue.prune_orphan_deps(kept, cat)
+    stop_ids = sorted(set(before) - set(pruned))
+    for sid in stop_ids:
+        await compose.run("stop", sid)
+        await compose.run("rm", "-f", sid)
+    config.set_profiles(pruned)
     await _refresh_mdns()
-    return {"ok": True}
+    return {"ok": True, "stopped": stop_ids}
 
 
 @app.post("/api/apps/{app_id}/restart")
@@ -622,6 +626,14 @@ async def apply_update(app_id: str, user: str = Depends(require_user)):
     """
     if app_id in HOST_ONLY_UPDATES:
         raise HTTPException(status_code=409, detail=HOST_ONLY_UPDATES[app_id])
+    # `compose up -d <svc>` starts a named service even when its profile is
+    # off, which is how a disabled Grafana came back after Update All.
+    if app_id not in config.profiles():
+        raise HTTPException(
+            status_code=409,
+            detail=f"{app_id} is disabled — enable it before updating, "
+                   "or Update All will skip it",
+        )
     code, out = await compose.script("updates.sh", "apply", app_id, timeout=1200)
     if code == 0:
         # Clear the badge from the overnight cache immediately so the page

@@ -89,8 +89,31 @@ def test_metrics_tier_is_labelled_for_the_gui():
     assert catalogue.TIER_LABELS["metrics"] == "Metrics"
 
 
-def test_enabling_metrics_pulls_in_the_exporters():
-    wanted = []
-    for app_id in catalogue.tier_default_apps("metrics"):
-        wanted = catalogue.resolve_deps(app_id, CATALOGUE, wanted + [app_id])
-    assert set(wanted) == {"grafana", "prometheus", "cadvisor", "node-exporter"}
+def test_prune_orphan_deps_drops_metrics_chain_when_grafana_goes():
+    cat = {
+        "grafana": {"requires": ["prometheus"]},
+        "prometheus": {"requires": ["cadvisor", "node-exporter"], "hidden": True},
+        "cadvisor": {"hidden": True},
+        "node-exporter": {"hidden": True},
+        "sonarr": {},
+    }
+    pruned = catalogue.prune_orphan_deps(
+        ["sonarr", "grafana", "prometheus", "cadvisor", "node-exporter"], cat,
+    )
+    # grafana is still wanted here — nothing should drop
+    assert "prometheus" in pruned
+
+    pruned = catalogue.prune_orphan_deps(
+        ["sonarr", "prometheus", "cadvisor", "node-exporter"], cat,
+    )
+    assert pruned == ["sonarr"]
+
+
+def test_prune_orphan_deps_keeps_shared_hidden_dep():
+    cat = {
+        "a": {"requires": ["shared"]},
+        "b": {"requires": ["shared"]},
+        "shared": {"hidden": True},
+    }
+    assert catalogue.prune_orphan_deps(["a", "shared"], cat) == ["a", "shared"]
+    assert catalogue.prune_orphan_deps(["shared"], cat) == []

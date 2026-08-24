@@ -64,3 +64,30 @@ def prune_orphan_gluetun(wanted: list[str], cat: dict) -> list[str]:
     if tunnelled & set(wanted):
         return wanted
     return [p for p in wanted if p != "gluetun"]
+
+
+def prune_orphan_deps(wanted: list[str], cat: dict) -> list[str]:
+    """Drop hidden plumbing that nothing remaining still requires.
+
+    Enabling Grafana pulls in Prometheus and the exporters. Disabling only
+    the visible app used to leave those three running forever; this walks
+    the requires graph and removes anything hidden that lost its last
+    dependent. Mandatory services are never touched.
+    """
+    wanted = list(wanted)
+    changed = True
+    while changed:
+        changed = False
+        needed: set[str] = set()
+        for app in wanted:
+            for dep in cat.get(app, {}).get("requires", []):
+                needed.add(dep)
+        next_wanted = []
+        for app in wanted:
+            meta = cat.get(app, {})
+            if meta.get("mandatory") or not meta.get("hidden") or app in needed:
+                next_wanted.append(app)
+            else:
+                changed = True
+        wanted = next_wanted
+    return prune_orphan_gluetun(wanted, cat)
