@@ -47,6 +47,9 @@ def test_apply_runtime_defaults_sets_password_and_paths(tmp_path: Path):
         "InterDir=/downloads/intermediate\n"
         "ControlUsername=nzbget\n"
         "ControlPassword=tegbzn6789\n"
+        "WriteBuffer=0\n"
+        "ArticleCache=0\n"
+        "WriteLog=append\n"
     )
     nzbget.apply_runtime_defaults(conf)
     text = conf.read_text()
@@ -54,7 +57,11 @@ def test_apply_runtime_defaults_sets_password_and_paths(tmp_path: Path):
     assert "InterDir=/data/downloads/incomplete" in text
     assert "ControlUsername=nzbget" in text
     assert "ControlPassword=nzbget" in text
+    assert "WriteBuffer=1024" in text
+    assert "ArticleCache=500" in text
+    assert "WriteLog=reset" in text
     assert "tegbzn6789" not in text
+    assert "WriteLog=append" not in text
 
 
 def test_apply_categories_matches_arr_clients(tmp_path: Path):

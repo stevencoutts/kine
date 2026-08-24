@@ -92,6 +92,18 @@ CONTROL_PASSWORD = "nzbget"
 DEST_DIR = "/data/downloads/complete"
 INTER_DIR = "/data/downloads/incomplete"
 
+# Quiet the stock-image warnings; values match the previous kore appliance.
+RUNTIME_DEFAULTS = {
+    "DestDir": DEST_DIR,
+    "InterDir": INTER_DIR,
+    "ControlUsername": CONTROL_USER,
+    "ControlPassword": CONTROL_PASSWORD,
+    "WriteBuffer": "1024",
+    "ArticleCache": "500",
+    "WriteLog": "reset",
+    "RotateLog": "3",
+}
+
 # Match Sonarr/Radarr download-client categories (and ensure_data_tree dirs).
 CATEGORIES = (
     {"name": "tv-sonarr", "dest": f"{DEST_DIR}/tv-sonarr"},
@@ -220,14 +232,12 @@ def apply_extensions(conf_path: pathlib.Path) -> None:
 
 
 def apply_runtime_defaults(conf_path: pathlib.Path) -> None:
-    """Fix stock image paths and set the appliance ControlPassword."""
+    """Fix stock image paths, password, and buffer/log defaults."""
     if not conf_path.is_file():
         return
     lines = conf_path.read_text().splitlines()
-    lines = _upsert_conf_key(lines, "DestDir", DEST_DIR)
-    lines = _upsert_conf_key(lines, "InterDir", INTER_DIR)
-    lines = _upsert_conf_key(lines, "ControlUsername", CONTROL_USER)
-    lines = _upsert_conf_key(lines, "ControlPassword", CONTROL_PASSWORD)
+    for key, value in RUNTIME_DEFAULTS.items():
+        lines = _upsert_conf_key(lines, key, value)
     conf_path.write_text("\n".join(lines) + "\n")
 
 
