@@ -57,6 +57,22 @@ def test_apply_runtime_defaults_sets_password_and_paths(tmp_path: Path):
     assert "tegbzn6789" not in text
 
 
+def test_apply_categories_matches_arr_clients(tmp_path: Path):
+    conf = tmp_path / "nzbget.conf"
+    conf.write_text(
+        "MainDir=/config\n"
+        "Category1.Name=Movies\n"
+        "Category2.Name=Series\n"
+    )
+    nzbget.apply_categories(conf)
+    text = conf.read_text()
+    assert "Category1.Name=tv-sonarr" in text
+    assert "Category1.DestDir=/data/downloads/complete/tv-sonarr" in text
+    assert "Category2.Name=radarr" in text
+    assert "Movies" not in text
+    assert "Series" not in text
+
+
 def test_apply_servers_writes_contiguous_blocks(tmp_path: Path):
     conf = tmp_path / "nzbget.conf"
     conf.write_text("MainDir=/config\nServer9.Host=stale.example\nOther=1\n")

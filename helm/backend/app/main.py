@@ -105,6 +105,7 @@ def _apply_nzbget_conf(servers: list[dict] | None = None) -> None:
         if servers is not None:
             recipe.apply_servers(conf, servers)
         recipe.apply_runtime_defaults(conf)
+        recipe.apply_categories(conf)
         recipe.apply_extensions(conf)
 
 

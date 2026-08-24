@@ -92,6 +92,14 @@ CONTROL_PASSWORD = "nzbget"
 DEST_DIR = "/data/downloads/complete"
 INTER_DIR = "/data/downloads/incomplete"
 
+# Match Sonarr/Radarr download-client categories (and ensure_data_tree dirs).
+CATEGORIES = (
+    {"name": "tv-sonarr", "dest": f"{DEST_DIR}/tv-sonarr"},
+    {"name": "radarr", "dest": f"{DEST_DIR}/radarr"},
+)
+
+_CATEGORY_LINE = re.compile(r"^Category\d+\.", re.IGNORECASE)
+
 # Image / empty placeholders that mean "not really configured".
 _PLACEHOLDER_HOSTS = frozenset({
     "",
@@ -223,6 +231,28 @@ def apply_runtime_defaults(conf_path: pathlib.Path) -> None:
     conf_path.write_text("\n".join(lines) + "\n")
 
 
+def apply_categories(conf_path: pathlib.Path) -> None:
+    """Replace stock Categories with Sonarr/Radarr download-client names."""
+    if not conf_path.is_file():
+        return
+    lines = [ln for ln in conf_path.read_text().splitlines()
+             if not _CATEGORY_LINE.match(ln.strip())]
+    while lines and not lines[-1].strip():
+        lines.pop()
+    block = [""]
+    block.append("### CATEGORIES (managed by Kine) ###")
+    for i, cat in enumerate(CATEGORIES, start=1):
+        prefix = f"Category{i}"
+        block.extend([
+            f"{prefix}.Name={cat['name']}",
+            f"{prefix}.DestDir={cat['dest']}",
+            f"{prefix}.Unpack=yes",
+            f"{prefix}.Extensions=",
+            f"{prefix}.Aliases=",
+        ])
+    conf_path.write_text("\n".join(lines + block) + "\n")
+
+
 def _extension_ready(dest: pathlib.Path) -> bool:
     return (dest / "manifest.json").is_file() and (
         (dest / "main.py").is_file() or any(dest.glob("*.py"))
@@ -304,6 +334,7 @@ def seed(stack: pathlib.Path, enabled: set[str], log=print) -> None:
         apply_servers(conf, servers)
         log(f"  nzbget: updated {len(servers)} news server(s) in nzbget.conf")
     apply_runtime_defaults(conf)
+    apply_categories(conf)
     apply_extensions(conf)
     log(f"  nzbget: enabled extensions {EXTENSIONS_VALUE}")
 
@@ -332,6 +363,7 @@ def configure(enabled: set[str], log) -> None:
     else:
         log("nzbget: no news servers in .env yet")
     apply_runtime_defaults(conf)
+    apply_categories(conf)
     apply_extensions(conf)
     log(f"nzbget: control password set; paths {DEST_DIR} / {INTER_DIR}")
     log(
