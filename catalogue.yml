@@ -175,6 +175,7 @@ apps:
     releases: https://github.com/Dispatcharr/Dispatcharr/releases
     internal: http://gluetun:9191
     subdomain: tv
+    embed: true
     provides: [iptv]
     wires: [emby-tuner]
     requires: [gluetun]
@@ -190,6 +191,7 @@ apps:
     releases: https://github.com/MotWakorb/enhancedchannelmanager/releases
     internal: http://gluetun:6100
     subdomain: channels
+    embed: true
     requires: [gluetun, dispatcharr]
     wires: [dispatcharr-link]
     tunnelled: forced
@@ -203,6 +205,7 @@ apps:
     releases: https://github.com/Pharaoh-Labs/teamarr/releases
     internal: http://gluetun:9195
     subdomain: sports
+    embed: true
     requires: [gluetun, dispatcharr]
     wires: [dispatcharr-link]
     tunnelled: forced

@@ -100,6 +100,9 @@ def test_open_embeds_arr_apps_same_origin():
     # Transmission and NZBGet use the same same-origin embed path as the *arr apps.
     assert re.search(r"(?m)^  transmission:\n(?:    .*\n)*?    embed: true", cat)
     assert re.search(r"(?m)^  nzbget:\n(?:    .*\n)*?    embed: true", cat)
+    assert re.search(r"(?m)^  dispatcharr:\n(?:    .*\n)*?    embed: true", cat)
+    assert re.search(r"(?m)^  ecm:\n(?:    .*\n)*?    embed: true", cat)
+    assert re.search(r"(?m)^  teamarr:\n(?:    .*\n)*?    embed: true", cat)
 
 
 def test_media_overview_uses_settings_servers():
