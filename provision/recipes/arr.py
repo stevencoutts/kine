@@ -50,6 +50,8 @@ def transmission_client(category: str) -> dict:
 
 
 def nzbget_client(category: str) -> dict:
+    # Sonarr schema uses tvCategory; Radarr uses movieCategory.
+    category_field = "tvCategory" if category == "tv-sonarr" else "movieCategory"
     return {
         "enable": True,
         "protocol": "usenet",
@@ -65,7 +67,7 @@ def nzbget_client(category: str) -> dict:
             {"name": "useSsl", "value": False},
             {"name": "username", "value": "nzbget"},
             {"name": "password", "value": "nzbget"},
-            {"name": "category", "value": category},
+            {"name": category_field, "value": category},
         ],
     }
 
