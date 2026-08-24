@@ -75,6 +75,11 @@ def enrich(rows: list[dict], *, running: set[str] | None = None) -> list[dict]:
     return out
 
 
+def catalogue_apps(rows: list[dict]) -> list[dict]:
+    """Helm's Updates page is for catalogue apps, not stack plumbing."""
+    return [r for r in rows if not r.get("core")]
+
+
 def pending_ids(rows: list[dict]) -> list[str]:
     return [r["id"] for r in rows if r.get("update_available")]
 
@@ -115,7 +120,7 @@ async def fetch(compose, *, refresh: bool = False) -> dict:
         if cached:
             if cached.get("containers"):
                 # Re-enrich so new fields (core) appear without a registry hit.
-                containers = enrich(cached["containers"])
+                containers = catalogue_apps(enrich(cached["containers"]))
                 return {
                     "ok": cached["ok"],
                     "containers": containers,
@@ -126,7 +131,7 @@ async def fetch(compose, *, refresh: bool = False) -> dict:
                 }
             if cached.get("report"):
                 rows = parse_report(cached["report"])
-                containers = enrich(rows)
+                containers = catalogue_apps(enrich(rows))
                 return {
                     "ok": cached["ok"],
                     "containers": containers,
@@ -146,7 +151,7 @@ async def fetch(compose, *, refresh: bool = False) -> dict:
 
     ps_code, ps_out = await compose.run("ps", "--format", "json", timeout=60)
     running = parse_running(ps_out) if ps_code == 0 else set()
-    containers = enrich(rows, running=running)
+    containers = catalogue_apps(enrich(rows, running=running))
     pending = pending_ids(containers)
     report = text_report(containers) if containers else (out if isinstance(out, str) else "")
 

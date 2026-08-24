@@ -830,8 +830,8 @@ render.updates = async (refresh=false) => {
     <p style="color:var(--muted);font-size:.85rem">Nothing updates on its own.
     The overnight job only checks digests; applying an update snapshots
     config first and rolls back if the app does not come back healthy.
-    Update All runs one at a time. dockerproxy is host-only: Helm reaches
-    Docker through it, so recreating it from here would cut that path mid-apply.</p>
+    Update All runs one at a time. Core stack containers (Traefik, VPN,
+    dockerproxy) are updated on the host, not from here.</p>
     <div class="row" style="margin-bottom:1rem">
       <button class="act" id="refresh">Check Now</button>
       <span id="age" style="color:var(--muted);font-size:.8rem"></span>
@@ -896,9 +896,8 @@ render.updates = async (refresh=false) => {
       </div>${body}</div>`;
   };
   const apps = rows.filter(c => !c.core);
-  const core = rows.filter(c => c.core);
-  $('#updates-body').innerHTML = rows.length
-    ? section('Apps', apps, 'apps') + section('Core containers', core, 'core')
+  $('#updates-body').innerHTML = apps.length
+    ? section('Apps', apps, 'apps')
     : `<p style="color:var(--muted)">No updatable images in the active compose project.</p>`;
 
   if (state.updatesLog) {
@@ -1009,7 +1008,7 @@ render.updates = async (refresh=false) => {
   bindUpdateButtons();
 
   document.querySelectorAll('[data-up-all]').forEach(b => b.onclick = async () => {
-    const group = b.dataset.upAll === 'core' ? core : apps;
+    const group = apps;
     const pending = group.filter(applyable).map(c => c.id);
     if (!pending.length) return;
     document.querySelectorAll('[data-up], [data-up-all], #refresh').forEach(el => el.disabled = true);

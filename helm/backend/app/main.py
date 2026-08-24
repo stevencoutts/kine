@@ -708,6 +708,14 @@ async def apply_update(app_id: str, user: str = Depends(require_user)):
     # off, which is how a disabled Grafana came back after Update All.
     # Always-on plumbing (Traefik, Helm, …) is not catalogue/profile-gated.
     cat = catalogue.load()
+    meta = cat.get(app_id) or {}
+    is_core = bool(meta.get("hidden")) if app_id in cat else True
+    if is_core:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{app_id} is a core container — update it on the host, "
+                   "not from Helm",
+        )
     if app_id in cat and app_id not in config.profiles():
         raise HTTPException(
             status_code=409,

@@ -64,6 +64,7 @@ def test_enrich_marks_hidden_and_unknown_as_core(monkeypatch):
     by2 = {r["id"]: r for r in rows2}
     assert by2["cadvisor"]["enabled"] is False
     assert by2["traefik"]["enabled"] is True
+    assert [r["id"] for r in updates_info.catalogue_apps(rows)] == ["sonarr"]
 
 
 def test_mark_container_current_clears_pending(tmp_path, monkeypatch):

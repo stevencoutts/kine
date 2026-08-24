@@ -188,7 +188,13 @@ def test_helm_uses_grey_brand_and_favicon():
 
 
 # ── stats page ──────────────────────────────────────────────────
-def test_stats_tab_is_in_the_nav():
+def test_updates_page_lists_apps_not_core_containers():
+    assert "Core containers" not in FRONTEND
+    assert "section('Apps', apps, 'apps')" in FRONTEND
+    assert "section('Core containers'" not in FRONTEND
+    assert "catalogue_apps" in (ROOT / "helm" / "backend" / "app" / "updates_info.py").read_text()
+    assert "is a core container" in BACKEND
+
     assert "stats:'Stats'" in FRONTEND.replace(" ", "")
     assert "render.stats" in FRONTEND
 
