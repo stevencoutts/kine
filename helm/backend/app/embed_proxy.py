@@ -108,25 +108,32 @@ def _rewrite_set_cookie(value: str, prefix: str) -> str:
 
 def _bootstrap_script(prefix: str) -> str:
     # Injected into every HTML response. Goals:
-    # 1) Lock window.*.urlBase to the embed prefix (*arr may clear it later).
+    # 1) Lock window.*.urlBase/baseUrl to the embed prefix (*arr/Bazarr may clear it).
     # 2) Keep History API + script/img tags under /view/{app}/.
-    # 3) Prefix fetch/XHR/WebSocket absolute paths.
+    # 3) Prefix fetch/XHR/WebSocket absolute paths (incl. same-origin full URLs).
     return (
         "<script>(function(){"
         f"var P={prefix!r};"
-        "function abs(u){if(typeof u!=='string')return u;"
-        "if(!u||u.charAt(0)!=='/'||u.indexOf(P)===0)return u;return P+u;}"
+        # Prefix root-absolute paths. Also rewrite same-origin absolute URLs
+        # (Socket.IO builds https://host/api/socket.io — those must get P too).
+        "function abs(u){if(typeof u!=='string'||!u)return u;"
+        "if(u.indexOf('://')!==-1||u.indexOf('//')===0){try{"
+        "var x=new URL(u,location.href);if(x.origin!==location.origin)return u;"
+        "if(x.pathname.indexOf(P)!==0&&x.pathname.charAt(0)==='/')x.pathname=P+x.pathname;"
+        "return x.toString();}catch(e){return u;}}"
+        "if(u.charAt(0)!=='/'||u.indexOf(P)===0)return u;return P+u;}"
         "function fixNav(u){if(typeof u!=='string'||u==='')return u;"
         "if(u.charAt(0)==='?'||u.charAt(0)==='#')return u;"
         "if(u.indexOf('://')!==-1){try{var x=new URL(u);"
-        "if(x.origin===location.origin){x.pathname=abs(x.pathname);return x.pathname+x.search+x.hash;}"
+        "if(x.origin===location.origin){x.pathname=abs(x.pathname);"
+        "return x.pathname+x.search+x.hash;}"
         "return u;}catch(e){return u;}}"
         "if(u.charAt(0)!=='/')return u;return abs(u);}"
-        # Lock urlBase on the config object so later `obj.urlBase=''` cannot win.
+        # Lock urlBase (Sonarr/Radarr) and baseUrl (Bazarr) so empty values cannot win.
+        "function lockProp(obj,key){try{Object.defineProperty(obj,key,{configurable:true,"
+        "enumerable:true,get:function(){return P;},set:function(){}});}catch(e){obj[key]=P;}}"
         "function lockBase(obj){if(!obj||typeof obj!=='object')return obj;"
-        "try{Object.defineProperty(obj,'urlBase',{configurable:true,enumerable:true,"
-        "get:function(){return P;},set:function(){}});}catch(e){obj.urlBase=P;}"
-        "return obj;}"
+        "lockProp(obj,'urlBase');lockProp(obj,'baseUrl');return obj;}"
         "function forceBase(name){try{var cur=window[name];"
         "if(cur&&typeof cur==='object')cur=lockBase(cur);"
         "Object.defineProperty(window,name,{configurable:true,enumerable:true,"
@@ -204,12 +211,21 @@ def _bootstrap_script(prefix: str) -> str:
 
 
 def _rewrite_url_base(text: str, prefix: str) -> str:
-    """Sonarr/Radarr/Prowlarr set window.*.urlBase; empty means chunks load at /."""
-    return re.sub(
+    """Fill empty urlBase/baseUrl so assets and Socket.IO stay under /view/{app}/.
+
+    Sonarr/Radarr/Prowlarr use urlBase; Bazarr uses baseUrl (JSON in a script tag).
+    """
+    text = re.sub(
         r"(urlBase\s*:\s*)(['\"])\2",
         rf"\1\2{prefix}\2",
         text,
     )
+    text = re.sub(
+        r'(["\']baseUrl["\']\s*:\s*)(["\'])\2',
+        rf"\1\2{prefix}\2",
+        text,
+    )
+    return text
 
 
 def _rewrite_html(text: str, prefix: str) -> str:

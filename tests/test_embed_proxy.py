@@ -28,6 +28,8 @@ def test_rewrite_html_injects_bootstrap_and_prefixes_assets():
     assert "createElement" in out
     assert "forceBase" in out or "urlBase=P" in out
     assert "lockBase" in out
+    assert "lockProp" in out
+    assert "baseUrl" in out
     assert "pushState" in out
     assert "trapAttr" in out
     assert "setAttribute" in out
@@ -40,12 +42,24 @@ def test_rewrite_html_injects_bootstrap_and_prefixes_assets():
     assert "var ln=String(n).toLowerCase()" in out
     assert "sa.call(this,n,v)" in out
     assert "sa.call(this,ln,v)" not in out
+    # Same-origin absolute URLs (Socket.IO) must be rewritten.
+    assert "x.origin!==location.origin" in out or "x.origin===location.origin" in out
 
 
 def test_rewrite_url_base_empty_string():
     raw = "window.Radarr = {\n        urlBase: ''\n      };"
     out = embed_proxy._rewrite_url_base(raw, "/view/radarr")
     assert "urlBase: '/view/radarr'" in out or 'urlBase: "/view/radarr"' in out
+
+
+def test_rewrite_bazarr_base_url_json():
+    raw = (
+        'window.Bazarr = JSON.parse(`{"apiKey": "abc", "baseUrl": "", '
+        '"canUpdate": false}`);'
+    )
+    out = embed_proxy._rewrite_url_base(raw, "/view/bazarr")
+    assert '"baseUrl": "/view/bazarr"' in out or "\"baseUrl\": \"/view/bazarr\"" in out
+    assert '"baseUrl": ""' not in out
 
 
 def test_rewrite_html_skips_protocol_relative():
