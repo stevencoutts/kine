@@ -963,6 +963,9 @@ app.mount("/assets", StaticFiles(directory=FRONTEND), name="assets")
 
 @app.get("/{path:path}")
 async def spa(path: str):
+    # Never serve the Helm shell for /view/* — that is the app embed proxy.
+    if path == "view" or path.startswith("view/"):
+        raise HTTPException(404, "Not found")
     return FileResponse(
         FRONTEND / "index.html",
         headers={"Cache-Control": "no-cache"},

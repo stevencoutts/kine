@@ -24,8 +24,10 @@ def test_rewrite_html_injects_bootstrap_and_prefixes_assets():
     assert "var P='/view/sonarr'" in out or 'var P="/view/sonarr"' in out
     assert 'href="/view/sonarr/wanted"' in out
     assert 'src="/view/sonarr/Content/app.js"' in out
-    assert "urlBase:'/view/sonarr'" in out or 'urlBase:"/view/sonarr"' in out
+    assert "urlBase:'/view/sonarr'" in out or 'urlBase:"/view/sonarr"' in out or "urlBase: '/view/sonarr'" in out
     assert "createElement" in out
+    assert "forceBase" in out or "urlBase=P" in out
+    assert "pushState" in out
 
 
 def test_rewrite_url_base_empty_string():

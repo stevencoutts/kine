@@ -99,21 +99,28 @@ def _rewrite_set_cookie(value: str, prefix: str) -> str:
 
 
 def _bootstrap_script(prefix: str) -> str:
-    # Keep this compact: injected into every HTML response.
-    # Patches fetch/XHR/WS plus dynamic <script>/<link> insertion — *arr
-    # webpack chunks use document.createElement('script').src = '/931-….js'.
+    # Injected into every HTML response. Goals:
+    # 1) Force window.*.urlBase to the embed prefix (*arr overwrite it with '').
+    # 2) Keep History API + script tags under /view/{app}/ so routes match.
+    # 3) Prefix fetch/XHR/WebSocket absolute paths.
     return (
         "<script>(function(){"
         f"var P={prefix!r};"
         "function abs(u){if(typeof u!=='string')return u;"
         "if(!u||u.charAt(0)!=='/'||u.indexOf(P)===0)return u;return P+u;}"
-        "function fixEl(el,attr){if(!el||!el.setAttribute)return;"
-        "var v=el.getAttribute(attr);if(v&&v.charAt(0)==='/')el.setAttribute(attr,abs(v));"
-        "var d=Object.getOwnPropertyDescriptor(el.__proto__,attr)||"
-        "Object.getOwnPropertyDescriptor(HTMLElement.prototype,attr);"
-        "if(d&&d.set){Object.defineProperty(el,attr,{configurable:true,enumerable:true,"
-        "get:function(){return d.get.call(this);},"
-        "set:function(v){d.set.call(this,abs(v));}});}}"
+        "function fixNav(u){if(typeof u!=='string'||u==='')return u;"
+        "if(u.charAt(0)==='?'||u.charAt(0)==='#')return u;"
+        "if(u.indexOf('://')!==-1){try{var x=new URL(u);"
+        "if(x.origin===location.origin){x.pathname=abs(x.pathname);return x.pathname+x.search+x.hash;}"
+        "return u;}catch(e){return u;}}"
+        "if(u.charAt(0)!=='/')return u;return abs(u);}"
+        # Force *arr urlBase even when their inline script sets it to ''.
+        "function forceBase(name){try{var cur=window[name];"
+        "if(cur&&typeof cur==='object')cur.urlBase=P;"
+        "Object.defineProperty(window,name,{configurable:true,enumerable:true,"
+        "get:function(){return cur;},"
+        "set:function(v){cur=Object.assign({},v||{},{urlBase:P});}});}catch(e){}}"
+        "forceBase('Sonarr');forceBase('Radarr');forceBase('Prowlarr');forceBase('Bazarr');"
         "var f=window.fetch;window.fetch=function(i,n){"
         "if(typeof i==='string')i=abs(i);"
         "else if(i&&typeof i.url==='string')i=new Request(abs(i.url),i);"
@@ -131,17 +138,24 @@ def _bootstrap_script(prefix: str) -> str:
         "window.WebSocket.prototype=W.prototype;"
         "window.WebSocket.CONNECTING=W.CONNECTING;window.WebSocket.OPEN=W.OPEN;"
         "window.WebSocket.CLOSING=W.CLOSING;window.WebSocket.CLOSED=W.CLOSED;"
+        "var ps=history.pushState.bind(history);"
+        "history.pushState=function(s,t,u){return ps(s,t,u===undefined?u:fixNav(u));};"
+        "var rs=history.replaceState.bind(history);"
+        "history.replaceState=function(s,t,u){return rs(s,t,u===undefined?u:fixNav(u));};"
         "var ce=Document.prototype.createElement;"
-        "Document.prototype.createElement=function(t,o){"
-        "var el=ce.call(this,t,o);var n=String(t).toLowerCase();"
-        "if(n==='script')fixEl(el,'src');"
-        "if(n==='link')fixEl(el,'href');"
+        "Document.prototype.createElement=function(t,opt){"
+        "var el=ce.call(this,t,opt);var n=String(t).toLowerCase();"
+        "if(n==='script'||n==='link'){"
+        "var attr=n==='script'?'src':'href';"
+        "var d=Object.getOwnPropertyDescriptor(el.__proto__,attr);"
+        "if(d&&d.set){Object.defineProperty(el,attr,{configurable:true,enumerable:true,"
+        "get:function(){return d.get.call(this);},"
+        "set:function(v){d.set.call(this,abs(v));}});}}"
         "return el;};"
-        "var sa=Element.prototype.setAttribute;"
-        "Element.prototype.setAttribute=function(n,v){"
-        "n=String(n).toLowerCase();"
-        "if((n==='src'||n==='href')&&typeof v==='string')v=abs(v);"
-        "return sa.call(this,n,v);};"
+        # Keep the iframe on the embed prefix if something navigates to /.
+        "if(location.pathname!==P&&location.pathname.indexOf(P+'/')!==0)"
+        "{location.replace(P+'/'+location.pathname.replace(/^\\//,'')+location.search+location.hash);}"
+        "else if(location.pathname===P){history.replaceState(null,'',P+'/'+location.search+location.hash);}"
         "})();</script>"
     )
 
