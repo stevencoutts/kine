@@ -80,6 +80,8 @@ def test_download_clients_use_loopback_not_service_names():
     for client in (transmission_client("tv-sonarr"), nzbget_client("tv-sonarr")):
         host = [f for f in client["fields"] if f["name"] == "host"][0]["value"]
         assert host == "localhost", f"{client['name']} addresses {host}"
+    pw = [f for f in nzbget_client("tv-sonarr")["fields"] if f["name"] == "password"][0]["value"]
+    assert pw == "nzbget"
 
 
 def test_transmission_client_directory_matches_shared_data_mount():

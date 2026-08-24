@@ -87,6 +87,20 @@ EXTENSION_DEFAULTS = {
 EXTENSIONS_VALUE = ", ".join(ext["name"] for ext in DEFAULT_EXTENSIONS)
 
 
+CONTROL_USER = "nzbget"
+CONTROL_PASSWORD = "nzbget"
+DEST_DIR = "/data/downloads/complete"
+INTER_DIR = "/data/downloads/incomplete"
+
+# Image / empty placeholders that mean "not really configured".
+_PLACEHOLDER_HOSTS = frozenset({
+    "",
+    "my.newsserver.com",
+    "news.example.com",
+    "localhost",
+})
+
+
 def parse_servers(raw: str | None) -> list[dict]:
     """Parse NZBGET_NEWS_SERVERS JSON into a normalised list."""
     text = (raw or "").strip()
@@ -103,7 +117,7 @@ def parse_servers(raw: str | None) -> list[dict]:
         if not isinstance(row, dict):
             continue
         host = str(row.get("host") or "").strip()
-        if not host:
+        if not host or host.lower() in _PLACEHOLDER_HOSTS:
             continue
         encryption = bool(row.get("encryption", True))
         try:
@@ -197,6 +211,18 @@ def apply_extensions(conf_path: pathlib.Path) -> None:
     conf_path.write_text("\n".join(lines) + "\n")
 
 
+def apply_runtime_defaults(conf_path: pathlib.Path) -> None:
+    """Fix stock image paths and set the appliance ControlPassword."""
+    if not conf_path.is_file():
+        return
+    lines = conf_path.read_text().splitlines()
+    lines = _upsert_conf_key(lines, "DestDir", DEST_DIR)
+    lines = _upsert_conf_key(lines, "InterDir", INTER_DIR)
+    lines = _upsert_conf_key(lines, "ControlUsername", CONTROL_USER)
+    lines = _upsert_conf_key(lines, "ControlPassword", CONTROL_PASSWORD)
+    conf_path.write_text("\n".join(lines) + "\n")
+
+
 def _extension_ready(dest: pathlib.Path) -> bool:
     return (dest / "manifest.json").is_file() and (
         (dest / "main.py").is_file() or any(dest.glob("*.py"))
@@ -277,6 +303,7 @@ def seed(stack: pathlib.Path, enabled: set[str], log=print) -> None:
     if servers:
         apply_servers(conf, servers)
         log(f"  nzbget: updated {len(servers)} news server(s) in nzbget.conf")
+    apply_runtime_defaults(conf)
     apply_extensions(conf)
     log(f"  nzbget: enabled extensions {EXTENSIONS_VALUE}")
 
@@ -304,7 +331,9 @@ def configure(enabled: set[str], log) -> None:
         log(f"nzbget: applied {len(servers)} news server(s)")
     else:
         log("nzbget: no news servers in .env yet")
+    apply_runtime_defaults(conf)
     apply_extensions(conf)
+    log(f"nzbget: control password set; paths {DEST_DIR} / {INTER_DIR}")
     log(
         f"nzbget: enabled extensions "
         f"{', '.join(installed) if installed else EXTENSIONS_VALUE}"

@@ -64,7 +64,7 @@ def nzbget_client(category: str) -> dict:
             {"name": "port", "value": 6789},
             {"name": "useSsl", "value": False},
             {"name": "username", "value": "nzbget"},
-            {"name": "password", "value": "tegbzn6789"},
+            {"name": "password", "value": "nzbget"},
             {"name": "category", "value": category},
         ],
     }
@@ -285,8 +285,11 @@ def configure(app: str, enabled: set[str], log) -> None:
             log(f"{app}: download client Transmission")
 
     if "nzbget" in enabled:
-        if client.ensure("downloadclient", nzbget_client(category)):
+        action = client.upsert("downloadclient", nzbget_client(category))
+        if action == "created":
             log(f"{app}: download client NZBGet")
+        elif action == "updated":
+            log(f"{app}: updated NZBGet download client")
 
     # Completed download handling on, unmonitor nothing, no analytics.
     for cfg, patch in (

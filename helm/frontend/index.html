@@ -317,7 +317,8 @@ const promptNzbgetServers = (existing=[]) => new Promise((resolve) => {
 const enableNzbgetFlow = async (btn) => {
   let settings = {};
   try { settings = await api('/settings'); } catch (_) { settings = {}; }
-  const existing = settings.nzbget_news_servers || [];
+  // Always prompt when no real host is stored (empty env, placeholders, Skip).
+  const existing = (settings.nzbget_news_servers || []).filter(s => s && s.host);
   let body = undefined;
   if (!existing.length) {
     const choice = await promptNzbgetServers([]);
@@ -325,7 +326,21 @@ const enableNzbgetFlow = async (btn) => {
       btn.disabled = false; btn.textContent = 'Enable';
       return;
     }
-    if (!choice.skip) body = {news_servers: choice.servers || []};
+    if (choice.skip) {
+      body = {news_servers: []};
+    } else {
+      const servers = choice.servers || [];
+      if (!servers.length) {
+        btn.disabled = false; btn.textContent = 'Enable';
+        const tierMsg = $('#tier-msg');
+        if (tierMsg) {
+          tierMsg.className = 'banner bad';
+          tierMsg.textContent = 'Add a news server host, or choose Skip for Now.';
+        }
+        return;
+      }
+      body = {news_servers: servers};
+    }
   }
   await api('/apps/nzbget/enable', {
     method: 'POST',

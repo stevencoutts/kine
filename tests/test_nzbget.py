@@ -24,17 +24,37 @@ def _fake_extension_zip(name: str) -> bytes:
 
 def test_parse_servers_normalises_and_skips_blank_hosts():
     raw = json.dumps([
-        {"host": "news.example.com", "username": "u", "password": "p"},
+        {"host": "news.provider.example", "username": "u", "password": "p"},
         {"host": "  ", "name": "empty"},
+        {"host": "my.newsserver.com", "name": "placeholder"},
         {"name": "Plain", "host": "news2.example.com", "encryption": False, "port": "119"},
     ])
     servers = nzbget.parse_servers(raw)
     assert len(servers) == 2
-    assert servers[0]["host"] == "news.example.com"
+    assert servers[0]["host"] == "news.provider.example"
     assert servers[0]["port"] == 563
     assert servers[0]["encryption"] is True
+    assert servers[1]["host"] == "news2.example.com"
     assert servers[1]["port"] == 119
     assert servers[1]["encryption"] is False
+
+
+def test_apply_runtime_defaults_sets_password_and_paths(tmp_path: Path):
+    conf = tmp_path / "nzbget.conf"
+    conf.write_text(
+        "MainDir=/config\n"
+        "DestDir=/downloads/completed\n"
+        "InterDir=/downloads/intermediate\n"
+        "ControlUsername=nzbget\n"
+        "ControlPassword=tegbzn6789\n"
+    )
+    nzbget.apply_runtime_defaults(conf)
+    text = conf.read_text()
+    assert "DestDir=/data/downloads/complete" in text
+    assert "InterDir=/data/downloads/incomplete" in text
+    assert "ControlUsername=nzbget" in text
+    assert "ControlPassword=nzbget" in text
+    assert "tegbzn6789" not in text
 
 
 def test_apply_servers_writes_contiguous_blocks(tmp_path: Path):
@@ -113,7 +133,7 @@ def test_seed_installs_extensions_before_conf_exists(tmp_path: Path, monkeypatch
 
 def test_serialize_roundtrip():
     servers = [
-        {"host": "news.example.com", "name": "Primary", "port": 563,
+        {"host": "news.provider.example", "name": "Primary", "port": 563,
          "username": "u", "password": "p", "encryption": True, "connections": 12},
     ]
     assert nzbget.parse_servers(nzbget.serialize_servers(servers)) == servers

@@ -104,6 +104,7 @@ def _apply_nzbget_conf(servers: list[dict] | None = None) -> None:
     if conf.is_file():
         if servers is not None:
             recipe.apply_servers(conf, servers)
+        recipe.apply_runtime_defaults(conf)
         recipe.apply_extensions(conf)
 
 

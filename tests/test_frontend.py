@@ -136,6 +136,7 @@ def test_settings_nzbget_news_servers():
     assert "nzbget_news_servers" in FRONTEND
     assert "save-nzbget" in FRONTEND
     assert "enableNzbgetFlow" in FRONTEND
+    assert "Add a news server host, or choose Skip for Now." in FRONTEND
     assert "Extended Unpacker" in FRONTEND
     assert "Fake Detector" in FRONTEND
     assert "Remove Samples" in FRONTEND
