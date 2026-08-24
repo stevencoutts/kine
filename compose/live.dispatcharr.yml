@@ -4,11 +4,16 @@ services:
     container_name: kine-dispatcharr
     profiles: ["dispatcharr"]
     restart: unless-stopped
+    # All-in-one mode (embedded Postgres + Redis). Do not pass PUID/PGID:
+    # Dispatcharr remaps its user to those IDs, and host service accounts with
+    # /usr/sbin/nologin (e.g. kine) make Postgres init fail with
+    # "This account is currently not available".
     environment:
       TZ: ${KINE_TIMEZONE}
-      PUID: ${PUID}
-      PGID: ${PGID}
-      DISPATCHARR_ENV: prod
+      DISPATCHARR_ENV: aio
+      REDIS_HOST: localhost
+      CELERY_BROKER_URL: redis://localhost:6379/0
+      DISPATCHARR_LOG_LEVEL: info
     volumes:
       - ${STACK_ROOT}/config/dispatcharr:/data
       - ${DATA_ROOT}/media/recordings:/data/recordings
