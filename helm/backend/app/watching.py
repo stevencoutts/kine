@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 from typing import Any
+from urllib.parse import quote, urlencode
 
 import httpx
 
@@ -75,32 +76,74 @@ def _basename(path: str | None) -> str | None:
     return os.path.basename(cleaned) or cleaned
 
 
-def _plex_media_bits(item: dict) -> tuple[str | None, str | None, str | None]:
-    """Return (source, quality, stream)."""
+def art_proxy_path(server: str, path: str | None) -> str | None:
+    """Build a same-origin art URL for a Plex relative thumb path."""
+    if server != "plex" or not path or not isinstance(path, str):
+        return None
+    cleaned = path.strip()
+    if not cleaned.startswith("/") or cleaned.startswith("//") or ".." in cleaned:
+        return None
+    return f"/api/watching/art/plex?path={quote(cleaned, safe='')}"
+
+
+def emby_art_proxy_url(item_id: str | None, tag: str | None = None) -> str | None:
+    if not item_id or not isinstance(item_id, str):
+        return None
+    cleaned = item_id.strip()
+    if not cleaned or "/" in cleaned or ".." in cleaned:
+        return None
+    query: dict[str, str] = {"item_id": cleaned}
+    if tag and isinstance(tag, str) and tag.strip():
+        query["tag"] = tag.strip()
+    return f"/api/watching/art/emby?{urlencode(query)}"
+
+
+def _format_fields(
+    *,
+    resolution: str | None = None,
+    video_codec: str | None = None,
+    audio_codec: str | None = None,
+    bitrate_label: str | None = None,
+) -> dict[str, Any]:
+    formats = [x for x in (resolution, video_codec, audio_codec, bitrate_label) if x]
+    return {
+        "resolution": resolution,
+        "video_codec": video_codec,
+        "audio_codec": audio_codec,
+        "formats": formats,
+        "quality": " · ".join(formats) if formats else None,
+    }
+
+
+def _plex_media_bits(item: dict) -> dict[str, Any]:
+    """Return source/stream plus structured format fields."""
+    empty = {
+        "source": None,
+        "stream": None,
+        **_format_fields(),
+    }
     medias = _as_list(item.get("Media"))
     if not medias:
-        return None, None, None
+        return empty
     media = medias[0] if isinstance(medias[0], dict) else {}
     parts = _as_list(media.get("Part"))
     part = parts[0] if parts and isinstance(parts[0], dict) else {}
     source = _basename(part.get("file")) or (part.get("file") or "").strip() or None
-    quality_bits = []
+    resolution = None
     res = media.get("videoResolution")
     if res:
-        quality_bits.append(f"{res}p" if str(res).isdigit() else str(res))
+        resolution = f"{res}p" if str(res).isdigit() else str(res)
     elif media.get("height"):
-        quality_bits.append(f"{media['height']}p")
-    if media.get("videoCodec"):
-        quality_bits.append(str(media["videoCodec"]).upper())
-    if media.get("audioCodec"):
-        quality_bits.append(str(media["audioCodec"]).upper())
+        resolution = f"{media['height']}p"
+    video_codec = str(media["videoCodec"]).upper() if media.get("videoCodec") else None
+    audio_codec = str(media["audioCodec"]).upper() if media.get("audioCodec") else None
+    bitrate_label = None
     bitrate = media.get("bitrate")
     if bitrate:
         try:
-            quality_bits.append(f"{round(float(bitrate) / 1000)} Mbps")
+            bitrate_label = f"{round(float(bitrate) / 1000)} Mbps"
         except (TypeError, ValueError):
             pass
-    stream = None
     if item.get("TranscodeSession"):
         stream = "transcode"
     elif any(
@@ -111,7 +154,25 @@ def _plex_media_bits(item: dict) -> tuple[str | None, str | None, str | None]:
         stream = "transcode"
     else:
         stream = "direct"
-    return source, " · ".join(quality_bits) if quality_bits else None, stream
+    return {
+        "source": source,
+        "stream": stream,
+        **_format_fields(
+            resolution=resolution,
+            video_codec=video_codec,
+            audio_codec=audio_codec,
+            bitrate_label=bitrate_label,
+        ),
+    }
+
+
+def _plex_art_url(item: dict, kind: str) -> str | None:
+    thumb = None
+    if kind == "episode":
+        thumb = (item.get("grandparentThumb") or item.get("thumb") or "").strip() or None
+    else:
+        thumb = (item.get("thumb") or item.get("parentThumb") or "").strip() or None
+    return art_proxy_path("plex", thumb)
 
 
 def parse_plex_sessions(payload: dict) -> list[dict]:
@@ -155,7 +216,8 @@ def parse_plex_sessions(payload: dict) -> list[dict]:
 
         user = ((item.get("User") or {}).get("title") or "").strip()
         player = item.get("Player") or {}
-        source, quality, stream = _plex_media_bits(item)
+        media = _plex_media_bits(item)
+        source = media["source"]
         if kind == "channel" and not source:
             source = channel or (item.get("channelIdentifier") or None)
 
@@ -183,13 +245,18 @@ def parse_plex_sessions(payload: dict) -> list[dict]:
             "remaining_label": format_duration_ms(remaining),
             "library": (item.get("librarySectionTitle") or "").strip() or None,
             "source": source,
-            "quality": quality,
-            "stream": stream,
+            "quality": media["quality"],
+            "resolution": media["resolution"],
+            "video_codec": media["video_codec"],
+            "audio_codec": media["audio_codec"],
+            "formats": media["formats"],
+            "stream": media["stream"],
+            "art_url": _plex_art_url(item, kind or "unknown"),
         })
     return rows
 
 
-def _emby_media_bits(now: dict, session: dict) -> tuple[str | None, str | None, str | None]:
+def _emby_media_bits(now: dict, session: dict) -> dict[str, Any]:
     sources = _as_list(now.get("MediaSources"))
     source = None
     if sources and isinstance(sources[0], dict):
@@ -198,25 +265,27 @@ def _emby_media_bits(now: dict, session: dict) -> tuple[str | None, str | None, 
     if not source:
         source = _basename(now.get("Path")) or (now.get("Path") or "").strip() or None
 
-    quality_bits = []
+    resolution = None
     width = now.get("Width")
     height = now.get("Height")
     if height:
-        quality_bits.append(f"{height}p")
+        resolution = f"{height}p"
     elif width and height:
-        quality_bits.append(f"{width}x{height}")
+        resolution = f"{width}x{height}"
+    video_codec = None
+    audio_codec = None
     streams = _as_list(now.get("MediaStreams"))
     for stream in streams:
         if not isinstance(stream, dict):
             continue
         if stream.get("Type") == "Video" and stream.get("Codec"):
-            quality_bits.append(str(stream["Codec"]).upper())
+            video_codec = str(stream["Codec"]).upper()
             break
     for stream in streams:
         if not isinstance(stream, dict):
             continue
         if stream.get("Type") == "Audio" and stream.get("Codec"):
-            quality_bits.append(str(stream["Codec"]).upper())
+            audio_codec = str(stream["Codec"]).upper()
             break
 
     transcode = session.get("TranscodingInfo") or {}
@@ -227,11 +296,34 @@ def _emby_media_bits(now: dict, session: dict) -> tuple[str | None, str | None, 
         method = (play.get("PlayMethod") or "").lower()
         if "transcode" in method:
             stream = "transcode"
-        elif method:
-            stream = "direct"
         else:
             stream = "direct"
-    return source, " · ".join(quality_bits) if quality_bits else None, stream
+    return {
+        "source": source,
+        "stream": stream,
+        **_format_fields(
+            resolution=resolution,
+            video_codec=video_codec,
+            audio_codec=audio_codec,
+        ),
+    }
+
+
+def _emby_art_url(now: dict, kind: str) -> str | None:
+    if kind == "episode":
+        series_id = (now.get("SeriesId") or "").strip()
+        series_tag = (now.get("SeriesPrimaryImageTag") or "").strip() or None
+        if series_id:
+            return emby_art_proxy_url(series_id, series_tag)
+    if kind == "channel":
+        channel_id = (now.get("ChannelId") or now.get("Id") or "").strip()
+        tags = now.get("ImageTags") if isinstance(now.get("ImageTags"), dict) else {}
+        tag = (tags.get("Primary") or "").strip() or None
+        return emby_art_proxy_url(channel_id, tag)
+    item_id = (now.get("Id") or "").strip()
+    tags = now.get("ImageTags") if isinstance(now.get("ImageTags"), dict) else {}
+    tag = (tags.get("Primary") or "").strip() or None
+    return emby_art_proxy_url(item_id, tag)
 
 
 def parse_emby_sessions(payload: list | dict) -> list[dict]:
@@ -285,7 +377,8 @@ def parse_emby_sessions(payload: list | dict) -> list[dict]:
         duration_ms = int(float(runtime) / 10_000.0) if isinstance(runtime, (int, float)) else None
         remaining_ms = int(float(remaining) / 10_000.0) if isinstance(remaining, (int, float)) else None
 
-        source, quality, stream = _emby_media_bits(now, item)
+        media = _emby_media_bits(now, item)
+        source = media["source"]
         if kind == "channel" and not source:
             source = channel
 
@@ -313,8 +406,13 @@ def parse_emby_sessions(payload: list | dict) -> list[dict]:
             "remaining_label": format_duration_ticks(remaining),
             "library": (now.get("AlbumArtist") or now.get("CollectionType") or "").strip() or None,
             "source": source,
-            "quality": quality,
-            "stream": stream,
+            "quality": media["quality"],
+            "resolution": media["resolution"],
+            "video_codec": media["video_codec"],
+            "audio_codec": media["audio_codec"],
+            "formats": media["formats"],
+            "stream": media["stream"],
+            "art_url": _emby_art_url(now, kind),
         })
     return rows
 
@@ -330,6 +428,90 @@ async def _get_json(url: str, headers: dict, params: dict | None = None) -> Any:
         if not response.content:
             return {}
         return response.json()
+
+
+async def _get_bytes(url: str, headers: dict, params: dict | None = None) -> tuple[bytes, str]:
+    async with httpx.AsyncClient(timeout=8.0, verify=False, follow_redirects=True) as client:
+        response = await client.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        content_type = (response.headers.get("content-type") or "image/jpeg").split(";")[0].strip()
+        if not content_type.startswith("image/"):
+            content_type = "image/jpeg"
+        return response.content, content_type
+
+
+def _plex_base(env: dict) -> str | None:
+    host = env.get("PLEX_HOST", "").strip()
+    token = env.get("PLEX_TOKEN", "").strip()
+    if not host or not token:
+        return None
+    port = env.get("PLEX_PORT", "").strip() or "32400"
+    ssl = _env_bool(env.get("PLEX_USE_SSL", ""))
+    return media_base(host, port, ssl)
+
+
+def _emby_bases(env: dict) -> list[str]:
+    token = env.get("EMBY_API_KEY", "").strip()
+    host = env.get("EMBY_HOST", "").strip()
+    candidates: list[str] = []
+    if host and token:
+        port = env.get("EMBY_PORT", "").strip() or (
+            "443" if _env_bool(env.get("EMBY_USE_SSL", "")) else "8096"
+        )
+        ssl = _env_bool(env.get("EMBY_USE_SSL", ""))
+        candidates.append(media_base(host, port, ssl))
+    if "emby" in config.profiles() and token:
+        internal = "http://emby:8096"
+        if internal not in candidates:
+            candidates.append(internal)
+    return candidates
+
+
+async def fetch_art(
+    server: str,
+    *,
+    path: str | None = None,
+    item_id: str | None = None,
+    tag: str | None = None,
+) -> tuple[bytes, str]:
+    """Fetch poster/logo bytes from Plex or Emby using Settings credentials."""
+    env = config.read()
+    try:
+        if server == "plex":
+            if art_proxy_path("plex", path) is None:
+                raise ValueError("invalid plex art path")
+            base = _plex_base(env)
+            token = env.get("PLEX_TOKEN", "").strip()
+            if not base or not token:
+                raise LookupError("plex not configured")
+            return await _get_bytes(
+                f"{base}{path}",
+                {"X-Plex-Token": token, "Accept": "image/*"},
+            )
+        if server == "emby":
+            if emby_art_proxy_url(item_id, tag) is None:
+                raise ValueError("invalid emby art item")
+            token = env.get("EMBY_API_KEY", "").strip()
+            bases = _emby_bases(env)
+            if not token or not bases:
+                raise LookupError("emby not configured")
+            params: dict[str, Any] = {"maxHeight": 240, "quality": 90}
+            if tag and tag.strip():
+                params["tag"] = tag.strip()
+            last_error: Exception | None = None
+            for base in bases:
+                try:
+                    return await _get_bytes(
+                        f"{base}/Items/{item_id.strip()}/Images/Primary",
+                        {"X-Emby-Token": token},
+                        params,
+                    )
+                except httpx.HTTPError as exc:
+                    last_error = exc
+            raise LookupError(str(last_error) if last_error else "emby art unavailable")
+        raise ValueError("unknown art server")
+    except httpx.HTTPError as exc:
+        raise LookupError(str(exc)) from exc
 
 
 async def _plex_sessions(env: dict) -> tuple[list[dict], str | None]:

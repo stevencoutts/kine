@@ -110,7 +110,13 @@ def test_media_overview_uses_settings_servers():
     assert "data-media-url" in FRONTEND
     assert "settings-configured" in FRONTEND
     assert "watch-card" in FRONTEND
+    assert "watch-art" in FRONTEND
+    assert "watch-badge format" in FRONTEND
+    assert "s.formats" in FRONTEND
+    assert "s.art_url" in FRONTEND
     assert "position_label" in (ROOT / "helm" / "backend" / "app" / "watching.py").read_text()
+    assert '@app.get("/api/watching/art/{server}")' in BACKEND
+    assert "art_proxy_path" in (ROOT / "helm" / "backend" / "app" / "watching.py").read_text()
 
 
 def test_dev_version_checkbox_only_when_supported():

@@ -487,6 +487,30 @@ async def watching_now(user: str = Depends(require_user)):
     return await watching.snapshot()
 
 
+@app.get("/api/watching/art/{server}")
+async def watching_art(
+    server: str,
+    path: str | None = None,
+    item_id: str | None = None,
+    tag: str | None = None,
+    user: str = Depends(require_user),
+):
+    """Proxy poster/logo bytes from Plex or Emby for Watching cards."""
+    try:
+        body, content_type = await watching.fetch_art(
+            server, path=path, item_id=item_id, tag=tag
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return Response(
+        content=body,
+        media_type=content_type,
+        headers={"Cache-Control": "private, max-age=300"},
+    )
+
+
 @app.get("/api/media-servers")
 async def media_servers_now(user: str = Depends(require_user)):
     """Reachability of Settings-configured Plex and Emby for the Media card."""
