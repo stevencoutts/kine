@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""One-shot: copy Althub Newznab settings and monitored flags from kore *arr to kine.
+"""One-shot: copy Althub Newznab settings, monitored flags, and missing library
+items from kore *arr to kine.
 
 Dry-run by default. Pass --apply to write.
 
@@ -12,6 +13,7 @@ From osiris (LAN to kore, gluetun IP to kine *arr):
     --dest-radarr http://"$GLUETUN_IP":7878 --dest-radarr-key "$KINE_RADARR_KEY"
 
   python3 scripts/sync-from-kore-arr.py ... --apply
+  python3 scripts/sync-from-kore-arr.py ... --add-missing --apply
 """
 from __future__ import annotations
 
@@ -19,7 +21,9 @@ import argparse
 import json
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
+from collections import Counter
 from typing import Any
 
 
@@ -166,6 +170,232 @@ def sync_althub(src: ArrApi, dst: ArrApi, *, apply: bool, label: str, api_key: s
     }
 
 
+def _profile_name_map(src: ArrApi, dst: ArrApi) -> tuple[dict[int, int], int]:
+    """Map source qualityProfileId → dest id by name; fallback = most-used dest id."""
+    src_profiles = src.get("qualityprofile")
+    dst_profiles = dst.get("qualityprofile")
+    if not isinstance(src_profiles, list) or not isinstance(dst_profiles, list):
+        raise RuntimeError("unexpected qualityprofile payload")
+    dst_by_name = {p["name"]: int(p["id"]) for p in dst_profiles if p.get("name") and p.get("id")}
+    mapping = {
+        int(p["id"]): dst_by_name[p["name"]]
+        for p in src_profiles
+        if p.get("id") is not None and p.get("name") in dst_by_name
+    }
+    fallback = int(dst_profiles[0]["id"]) if dst_profiles else 1
+    return mapping, fallback
+
+
+def _most_common_profile(items: list[dict], fallback: int) -> int:
+    counts = Counter(int(i["qualityProfileId"]) for i in items if i.get("qualityProfileId"))
+    return counts.most_common(1)[0][0] if counts else fallback
+
+
+def _root_path(dst: ArrApi) -> str:
+    roots = dst.get("rootfolder")
+    if not isinstance(roots, list) or not roots:
+        raise RuntimeError("no root folder configured on dest")
+    path = roots[0].get("path")
+    if not path:
+        raise RuntimeError("dest root folder missing path")
+    return str(path)
+
+
+def sync_missing_movies(src: ArrApi, dst: ArrApi, *, apply: bool, search: bool) -> dict:
+    """Add kore monitored+!hasFile movies that are absent from kine."""
+    source_items = src.get("movie")
+    dest_items = dst.get("movie")
+    if not isinstance(source_items, list) or not isinstance(dest_items, list):
+        raise RuntimeError("radarr: unexpected movie payload")
+
+    dest_ids = {m.get("tmdbId") for m in dest_items if m.get("tmdbId")}
+    to_add = [
+        m
+        for m in source_items
+        if m.get("monitored")
+        and not m.get("hasFile")
+        and m.get("tmdbId")
+        and m["tmdbId"] not in dest_ids
+    ]
+
+    mapping, fb = _profile_name_map(src, dst)
+    fallback = _most_common_profile(dest_items, fb)
+    root = _root_path(dst)
+    added: list[str] = []
+    errors: list[str] = []
+
+    for movie in to_add:
+        tmdb_id = int(movie["tmdbId"])
+        title = movie.get("title") or str(tmdb_id)
+        src_qp = int(movie.get("qualityProfileId") or 0)
+        qp = mapping.get(src_qp, fallback)
+        payload = {
+            "title": movie.get("title"),
+            "tmdbId": tmdb_id,
+            "year": movie.get("year"),
+            "qualityProfileId": qp,
+            "rootFolderPath": root,
+            "monitored": True,
+            "minimumAvailability": movie.get("minimumAvailability") or "released",
+            "tags": movie.get("tags") or [],
+            "addOptions": {"searchForMovie": search},
+        }
+        # Prefer full lookup metadata so Radarr gets images/path slug.
+        try:
+            looked = dst.get(f"movie/lookup/tmdb?tmdbId={tmdb_id}")
+            if isinstance(looked, dict) and looked.get("tmdbId"):
+                payload = {
+                    **looked,
+                    "qualityProfileId": qp,
+                    "rootFolderPath": root,
+                    "monitored": True,
+                    "minimumAvailability": movie.get("minimumAvailability")
+                    or looked.get("minimumAvailability")
+                    or "released",
+                    "tags": movie.get("tags") or [],
+                    "addOptions": {"searchForMovie": search},
+                }
+                for drop in ("id", "path", "folderName", "movieFile", "hasFile", "sizeOnDisk"):
+                    payload.pop(drop, None)
+        except RuntimeError as exc:
+            errors.append(f"{title}: lookup failed ({exc})")
+            continue
+
+        if apply:
+            try:
+                dst.post("movie", payload)
+            except RuntimeError as exc:
+                errors.append(f"{title}: {exc}")
+                continue
+        added.append(title)
+
+    return {
+        "label": "radarr-add-missing",
+        "candidates": len(to_add),
+        "added": len(added),
+        "root": root,
+        "search": search,
+        "samples": added[:12],
+        "errors": errors[:8],
+    }
+
+
+def sync_missing_series(src: ArrApi, dst: ArrApi, *, apply: bool, search: bool) -> dict:
+    """Add kore series that are absent from kine (by tvdbId)."""
+    source_items = src.get("series")
+    dest_items = dst.get("series")
+    if not isinstance(source_items, list) or not isinstance(dest_items, list):
+        raise RuntimeError("sonarr: unexpected series payload")
+
+    dest_ids = {s.get("tvdbId") for s in dest_items if s.get("tvdbId")}
+    to_add = [s for s in source_items if s.get("tvdbId") and s["tvdbId"] not in dest_ids]
+
+    mapping, fb = _profile_name_map(src, dst)
+    fallback = _most_common_profile(dest_items, fb)
+    root = _root_path(dst)
+
+    # Language profile (Sonarr v3); optional on v4+.
+    lang_id = None
+    try:
+        langs = dst.get("languageprofile")
+        if isinstance(langs, list) and langs:
+            lang_id = langs[0].get("id")
+    except RuntimeError:
+        lang_id = None
+
+    added: list[str] = []
+    errors: list[str] = []
+
+    for series in to_add:
+        tvdb_id = int(series["tvdbId"])
+        title = series.get("title") or str(tvdb_id)
+        src_qp = int(series.get("qualityProfileId") or 0)
+        qp = mapping.get(src_qp, fallback)
+        src_seasons = {
+            int(sea["seasonNumber"]): bool(sea.get("monitored"))
+            for sea in (series.get("seasons") or [])
+            if sea.get("seasonNumber") is not None
+        }
+        term = urllib.parse.quote(f"tvdb:{tvdb_id}")
+        try:
+            looked_list = dst.get(f"series/lookup?term={term}")
+        except RuntimeError as exc:
+            errors.append(f"{title}: lookup failed ({exc})")
+            continue
+        if not isinstance(looked_list, list) or not looked_list:
+            errors.append(f"{title}: lookup empty")
+            continue
+        looked = next((x for x in looked_list if x.get("tvdbId") == tvdb_id), looked_list[0])
+        seasons = []
+        for sea in looked.get("seasons") or []:
+            sn = sea.get("seasonNumber")
+            if sn is None:
+                continue
+            monitored = src_seasons.get(int(sn), bool(sea.get("monitored")))
+            seasons.append({**sea, "monitored": monitored})
+
+        payload = {
+            **looked,
+            "qualityProfileId": qp,
+            "rootFolderPath": root,
+            "monitored": bool(series.get("monitored", True)),
+            "seasonFolder": bool(series.get("seasonFolder", True)),
+            "seriesType": series.get("seriesType") or looked.get("seriesType") or "standard",
+            "seasons": seasons,
+            "tags": series.get("tags") or [],
+            "addOptions": {
+                "monitor": "all" if series.get("monitored", True) else "none",
+                "searchForMissingEpisodes": search,
+                "searchForCutoffUnmetEpisodes": False,
+            },
+        }
+        if lang_id is not None:
+            payload["languageProfileId"] = lang_id
+        if series.get("monitorNewItems"):
+            payload["monitorNewItems"] = series["monitorNewItems"]
+        for drop in ("id", "path", "statistics", "previousAiring", "nextAiring"):
+            payload.pop(drop, None)
+
+        if apply:
+            try:
+                try:
+                    dst.post("series", payload)
+                except RuntimeError as exc:
+                    msg = str(exc).lower()
+                    if "titleslug" not in msg and "title slug" not in msg:
+                        raise
+                    # Sonarr derives slug from title; same-name different-TVDB needs a
+                    # distinct title (slug-only overrides are ignored).
+                    year = series.get("year") or looked.get("year")
+                    if not year:
+                        raise
+                    payload["title"] = f"{looked.get('title') or title} ({year})"
+                    payload["titleSlug"] = f"{looked.get('titleSlug') or 'series'}-{year}"
+                    try:
+                        dst.post("series", payload)
+                    except RuntimeError:
+                        # Dest may already own the bare slug under another TVDB id.
+                        errors.append(
+                            f"{title}: title slug conflict with existing series "
+                            f"(tvdb {tvdb_id}); add manually after renaming the other"
+                        )
+                        continue
+            except RuntimeError as exc:
+                errors.append(f"{title}: {exc}")
+                continue
+        added.append(title)
+
+    return {
+        "label": "sonarr-add-missing",
+        "candidates": len(to_add),
+        "added": len(added),
+        "root": root,
+        "search": search,
+        "samples": added[:12],
+        "errors": errors[:8],
+    }
+
+
 def sync_monitored(
     src: ArrApi,
     dst: ArrApi,
@@ -238,6 +468,16 @@ def main(argv: list[str] | None = None) -> int:
                    help="Real Althub key; *arr GET redacts indexer secrets")
     p.add_argument("--skip-althub", action="store_true")
     p.add_argument("--skip-monitored", action="store_true")
+    p.add_argument(
+        "--add-missing",
+        action="store_true",
+        help="Add kore missing movies + series absent from kine",
+    )
+    p.add_argument(
+        "--search",
+        action="store_true",
+        help="With --add-missing, trigger search on add (default: no search)",
+    )
     for side in ("source", "dest"):
         for app in ("sonarr", "radarr"):
             p.add_argument(f"--{side}-{app}", required=True)
@@ -253,10 +493,10 @@ def main(argv: list[str] | None = None) -> int:
     print(f"=== {mode} kore → kine ===")
 
     results: list[dict] = []
-    if not args.skip_althub:
+    if not args.skip_althub and not args.add_missing:
         results.append(sync_althub(src_sonarr, dst_sonarr, apply=args.apply, label="sonarr-althub", api_key=args.althub_api_key or None))
         results.append(sync_althub(src_radarr, dst_radarr, apply=args.apply, label="radarr-althub", api_key=args.althub_api_key or None))
-    if not args.skip_monitored:
+    if not args.skip_monitored and not args.add_missing:
         results.append(
             sync_monitored(
                 src_sonarr, dst_sonarr,
@@ -270,6 +510,13 @@ def main(argv: list[str] | None = None) -> int:
                 resource="movie", id_field="tmdbId",
                 apply=args.apply, label="radarr-monitored",
             )
+        )
+    if args.add_missing:
+        results.append(
+            sync_missing_movies(src_radarr, dst_radarr, apply=args.apply, search=args.search)
+        )
+        results.append(
+            sync_missing_series(src_sonarr, dst_sonarr, apply=args.apply, search=args.search)
         )
 
     for row in results:
