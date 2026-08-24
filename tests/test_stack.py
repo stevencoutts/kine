@@ -150,6 +150,15 @@ def test_leaktest_probes_from_inside_gluetun():
     assert "--network container:kine-gluetun" not in script
 
 
+def test_updating_gluetun_recreates_tunnelled_apps():
+    """Recreating gluetun alone orphans every network_mode: service:gluetun
+    container on the old namespace — Seerr then cannot reach Radarr/Sonarr."""
+    script = (ROOT / "scripts" / "updates.sh").read_text()
+    assert 'svc" == "gluetun"' in script
+    assert "force-recreate" in script
+    assert "service:gluetun" in script
+
+
 def test_top_level_includes_every_fragment():
     top = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
     included = {pathlib.Path(p).name for p in top["include"]}

@@ -100,6 +100,31 @@ apply() {
   echo "3/4 Recreating ${svc}..."
   docker compose up -d "$svc"
 
+  # Gluetun owns the network namespace for every tunnelled app. Recreating
+  # it alone leaves those containers pinned to the old namespace — Seerr
+  # then reports "Unable to connect to Radarr, Sonarr". Pull the whole
+  # group onto the new gateway the same way the VPN restart button does.
+  if [[ "$svc" == "gluetun" ]]; then
+    mapfile -t tunnelled < <(python3 - <<'PY'
+import json, os, subprocess
+cfg = json.loads(subprocess.check_output(
+    ["docker", "compose", "config", "--format", "json"], text=True))
+profiles = {p for p in os.environ.get("COMPOSE_PROFILES", "").split(",") if p}
+for name, meta in sorted((cfg.get("services") or {}).items()):
+    if (meta or {}).get("network_mode") != "service:gluetun":
+        continue
+    svc_profiles = set((meta or {}).get("profiles") or [])
+    if svc_profiles and not (svc_profiles & profiles):
+        continue
+    print(name)
+PY
+)
+    if ((${#tunnelled[@]})); then
+      echo "3b/4 Recreating tunnelled apps onto the new gluetun: ${tunnelled[*]}"
+      docker compose up -d --force-recreate "${tunnelled[@]}"
+    fi
+  fi
+
   echo "4/4 Waiting up to 90s for ${svc} to come back healthy..."
   for _ in $(seq 1 18); do
     state=$(docker inspect --format '{{.State.Health.Status}}' "kine-${svc}" 2>/dev/null || echo "none")

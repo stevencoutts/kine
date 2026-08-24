@@ -368,6 +368,8 @@ Helm tabs map to the same operations as the CLI:
   is the only action that re-queries registries. `dockerproxy` is host-only:
   Helm reaches Docker through it, so recreating it from the UI would cut
   that path mid-apply and leave the proxy (and often Traefik) down.
+  Updating `gluetun` also force-recreates every tunnelled app onto the new
+  gateway, otherwise they stay pinned to the old network namespace.
 - **Settings** — domain, TLS, NFS paths, Plex/Emby library notify, and
   OpenSubtitles credentials for Bazarr.
 
