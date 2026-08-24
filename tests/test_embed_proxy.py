@@ -126,3 +126,15 @@ def test_mount_does_not_treat_request_as_query_param():
     embed_proxy.mount(app, require_user=lambda: "u")
     route = next(r for r in app.routes if getattr(r, "path", "") == "/view/{app_id}")
     assert "request" not in {p.name for p in route.dependant.query_params}
+    ws_routes = [r for r in app.routes if getattr(r, "path", "") == "/view/{app_id}/{path:path}"]
+    assert any(getattr(r, "endpoint", None).__name__ == "embed_ws" for r in ws_routes)
+
+
+def test_upstream_ws_url_builds_from_internal(monkeypatch):
+    monkeypatch.setattr(
+        embed_proxy,
+        "upstream_base",
+        lambda app_id: "http://gluetun:9191",
+    )
+    url = embed_proxy.upstream_ws_url("dispatcharr", "ws/", "token=abc")
+    assert url == "ws://gluetun:9191/ws/?token=abc"

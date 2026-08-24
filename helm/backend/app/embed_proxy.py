@@ -7,19 +7,23 @@ SPAs keep talking through the prefix without changing UrlBase.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import TYPE_CHECKING, Iterable
 from urllib.parse import urlsplit
 
 import httpx
-from fastapi import Depends, HTTPException, Request
+import websockets
+from fastapi import Depends, HTTPException, Request, WebSocket
 from fastapi.responses import Response
 
-from . import catalogue, config
+from . import auth, catalogue, config
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+
+SESSION_COOKIE = "kine_session"
 
 _HOP_BY_HOP = {
     "connection",
@@ -345,6 +349,68 @@ async def proxy_http(app_id: str, path: str, request: Request) -> Response:
     return response
 
 
+def upstream_ws_url(app_id: str, path: str, query: str) -> str:
+    """Build the upstream WebSocket URL for an embedded app path."""
+    http_base = upstream_base(app_id)
+    parts = urlsplit(http_base)
+    scheme = "wss" if parts.scheme == "https" else "ws"
+    rel = (path or "").lstrip("/")
+    target = f"{scheme}://{parts.netloc}/{rel}" if rel else f"{scheme}://{parts.netloc}/"
+    if query:
+        target = f"{target}?{query}"
+    return target
+
+
+async def proxy_websocket(app_id: str, path: str, websocket: WebSocket) -> None:
+    """Relay a browser WebSocket to the embedded app's upstream socket."""
+    if not auth.verify(websocket.cookies.get(SESSION_COOKIE)):
+        await websocket.close(code=4401)
+        return
+
+    target = upstream_ws_url(app_id, path, websocket.url.query)
+    await websocket.accept()
+    try:
+        async with websockets.connect(target, open_timeout=10, max_size=2**20) as upstream:
+            async def client_to_upstream() -> None:
+                try:
+                    while True:
+                        msg = await websocket.receive()
+                        if msg["type"] == "websocket.disconnect":
+                            break
+                        text = msg.get("text")
+                        if text is not None:
+                            await upstream.send(text)
+                            continue
+                        data = msg.get("bytes")
+                        if data is not None:
+                            await upstream.send(data)
+                except Exception:
+                    return
+
+            async def upstream_to_client() -> None:
+                try:
+                    async for message in upstream:
+                        if isinstance(message, str):
+                            await websocket.send_text(message)
+                        else:
+                            await websocket.send_bytes(message)
+                except Exception:
+                    return
+
+            client_task = asyncio.create_task(client_to_upstream())
+            upstream_task = asyncio.create_task(upstream_to_client())
+            done, pending = await asyncio.wait(
+                {client_task, upstream_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+            for task in done:
+                task.exception()
+    except Exception:
+        await websocket.close(code=1011)
+
+
 def mount(app: FastAPI, require_user) -> None:
     """Register authenticated embed routes on the FastAPI app.
 
@@ -373,3 +439,12 @@ def mount(app: FastAPI, require_user) -> None:
                 headers={"Location": embed_prefix(app_id) + "/"},
             )
         return await proxy_http(app_id, path, request)
+
+    @app.websocket("/view/{app_id}/{path:path}")
+    async def embed_ws(websocket: WebSocket, app_id: str, path: str) -> None:
+        try:
+            upstream_base(app_id)
+        except HTTPException:
+            await websocket.close(code=4404)
+            return
+        await proxy_websocket(app_id, path, websocket)
