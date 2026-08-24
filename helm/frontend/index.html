@@ -87,14 +87,12 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   box-shadow:0 6px 28px color-mix(in srgb, var(--accent) 18%, transparent)}
 .overview-btn.off-tier{opacity:.72}
 .overview-btn.watching-live,
-.overview-btn.downloads-live,
-.overview-btn.media-live{
+.overview-btn.downloads-live{
   border-color:color-mix(in srgb, var(--ok) 55%, transparent);
   background:color-mix(in srgb, var(--ok) 16%, transparent);
   box-shadow:0 4px 20px color-mix(in srgb, var(--ok) 18%, transparent)}
 .overview-btn.watching-live.active,
-.overview-btn.downloads-live.active,
-.overview-btn.media-live.active{
+.overview-btn.downloads-live.active{
   border-color:color-mix(in srgb, var(--ok) 70%, transparent);
   background:color-mix(in srgb, var(--ok) 22%, transparent);
   box-shadow:0 6px 28px color-mix(in srgb, var(--ok) 22%, transparent)}
@@ -748,8 +746,6 @@ render.apps = async () => {
   const mediaActive = state.activeTier === 'media';
   const watchCount = watch.count || 0;
   const dlActive = dl.active || 0;
-  const mediaOnline = media.online || 0;
-  const mediaConfigured = !!(media.configured?.plex || media.configured?.emby);
   const watchBtn = `<div class="overview-btn ${watchingActive?'active':''}${watchCount?' watching-live':''}"
       data-overview="watching" role="button" tabindex="0" aria-pressed="${watchingActive}">
       <div class="overview-top"><h2>Watching</h2></div>
@@ -764,10 +760,9 @@ render.apps = async () => {
     const meta = state.tiers[tier];
     const stats = tierStats(state.apps.filter(a => a.tier === tier && !a.hidden));
     const active = state.activeTier === tier;
-    const live = tier === 'media' && mediaConfigured && mediaOnline > 0;
     const stat = tier === 'media' ? mediaStatHtml(media, stats)
       : `${stats.running}<span> / ${stats.total} running</span>`;
-    return `<div class="overview-btn ${active?'active':''} ${!meta.enabled?'off-tier':''}${live?' media-live':''}"
+    return `<div class="overview-btn ${active?'active':''} ${!meta.enabled?'off-tier':''}"
       data-overview="${tier}" role="button" tabindex="0" aria-pressed="${active}">
       <div class="overview-top">
         <h2>${meta.label}</h2>
@@ -827,7 +822,6 @@ render.apps = async () => {
       const btn = document.querySelector('[data-overview="media"]');
       const statEl = btn && btn.querySelector('.overview-stat');
       if (statEl) statEl.innerHTML = mediaStatHtml(next, tierStats(tierApps));
-      if (btn) btn.classList.toggle('media-live', !!(next.online||0));
       document.querySelectorAll('[data-media-url]').forEach(b => {
         b.onclick = () => {
           const w = window.open(b.dataset.mediaUrl, '_blank');

@@ -106,8 +106,9 @@ def test_media_overview_uses_settings_servers():
     assert "/media-servers" in FRONTEND
     assert "mediaServerCard" in FRONTEND
     assert "mediaPanelHtml" in FRONTEND
-    assert "media-live" in FRONTEND
+    assert "mediaStatHtml" in FRONTEND
     assert "data-media-url" in FRONTEND
+    assert "media-live" not in FRONTEND
 
 
 def test_dev_version_checkbox_only_when_supported():
