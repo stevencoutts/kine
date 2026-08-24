@@ -93,7 +93,7 @@ EMBY_SAMPLE = [
             "ChannelName": "COMEDY CENTRAL",
             "ChannelNumber": "401",
             "ChannelId": "ch-1",
-            "ImageTags": {"Primary": "ch-tag"},
+            "ImageTags": {"Primary": "ch-tag", "Logo": "logo-tag"},
         },
         "PlayState": {"IsPaused": False},
     },
@@ -180,6 +180,7 @@ def test_parse_emby_skips_idle_and_enriches():
     assert rows[1]["channel"] == "COMEDY CENTRAL"
     assert "COMEDY CENTRAL" in rows[1]["title"]
     assert "item_id=ch-1" in rows[1]["art_url"]
+    assert "image=Logo" in rows[1]["art_url"]
 
 
 def test_art_proxy_path_builds_safe_query():

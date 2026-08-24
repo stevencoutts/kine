@@ -493,12 +493,13 @@ async def watching_art(
     path: str | None = None,
     item_id: str | None = None,
     tag: str | None = None,
+    image: str | None = None,
     user: str = Depends(require_user),
 ):
     """Proxy poster/logo bytes from Plex or Emby for Watching cards."""
     try:
         body, content_type = await watching.fetch_art(
-            server, path=path, item_id=item_id, tag=tag
+            server, path=path, item_id=item_id, tag=tag, image=image
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

@@ -114,6 +114,8 @@ def test_media_overview_uses_settings_servers():
     assert "formatClass" in FRONTEND
     assert "format-video" in FRONTEND
     assert "watch-art-fallback" in FRONTEND
+    assert "photo/:/transcode" in (ROOT / "helm" / "backend" / "app" / "watching.py").read_text()
+    assert 'image="Logo"' in (ROOT / "helm" / "backend" / "app" / "watching.py").read_text()
     assert "s.formats" in FRONTEND
     assert "s.art_url" in FRONTEND
     assert "position_label" in (ROOT / "helm" / "backend" / "app" / "watching.py").read_text()

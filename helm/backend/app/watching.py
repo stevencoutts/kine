@@ -86,13 +86,21 @@ def art_proxy_path(server: str, path: str | None) -> str | None:
     return f"/api/watching/art/plex?path={quote(cleaned, safe='')}"
 
 
-def emby_art_proxy_url(item_id: str | None, tag: str | None = None) -> str | None:
+def emby_art_proxy_url(
+    item_id: str | None,
+    tag: str | None = None,
+    *,
+    image: str = "Primary",
+) -> str | None:
     if not item_id or not isinstance(item_id, str):
         return None
     cleaned = item_id.strip()
     if not cleaned or "/" in cleaned or ".." in cleaned:
         return None
-    query: dict[str, str] = {"item_id": cleaned}
+    kind = (image or "Primary").strip()
+    if kind not in {"Primary", "Logo", "Thumb", "Backdrop"}:
+        kind = "Primary"
+    query: dict[str, str] = {"item_id": cleaned, "image": kind}
     if tag and isinstance(tag, str) and tag.strip():
         query["tag"] = tag.strip()
     return f"/api/watching/art/emby?{urlencode(query)}"
@@ -314,16 +322,18 @@ def _emby_art_url(now: dict, kind: str) -> str | None:
         series_id = (now.get("SeriesId") or "").strip()
         series_tag = (now.get("SeriesPrimaryImageTag") or "").strip() or None
         if series_id:
-            return emby_art_proxy_url(series_id, series_tag)
+            return emby_art_proxy_url(series_id, series_tag, image="Primary")
     if kind == "channel":
         channel_id = (now.get("ChannelId") or now.get("Id") or "").strip()
         tags = now.get("ImageTags") if isinstance(now.get("ImageTags"), dict) else {}
-        tag = (tags.get("Primary") or "").strip() or None
-        return emby_art_proxy_url(channel_id, tag)
+        logo_tag = (tags.get("Logo") or "").strip() or None
+        primary = (tags.get("Primary") or "").strip() or None
+        # Proxy tries Logo then Primary for live TV.
+        return emby_art_proxy_url(channel_id, logo_tag or primary, image="Logo")
     item_id = (now.get("Id") or "").strip()
     tags = now.get("ImageTags") if isinstance(now.get("ImageTags"), dict) else {}
     tag = (tags.get("Primary") or "").strip() or None
-    return emby_art_proxy_url(item_id, tag)
+    return emby_art_proxy_url(item_id, tag, image="Primary")
 
 
 def parse_emby_sessions(payload: list | dict) -> list[dict]:
@@ -473,6 +483,7 @@ async def fetch_art(
     path: str | None = None,
     item_id: str | None = None,
     tag: str | None = None,
+    image: str | None = None,
 ) -> tuple[bytes, str]:
     """Fetch poster/logo bytes from Plex or Emby using Settings credentials."""
     env = config.read()
@@ -484,31 +495,52 @@ async def fetch_art(
             token = env.get("PLEX_TOKEN", "").strip()
             if not base or not token:
                 raise LookupError("plex not configured")
+            # Photo transcoder returns a display-sized JPEG; raw /thumb is multi-MB.
             return await _get_bytes(
-                f"{base}{path}",
-                {"X-Plex-Token": token, "Accept": "image/*"},
-                {"width": 240, "height": 360, "minSize": 1, "upscale": 1},
+                f"{base}/photo/:/transcode",
+                {"X-Plex-Token": token, "Accept": "image/jpeg"},
+                {
+                    "width": 280,
+                    "height": 420,
+                    "minSize": 1,
+                    "upscale": 1,
+                    "url": path,
+                },
             )
         if server == "emby":
-            if emby_art_proxy_url(item_id, tag) is None:
+            if emby_art_proxy_url(item_id, tag, image=image or "Primary") is None:
                 raise ValueError("invalid emby art item")
             token = env.get("EMBY_API_KEY", "").strip()
             bases = _emby_bases(env)
             if not token or not bases:
                 raise LookupError("emby not configured")
-            params: dict[str, Any] = {"maxHeight": 360, "maxWidth": 360, "quality": 92}
-            if tag and tag.strip():
-                params["tag"] = tag.strip()
+            wanted = (image or "Primary").strip() or "Primary"
+            if wanted not in {"Primary", "Logo", "Thumb", "Backdrop"}:
+                wanted = "Primary"
+            # Channels often only have Logo or only Primary — try both.
+            image_types = [wanted]
+            if wanted == "Logo":
+                image_types.append("Primary")
+            elif wanted == "Primary":
+                pass
             last_error: Exception | None = None
             for base in bases:
-                try:
-                    return await _get_bytes(
-                        f"{base}/Items/{item_id.strip()}/Images/Primary",
-                        {"X-Emby-Token": token},
-                        params,
-                    )
-                except httpx.HTTPError as exc:
-                    last_error = exc
+                for image_type in image_types:
+                    params: dict[str, Any] = {
+                        "maxHeight": 420,
+                        "maxWidth": 420,
+                        "quality": 92,
+                    }
+                    if tag and tag.strip() and image_type == wanted:
+                        params["tag"] = tag.strip()
+                    try:
+                        return await _get_bytes(
+                            f"{base}/Items/{item_id.strip()}/Images/{image_type}",
+                            {"X-Emby-Token": token},
+                            params,
+                        )
+                    except httpx.HTTPError as exc:
+                        last_error = exc
             raise LookupError(str(last_error) if last_error else "emby art unavailable")
         raise ValueError("unknown art server")
     except httpx.HTTPError as exc:
