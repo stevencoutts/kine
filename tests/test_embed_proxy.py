@@ -32,6 +32,8 @@ def test_rewrite_html_injects_bootstrap_and_prefixes_assets():
     assert "trapAttr" in out
     assert "setAttribute" in out
     assert "svg-inline--fa" in out
+    assert "initialize.json" in out
+    assert "fixSheet" in out
     # Must not redefine link.href (Safari drops webpack CSS chunks).
     assert "n==='link'" not in out and "n===\"link\"" not in out
 

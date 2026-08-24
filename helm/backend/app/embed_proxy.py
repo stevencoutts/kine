@@ -7,6 +7,7 @@ SPAs keep talking through the prefix without changing UrlBase.
 """
 from __future__ import annotations
 
+import json
 import re
 from typing import TYPE_CHECKING, Iterable
 from urllib.parse import urlsplit
@@ -133,9 +134,17 @@ def _bootstrap_script(prefix: str) -> str:
         "set:function(v){cur=lockBase(Object.assign({},v||{}));}});}catch(e){}}"
         "forceBase('Sonarr');forceBase('Radarr');forceBase('Prowlarr');forceBase('Bazarr');"
         "var f=window.fetch;window.fetch=function(i,n){"
+        "var u=typeof i==='string'?i:(i&&i.url);"
         "if(typeof i==='string')i=abs(i);"
         "else if(i&&typeof i.url==='string')i=new Request(abs(i.url),i);"
-        "return f.call(this,i,n);};"
+        "var p=f.call(this,i,n);"
+        # Client-side belt-and-suspenders: force urlBase in initialize.json.
+        "if(typeof u==='string'&&u.indexOf('initialize.json')!==-1)"
+        "{return p.then(function(res){return res.clone().json().then(function(d){"
+        "if(d&&typeof d==='object')d.urlBase=P;"
+        "return new Response(JSON.stringify(d),{status:res.status,statusText:res.statusText,"
+        "headers:{'content-type':'application/json'}});},function(){return res;});});}"
+        "return p;};"
         "var o=XMLHttpRequest.prototype.open;"
         "XMLHttpRequest.prototype.open=function(m,u){"
         "var a=Array.prototype.slice.call(arguments,2);"
@@ -172,9 +181,16 @@ def _bootstrap_script(prefix: str) -> str:
         "n=String(n).toLowerCase();"
         "if((n==='src'||n==='href')&&typeof v==='string')v=abs(v);"
         "return sa.call(this,n,v);};"
+        # Fix stylesheet URLs when webpack publicPath was still '/' (append time).
+        "function fixSheet(n){if(!n||!n.tagName||n.tagName.toLowerCase()!=='link')return;"
+        "var h=n.getAttribute('href');if(h)n.setAttribute('href',abs(h));}"
+        "var ap=Node.prototype.appendChild;"
+        "Node.prototype.appendChild=function(c){fixSheet(c);return ap.call(this,c);};"
+        "var ib=Node.prototype.insertBefore;"
+        "Node.prototype.insertBefore=function(c,r){fixSheet(c);return ib.call(this,c,r);};"
         # Safety net if FA CSS is late: keep icon SVGs at 1em.
         "var st=document.createElement('style');st.textContent="
-        "'.svg-inline--fa{display:inline-block;height:1em;overflow:visible;"
+        "'.svg-inline--fa{display:inline-block;height:1em;width:1em;overflow:visible;"
         "vertical-align:-.125em}'"
         ";document.documentElement.appendChild(st);"
         # Keep the iframe on the embed prefix if something navigates to /.
@@ -228,6 +244,18 @@ def _rewrite_css(text: str, prefix: str) -> str:
     )
 
 
+def _rewrite_initialize_json(raw: bytes, prefix: str) -> bytes:
+    """*arr initialize.json has urlBase:'' — webpack then loads CSS from /Content/… on admin."""
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError, UnicodeDecodeError):
+        return raw
+    if not isinstance(data, dict):
+        return raw
+    data["urlBase"] = prefix
+    return json.dumps(data, separators=(",", ":")).encode("utf-8")
+
+
 async def proxy_http(app_id: str, path: str, request: Request) -> Response:
     prefix = embed_prefix(app_id)
     upstream = upstream_base(app_id)
@@ -270,6 +298,8 @@ async def proxy_http(app_id: str, path: str, request: Request) -> Response:
         except (LookupError, UnicodeDecodeError):
             text = raw.decode("utf-8", errors="replace")
         raw = _rewrite_css(text, prefix).encode("utf-8")
+    elif media == "application/json" and rel.split("?", 1)[0].endswith("initialize.json"):
+        raw = _rewrite_initialize_json(raw, prefix)
 
     out_headers: dict[str, str] = {}
     set_cookies: list[str] = []
