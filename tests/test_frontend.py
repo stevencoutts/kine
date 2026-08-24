@@ -152,6 +152,15 @@ def test_settings_nzbget_news_servers():
     assert "RemoveSamples" in recipe
 
 
+def test_enable_tunnelled_app_recreates_gluetun_group():
+    assert "async def _start_app(" in BACKEND
+    assert '"up", "-d", "--force-recreate"' in BACKEND
+    assert "await _start_app(app_id, wanted)" in BACKEND
+    assert 'await compose.run("up", "-d", app_id)' in BACKEND
+    # Lone up of a tunnelled peer is what orphaned Sonarr when NZBGet enabled.
+    assert BACKEND.count('await compose.run("up", "-d", app_id)') == 1
+
+
 def test_dev_channel_api_recreates_when_profile_enabled():
     assert '@app.post("/api/apps/{app_id}/dev/enable")' in BACKEND
     assert '@app.post("/api/apps/{app_id}/dev/disable")' in BACKEND

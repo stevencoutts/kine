@@ -137,6 +137,36 @@ async def _stop_media_volume_apps() -> None:
         await compose.run("stop", *wanted, timeout=120)
 
 
+def _tunnelled_profiles(profiles: set[str] | None = None) -> list[str]:
+    """Enabled apps that share gluetun's network namespace."""
+    env = config.read()
+    active = profiles if profiles is not None else set(config.profiles())
+    return [
+        a.strip()
+        for a in env.get("VPN_TUNNELLED_APPS", "").split(",")
+        if a.strip() and a.strip() in active
+    ]
+
+
+async def _start_app(app_id: str, profiles: list[str]) -> tuple[int, str]:
+    """Start an app; tunnelled apps recreate the whole gluetun group.
+
+    ``compose up -d <tunnelled>`` can restart gluetun (depends_on health),
+    which orphans every other ``network_mode: service:gluetun`` container.
+    Bring the whole group up together so they share the new namespace.
+    """
+    tunnelled = _tunnelled_profiles(set(profiles))
+    if app_id == "gluetun" or app_id in tunnelled:
+        group = ["gluetun", *tunnelled]
+        # Preserve order, drop duplicates (gluetun first).
+        seen: set[str] = set()
+        ordered = [s for s in group if not (s in seen or seen.add(s))]
+        return await compose.run(
+            "up", "-d", "--force-recreate", *ordered, timeout=300,
+        )
+    return await compose.run("up", "-d", app_id)
+
+
 async def _recreate_media_volume_apps() -> None:
     """Recreate apps that bind DATA_ROOT so they see host NFS mounts.
 
@@ -519,13 +549,15 @@ async def enable(app_id: str, request: Request, user: str = Depends(require_user
                 mount = await _ensure_nfs_mounted()
                 if err := _nfs_mount_error(mount):
                     raise HTTPException(500, f"NFS mount failed: {err}")
-            code, out = await compose.run("up", "-d", app_id)
+            code, out = await _start_app(app_id, wanted)
             if code != 0:
                 raise HTTPException(500, f"Could not start {app_id}")
             await compose.run("run", "--rm", "provision", "wire")
     except provision_lock.ProvisionBusy as exc:
         raise HTTPException(409, exc.detail) from exc
     if app_id == "nzbget":
+        # Conf edits need a process restart; restart alone keeps the
+        # shared gluetun namespace (unlike compose up of a single peer).
         await asyncio.to_thread(_apply_nzbget_conf)
         await compose.run("restart", "nzbget")
     await _sync_recyclarr()
