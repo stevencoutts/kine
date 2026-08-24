@@ -24,6 +24,7 @@ services:
       EMBY_USE_SSL: ${EMBY_USE_SSL:-false}
       OPENSUBTITLES_USERNAME: ${OPENSUBTITLES_USERNAME:-}
       OPENSUBTITLES_PASSWORD: ${OPENSUBTITLES_PASSWORD:-}
+      NZBGET_NEWS_SERVERS: ${NZBGET_NEWS_SERVERS:-}
     volumes:
       - ${STACK_ROOT}:/stack
       - ${DATA_ROOT}/media:/data/media

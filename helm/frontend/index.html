@@ -177,6 +177,17 @@ textarea{font-family:ui-monospace,monospace;font-size:.8rem;resize:vertical}
 .badge.dev{background:rgba(100,149,237,.15);color:#7eb6ff}
 @media (prefers-color-scheme: light){.badge.dev,.badge.busy{color:#2563eb}}
 #updates-progress{position:sticky;top:.5rem;z-index:2;margin-bottom:.75rem}
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;
+  display:flex;align-items:center;justify-content:center;padding:1rem}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  max-width:640px;width:100%;max-height:90vh;overflow:auto;padding:1.1rem 1.25rem;box-shadow:0 12px 40px rgba(0,0,0,.35)}
+.modal h3{margin:0 0 .5rem}
+.modal p{color:var(--muted);font-size:.85rem;margin:0 0 .85rem}
+.nzb-server{border:1px solid var(--line);border-radius:8px;padding:.75rem;margin-bottom:.65rem;
+  background:color-mix(in srgb, var(--panel-2) 70%, transparent)}
+.nzb-server .row{gap:.5rem;flex-wrap:wrap}
+.nzb-server label{font-size:.75rem;margin-top:.35rem}
+.nzb-server input[type=checkbox]{width:auto}
 </style>
 </head>
 <body>
@@ -199,6 +210,129 @@ const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({
   '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
 }[c]));
 const TAB_LABELS = {apps:'Apps', stats:'Stats', updates:'Updates', vpn:'VPN', status:'Status', settings:'Settings'};
+
+const emptyNzbServer = () => ({
+  name: '', host: '', port: 563, username: '', password: '',
+  encryption: true, connections: 8,
+});
+
+const collectNzbServers = (root=document) => {
+  const rows = [...root.querySelectorAll('[data-nzb-server]')];
+  return rows.map((el, i) => {
+    const enc = !!$('[data-nzb-enc]', el)?.checked;
+    const portRaw = $('[data-nzb-port]', el)?.value.trim();
+    const connRaw = $('[data-nzb-conn]', el)?.value.trim();
+    return {
+      name: $('[data-nzb-name]', el)?.value.trim() || `Server ${i + 1}`,
+      host: $('[data-nzb-host]', el)?.value.trim() || '',
+      port: portRaw ? Number(portRaw) : (enc ? 563 : 119),
+      username: $('[data-nzb-user]', el)?.value || '',
+      password: $('[data-nzb-pass]', el)?.value || '',
+      encryption: enc,
+      connections: connRaw ? Number(connRaw) : 8,
+    };
+  }).filter(s => s.host);
+};
+
+const nzbServerRowHtml = (s={}, idx=0) => `
+  <div class="nzb-server" data-nzb-server>
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <strong style="font-size:.85rem">News Server ${idx + 1}</strong>
+      <button type="button" class="act" data-nzb-remove>Remove</button>
+    </div>
+    <label>Name</label>
+    <input data-nzb-name value="${escAttr(s.name || '')}" placeholder="Primary">
+    <label>Host</label>
+    <input data-nzb-host value="${escAttr(s.host || '')}" placeholder="news.example.com" autocomplete="off">
+    <div class="row" style="align-items:end">
+      <div style="flex:1"><label>Port</label>
+        <input data-nzb-port type="number" min="1" max="65535" value="${escAttr(s.port ?? 563)}"></div>
+      <div style="flex:1"><label>Connections</label>
+        <input data-nzb-conn type="number" min="1" max="60" value="${escAttr(s.connections ?? 8)}"></div>
+      <label class="row" style="width:auto;margin:0 0 .35rem;gap:.4rem;align-items:center">
+        <input type="checkbox" data-nzb-enc ${(s.encryption !== false) ? 'checked' : ''}>
+        TLS
+      </label>
+    </div>
+    <label>Username</label>
+    <input data-nzb-user value="${escAttr(s.username || '')}" autocomplete="username">
+    <label>Password</label>
+    <input data-nzb-pass type="password" value="${escAttr(s.password || '')}" autocomplete="current-password">
+  </div>`;
+
+const escAttr = (v) => String(v ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+
+const bindNzbServerList = (listEl, addBtn) => {
+  const renumber = () => {
+    [...listEl.querySelectorAll('[data-nzb-server]')].forEach((el, i) => {
+      const title = el.querySelector('strong');
+      if (title) title.textContent = `News Server ${i + 1}`;
+    });
+  };
+  listEl.onclick = (e) => {
+    const btn = e.target.closest('[data-nzb-remove]');
+    if (!btn) return;
+    btn.closest('[data-nzb-server]')?.remove();
+    renumber();
+  };
+  if (addBtn) addBtn.onclick = () => {
+    listEl.insertAdjacentHTML('beforeend', nzbServerRowHtml(emptyNzbServer(), listEl.children.length));
+  };
+};
+
+const promptNzbgetServers = (existing=[]) => new Promise((resolve) => {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.innerHTML = `
+    <div class="modal" role="dialog" aria-labelledby="nzb-modal-title">
+      <h3 id="nzb-modal-title">NZBGet News Servers</h3>
+      <p>Add one or more Usenet news servers. Extended Unpacker, Fake Detector,
+         and Remove Samples are installed automatically. You can change servers
+         later in Settings.</p>
+      <div id="nzb-modal-list"></div>
+      <div class="row" style="margin:.5rem 0 1rem">
+        <button type="button" class="act" id="nzb-modal-add">Add Server</button>
+      </div>
+      <div class="row" style="gap:.5rem;flex-wrap:wrap">
+        <button type="button" class="act primary" id="nzb-modal-enable">Enable With These Servers</button>
+        <button type="button" class="act" id="nzb-modal-skip">Skip for Now</button>
+        <button type="button" class="act" id="nzb-modal-cancel">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const list = $('#nzb-modal-list', backdrop);
+  const servers = (existing && existing.length) ? existing : [emptyNzbServer()];
+  list.innerHTML = servers.map((s, i) => nzbServerRowHtml(s, i)).join('');
+  bindNzbServerList(list, $('#nzb-modal-add', backdrop));
+  const finish = (result) => { backdrop.remove(); resolve(result); };
+  $('#nzb-modal-cancel', backdrop).onclick = () => finish({cancelled: true});
+  $('#nzb-modal-skip', backdrop).onclick = () => finish({skip: true});
+  $('#nzb-modal-enable', backdrop).onclick = () =>
+    finish({servers: collectNzbServers(backdrop)});
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) finish({cancelled: true});
+  });
+});
+
+const enableNzbgetFlow = async (btn) => {
+  let settings = {};
+  try { settings = await api('/settings'); } catch (_) { settings = {}; }
+  const existing = settings.nzbget_news_servers || [];
+  let body = undefined;
+  if (!existing.length) {
+    const choice = await promptNzbgetServers([]);
+    if (choice.cancelled) {
+      btn.disabled = false; btn.textContent = 'Enable';
+      return;
+    }
+    if (!choice.skip) body = {news_servers: choice.servers || []};
+  }
+  await api('/apps/nzbget/enable', {
+    method: 'POST',
+    body: body === undefined ? '{}' : JSON.stringify(body),
+  });
+  render.apps();
+};
 const TIER_ORDER = ['media','acquisition','process','live','metrics','platform'];
 
 // window.open(..., 'noopener') returns null on success in modern browsers,
@@ -535,8 +669,24 @@ render.apps = async () => {
     };
   });
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
+    const id = b.dataset.id;
+    const act = b.dataset.act;
+    if (act === 'enable' && id === 'nzbget') {
+      b.disabled = true; b.textContent = 'Working...';
+      try {
+        await enableNzbgetFlow(b);
+      } catch (e) {
+        b.disabled = false; b.textContent = 'Enable';
+        const tierMsg = $('#tier-msg');
+        if (tierMsg) {
+          tierMsg.className = 'banner bad';
+          tierMsg.textContent = e.message || 'Could not enable NZBGet';
+        }
+      }
+      return;
+    }
     b.disabled = true; b.textContent = 'Working...';
-    await api(`/apps/${b.dataset.id}/${b.dataset.act}`, {method:'POST'});
+    await api(`/apps/${id}/${act}`, {method:'POST'});
     render.apps();
   });
   document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
@@ -1114,7 +1264,28 @@ render.settings = async () => {
         <button class="act primary" id="save-subtitles" type="button">Save Subtitles</button>
       </div>
       <div id="subtitles-msg"></div>
+    </div></div>
+    <div class="section"><h2>NZBGet</h2><div class="card">
+      <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
+        Usenet news servers written into <code>nzbget.conf</code>.
+        Enabling NZBGet also installs <strong>Extended Unpacker</strong>,
+        <strong>Fake Detector</strong>, and <strong>Remove Samples</strong>.
+        ${s.nzbget_enabled ? '' : 'NZBGet is not enabled yet — saving still stores servers for the next enable.'}</p>
+      <div id="nzb-settings-list">${
+        (s.nzbget_news_servers && s.nzbget_news_servers.length
+          ? s.nzbget_news_servers
+          : [emptyNzbServer()]
+        ).map((row, i) => nzbServerRowHtml(row, i)).join('')
+      }</div>
+      <div class="row" style="margin:.5rem 0 1rem">
+        <button type="button" class="act" id="nzb-settings-add">Add Server</button>
+      </div>
+      <div class="row" style="margin-top:.25rem">
+        <button class="act primary" id="save-nzbget" type="button">Save NZBGet Servers</button>
+      </div>
+      <div id="nzbget-msg"></div>
     </div></div>`);
+  bindNzbServerList($('#nzb-settings-list'), $('#nzb-settings-add'));
   const sharesBox = $('#nfs-shares');
   if (sharesBox) sharesBox.style.display = 'block';
   $('#save').onclick = async () => {
@@ -1198,6 +1369,22 @@ render.settings = async () => {
         msg.innerHTML = `<div class="banner bad">Saved, but wiring failed.<pre style="margin:.5rem 0 0;font-size:.75rem;white-space:pre-wrap">${esc(log)}</pre></div>`;
       } else {
         msg.innerHTML = '<div class="banner ok">Saved. Bazarr providers and language defaults will be applied on wire.</div>';
+      }
+    } catch (e) {
+      msg.innerHTML = `<div class="banner bad">${esc(e.message || 'Could not save')}</div>`;
+    }
+  };
+  $('#save-nzbget').onclick = async () => {
+    const msg = $('#nzbget-msg');
+    msg.innerHTML = '<div class="banner" style="border:1px solid var(--line)">Saving news servers…</div>';
+    const body = {nzbget_news_servers: collectNzbServers($('#nzb-settings-list'))};
+    try {
+      const r = await api('/settings', {method:'POST', body: JSON.stringify(body)});
+      const n = r.nzbget_apply?.servers ?? body.nzbget_news_servers.length;
+      if (r.nzbget_apply?.deferred) {
+        msg.innerHTML = `<div class="banner ok">Saved ${n} server(s). They will apply when NZBGet is enabled.</div>`;
+      } else {
+        msg.innerHTML = `<div class="banner ok">Saved ${n} server(s). NZBGet was restarted to reload the config.</div>`;
       }
     } catch (e) {
       msg.innerHTML = `<div class="banner bad">${esc(e.message || 'Could not save')}</div>`;

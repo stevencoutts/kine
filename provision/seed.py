@@ -217,6 +217,10 @@ def seed_all(enabled: set[str]) -> None:
         seed_seerr()
     if "bazarr" in enabled:
         seed_bazarr(enabled)
+    if "nzbget" in enabled:
+        from recipes import nzbget
+
+        nzbget.seed(STACK, enabled)
     from recipes import metrics
 
     metrics.seed(STACK, enabled)

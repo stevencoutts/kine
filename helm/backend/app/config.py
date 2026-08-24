@@ -22,7 +22,9 @@ def _decode(value: str) -> str:
 
 
 def _encode(value: str) -> str:
-    if "$" not in value:
+    # Quote anything Compose's unquoted parser would split or interpolate:
+    # dollars, spaces, quotes, braces (JSON lists like NZBGET_NEWS_SERVERS).
+    if not re.search(r"""[\s"'${}]""", value):
         return value
     literal = value.replace("\\", "\\\\").replace("'", "\\'")
     return f"'{literal}'"

@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, catalogue, channels, compose, config, launch, library_rescan, metrics, nfs_exports, promquery, provision_lock, scheduler, updates_info, watching
+from . import auth, catalogue, channels, compose, config, launch, library_rescan, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, updates_info, watching
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -82,6 +82,30 @@ _MEDIA_SERVER_KEYS = (
     "EMBY_HOST", "EMBY_PORT", "EMBY_API_KEY", "EMBY_USE_SSL",
 )
 _SUBTITLE_KEYS = ("OPENSUBTITLES_USERNAME", "OPENSUBTITLES_PASSWORD")
+NZBGET_NEWS_KEY = "NZBGET_NEWS_SERVERS"
+
+
+def _store_nzbget_servers(servers) -> list[dict]:
+    recipe = nzbget_news.recipe()
+    parsed = recipe.parse_servers(
+        recipe.serialize_servers(servers if isinstance(servers, list) else [])
+    )
+    config.write({NZBGET_NEWS_KEY: recipe.serialize_servers(parsed)})
+    return parsed
+
+
+def _apply_nzbget_conf(servers: list[dict] | None = None) -> None:
+    """Patch nzbget.conf on disk when the file already exists."""
+    recipe = nzbget_news.recipe()
+    stack = pathlib.Path(os.environ.get("KINE_ROOT", "/stack"))
+    conf = stack / "config" / "nzbget" / "nzbget.conf"
+    scripts = stack / "config" / "nzbget" / "scripts"
+    recipe.install_extensions(scripts, log=lambda *_: None)
+    if conf.is_file():
+        if servers is not None:
+            recipe.apply_servers(conf, servers)
+        recipe.apply_extensions(conf)
+
 
 
 def _nfs_configured(env: dict | None = None) -> bool:
@@ -463,10 +487,21 @@ async def disable_tier(tier: str, user: str = Depends(require_user)):
 
 
 @app.post("/api/apps/{app_id}/enable")
-async def enable(app_id: str, user: str = Depends(require_user)):
+async def enable(app_id: str, request: Request, user: str = Depends(require_user)):
     cat = catalogue.load()
     if app_id not in cat:
         raise HTTPException(404, "unknown app")
+
+    body = {}
+    try:
+        raw = await request.json()
+        if isinstance(raw, dict):
+            body = raw
+    except Exception:  # noqa: BLE001 — empty POST body is the usual enable click
+        body = {}
+
+    if app_id == "nzbget" and "news_servers" in body:
+        _store_nzbget_servers(body.get("news_servers") or [])
 
     wanted = config.profiles()
     # Pull in anything this app cannot work without, rather than
@@ -490,6 +525,9 @@ async def enable(app_id: str, user: str = Depends(require_user)):
             await compose.run("run", "--rm", "provision", "wire")
     except provision_lock.ProvisionBusy as exc:
         raise HTTPException(409, exc.detail) from exc
+    if app_id == "nzbget":
+        await asyncio.to_thread(_apply_nzbget_conf)
+        await compose.run("restart", "nzbget")
     await _sync_recyclarr()
     return {"ok": True, "log": out[-2000:]}
 
@@ -759,6 +797,10 @@ async def get_settings(user: str = Depends(require_user)):
         out["EMBY_DEFAULT_HOST"] = f"emby.{domain}"
     else:
         out["EMBY_DEFAULT_HOST"] = ""
+    out["nzbget_news_servers"] = nzbget_news.recipe().parse_servers(
+        env.get(NZBGET_NEWS_KEY, "")
+    )
+    out["nzbget_enabled"] = "nzbget" in config.profiles()
     return out
 
 
@@ -797,7 +839,16 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
             and "notification emby failed" not in log.lower(),
             "log": log,
         }
-    return {"ok": True, "nfs_mount": nfs_mount, "media_wire": media_wire}
+    nzbget_apply = None
+    if "nzbget_news_servers" in body:
+        servers = _store_nzbget_servers(body.get("nzbget_news_servers") or [])
+        if "nzbget" in config.profiles():
+            await asyncio.to_thread(_apply_nzbget_conf, servers)
+            await compose.run("restart", "nzbget")
+            nzbget_apply = {"ok": True, "servers": len(servers)}
+        else:
+            nzbget_apply = {"ok": True, "servers": len(servers), "deferred": True}
+    return {"ok": True, "nfs_mount": nfs_mount, "media_wire": media_wire, "nzbget_apply": nzbget_apply}
 
 
 @app.post("/api/backup")

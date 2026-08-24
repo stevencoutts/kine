@@ -132,6 +132,26 @@ def test_settings_subtitles_opensubtitles():
     assert "OPENSUBTITLES_USERNAME" in provision
 
 
+def test_settings_nzbget_news_servers():
+    assert "nzbget_news_servers" in FRONTEND
+    assert "save-nzbget" in FRONTEND
+    assert "enableNzbgetFlow" in FRONTEND
+    assert "Extended Unpacker" in FRONTEND
+    assert "Fake Detector" in FRONTEND
+    assert "Remove Samples" in FRONTEND
+    assert "NZBGET_NEWS_SERVERS" in BACKEND
+    assert "news_servers" in BACKEND
+    assert "nzbget_news" in BACKEND
+    text = (ROOT / ".env.example").read_text()
+    assert "NZBGET_NEWS_SERVERS=" in text
+    provision = (ROOT / "compose" / "core.provision.yml").read_text()
+    assert "NZBGET_NEWS_SERVERS" in provision
+    recipe = (ROOT / "provision" / "recipes" / "nzbget.py").read_text()
+    assert "ExtendedUnpacker" in recipe
+    assert "FakeDetector" in recipe
+    assert "RemoveSamples" in recipe
+
+
 def test_dev_channel_api_recreates_when_profile_enabled():
     assert '@app.post("/api/apps/{app_id}/dev/enable")' in BACKEND
     assert '@app.post("/api/apps/{app_id}/dev/disable")' in BACKEND
