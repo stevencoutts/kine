@@ -187,6 +187,31 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   .watch-card-title{font-size:.98rem}
   .watch-card-main{padding:.9rem .85rem .9rem}
 }
+.dl-cards{display:flex;flex-direction:column;gap:.9rem}
+.dl-card{position:relative;overflow:hidden;padding:1rem 1.05rem 1.05rem;
+  border-radius:14px;border:1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--panel) 92%, transparent),
+      color-mix(in srgb, var(--panel-2) 70%, transparent));
+  box-shadow:0 10px 28px color-mix(in srgb, #000 6%, transparent)}
+.dl-card::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;
+  background:var(--dl-accent, var(--ok))}
+.dl-card.transmission{--dl-accent:#e5a00d}
+.dl-card.nzbget{--dl-accent:#3b82f6}
+.dl-card.paused,.dl-card.queued{opacity:.9}
+.watch-badge.transmission{background:rgba(229,160,13,.14);color:#b87a00;border-color:rgba(229,160,13,.28)}
+.watch-badge.nzbget{background:rgba(59,130,246,.14);color:#1d5bbf;border-color:rgba(59,130,246,.28)}
+.dl-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem}
+.dl-card-title{margin:0;font-size:1rem;line-height:1.35;font-weight:650;letter-spacing:-.01em;
+  overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.dl-summary{display:flex;flex-wrap:wrap;gap:.55rem;margin-bottom:.85rem}
+.dl-summary-card{flex:1;min-width:180px;padding:.7rem .85rem;border-radius:12px;
+  border:1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  background:color-mix(in srgb, var(--panel-2) 55%, transparent)}
+.dl-summary-card strong{display:block;font-size:.85rem;margin-bottom:.2rem}
+.dl-summary-card span{color:var(--muted);font-size:.78rem}
+.dl-summary-card.warn span{color:var(--warn)}
 .panel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:.75rem}
 .panel-grid iframe{width:100%;height:210px;border:0;border-radius:10px;
   background:color-mix(in srgb, var(--panel) 60%, transparent)}
@@ -798,34 +823,76 @@ const downloadsPanel = (d) => {
     return '<p style="color:var(--muted);margin:0">Enable Transmission or NZBGet in Acquisition to see download activity.</p>';
   }
   const errors = d.errors || {};
-  const blocks = [];
+  const summaries = [];
   if (configured.transmission) {
     const t = d.transmission;
     if (!t) {
-      blocks.push(`<div class="watch-row"><strong>Transmission</strong>
-        <div class="watch-sub" style="color:var(--warn)">${escHtml(errors.transmission || 'unreachable')}</div></div>`);
+      summaries.push(`<div class="dl-summary-card warn"><strong>Transmission</strong>
+        <span>${escHtml(errors.transmission || 'unreachable')}</span></div>`);
     } else {
-      blocks.push(`<div class="watch-row"><strong>Transmission</strong>
-        <div class="watch-sub">${t.active} active / ${t.total} total`
+      summaries.push(`<div class="dl-summary-card"><strong>Transmission</strong>
+        <span>${t.active} active / ${t.total} total`
           + (t.paused ? ` · ${t.paused} paused` : '')
-          + ` · ↓ ${formatRate(t.download_rate)} · ↑ ${formatRate(t.upload_rate)}</div></div>`);
+          + ` · ↓ ${formatRate(t.download_rate)} · ↑ ${formatRate(t.upload_rate)}</span></div>`);
     }
   }
   if (configured.nzbget) {
     const n = d.nzbget;
     if (!n) {
-      blocks.push(`<div class="watch-row"><strong>NZBGet</strong>
-        <div class="watch-sub" style="color:var(--warn)">${escHtml(errors.nzbget || 'unreachable')}</div></div>`);
+      summaries.push(`<div class="dl-summary-card warn"><strong>NZBGet</strong>
+        <span>${escHtml(errors.nzbget || 'unreachable')}</span></div>`);
     } else {
       const bits = [`${n.downloading} downloading`, `${n.queued} queued`];
       if (n.postprocessing) bits.push(`${n.postprocessing} post-processing`);
       bits.push(`↓ ${formatRate(n.download_rate)}`);
       if (n.paused) bits.push('paused');
-      blocks.push(`<div class="watch-row"><strong>NZBGet</strong>
-        <div class="watch-sub">${bits.join(' · ')}</div></div>`);
+      summaries.push(`<div class="dl-summary-card"><strong>NZBGet</strong>
+        <span>${bits.join(' · ')}</span></div>`);
     }
   }
-  return `<div class="watch-list">${blocks.join('')}</div>`;
+  const items = Array.isArray(d.items) ? d.items : [];
+  const stateLabel = (s) => ({
+    downloading: 'Downloading', seeding: 'Seeding', paused: 'Paused',
+    queued: 'Queued', checking: 'Checking', 'post-processing': 'Post-processing',
+  }[s] || (s ? String(s) : 'Active'));
+  const clientLabel = (c) => c === 'nzbget' ? 'NZBGet' : 'Transmission';
+  let cards = '';
+  if (!items.length) {
+    cards = '<p style="color:var(--muted);margin:.25rem 0 0">Nothing active right now.</p>';
+  } else {
+    cards = `<div class="dl-cards">${items.map(it => {
+      const client = it.client === 'nzbget' ? 'nzbget' : 'transmission';
+      const st = it.state || 'downloading';
+      const meta = [];
+      if (it.download_rate) meta.push(`<span>↓ ${formatRate(it.download_rate)}</span>`);
+      if (it.upload_rate) meta.push(`<span>↑ ${formatRate(it.upload_rate)}</span>`);
+      if (it.error) meta.push(`<span style="color:var(--warn)">${escHtml(it.error)}</span>`);
+      const width = it.progress != null ? Math.max(0, Math.min(100, it.progress)) : 0;
+      const progress = it.progress != null ? `<div class="watch-progress">
+        <div class="watch-progress-top">
+          <span><strong>${width}%</strong></span>
+          <span>${it.eta_label ? `${escHtml(it.eta_label)} left` : ''}</span>
+        </div>
+        <div class="watch-bar"><i style="width:${width}%;background:linear-gradient(90deg, color-mix(in srgb, var(--dl-accent, var(--ok)) 70%, #fff), var(--dl-accent, var(--ok)))"></i></div>
+      </div>` : '';
+      return `<article class="dl-card ${client} ${escAttr(st)}">
+        <div class="dl-card-top">
+          <h3 class="dl-card-title" title="${escAttr(it.name || '')}">${escHtml(it.name || 'Untitled')}</h3>
+          <div class="watch-badges">
+            <span class="watch-badge ${client}">${clientLabel(client)}</span>
+            <span class="watch-badge state ${st === 'paused' || st === 'queued' ? 'paused' : ''}">${escHtml(stateLabel(st))}</span>
+          </div>
+        </div>
+        ${meta.length ? `<div class="watch-meta">${meta.join('')}</div>` : ''}
+        ${progress}
+      </article>`;
+    }).join('')}</div>`;
+  }
+  return `${summaries.length ? `<div class="dl-summary">${summaries.join('')}</div>` : ''}
+    ${cards}
+    ${Object.keys(errors).length && !summaries.some(s => s.includes('warn'))
+      ? `<p style="color:var(--warn);font-size:.8rem;margin:.75rem 0 0">${escHtml(Object.entries(errors).map(([k,v]) => `${k}: ${v}`).join(' · '))}</p>`
+      : ''}`;
 };
 const mediaServerCard = (s) => {
   const title = s.name || s.label || 'Media Server';
