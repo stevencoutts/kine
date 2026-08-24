@@ -76,7 +76,10 @@ Open the URL printed at the end, normally:
 
 The first-run admin password must be at least 12 characters. If VPN is enabled
 in onboarding, paste a valid WireGuard client configuration. Prowlarr ships
-with three public indexers; add IPTV provider details in Dispatcharr.
+with three public indexers. For Live TV: enable the Live TV section, finish
+Dispatcharr’s first login, create an API token in its profile, then paste that
+token under Helm → Settings → Live TV. Helm registers Dispatcharr as Emby’s
+HDHomeRun tuner and writes the token into ECM and Teamarr.
 
 The default `internal` TLS mode uses Traefik's generated self-signed
 certificate, so browsers warn. `custom` mode reads `fullchain.pem` and
