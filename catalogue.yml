@@ -35,6 +35,8 @@ apps:
     releases: https://github.com/Sonarr/Sonarr/releases
     internal: http://gluetun:8989
     subdomain: sonarr
+    # Open inside Helm via /view/sonarr/ (same certificate as admin).
+    embed: true
     api: v3
     provides: [tv-pvr]
     wires: [download-client, indexer-proxy, root-folder]
@@ -51,6 +53,7 @@ apps:
     releases: https://github.com/Radarr/Radarr/releases
     internal: http://gluetun:7878
     subdomain: radarr
+    embed: true
     api: v3
     provides: [film-pvr]
     wires: [download-client, indexer-proxy, root-folder]
@@ -66,6 +69,7 @@ apps:
     releases: https://github.com/Prowlarr/Prowlarr/releases
     internal: http://gluetun:9696
     subdomain: prowlarr
+    embed: true
     api: v1
     provides: [indexer-proxy]
     wires: [pvr-applications]
@@ -95,6 +99,7 @@ apps:
     releases: https://github.com/morpheus65535/bazarr/releases
     internal: http://gluetun:6767
     subdomain: bazarr
+    embed: true
     provides: [subtitles]
     wires: [pvr-link]
     requires: [gluetun]

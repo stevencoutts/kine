@@ -116,6 +116,14 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   background:color-mix(in srgb, var(--panel) 60%, transparent)}
 .panel-grid iframe.tall{grid-column:span 2;height:260px}
 @media (max-width:760px){.panel-grid iframe.tall{grid-column:span 1}}
+.embed-overlay{position:fixed;inset:0;z-index:40;display:none;
+  flex-direction:column;background:var(--bg)}
+.embed-overlay.open{display:flex}
+.embed-bar{display:flex;align-items:center;gap:.6rem;padding:.55rem .85rem;
+  border-bottom:1px solid var(--line);background:var(--panel);flex:none}
+.embed-bar h2{margin:0;font-size:.95rem;flex:1;min-width:0;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.embed-overlay iframe{flex:1;width:100%;border:0;background:#0b0c0f}
 .tier-switch{position:relative;display:inline-flex;align-items:center;flex:none;cursor:pointer}
 .tier-switch input{position:absolute;opacity:0;width:0;height:0;margin:0}
 .tier-switch-ui{display:inline-flex;align-items:center;width:2.6rem;height:1.35rem;
@@ -352,11 +360,57 @@ const enableNzbgetFlow = async (btn) => {
 };
 const TIER_ORDER = ['media','acquisition','process','live','metrics','platform'];
 
-// window.open(..., 'noopener') returns null on success in modern browsers,
-// so set opener manually and fall back to same-tab when a pop-up is blocked.
+// Embeddable apps open in an in-page iframe on /view/{app}/ (same host
+// certificate as Helm). Others still open in a new tab.
+const closeEmbed = () => {
+  const overlay = $('#embed-overlay');
+  const frame = $('#embed-frame');
+  if (!overlay) return;
+  overlay.classList.remove('open');
+  if (frame) frame.src = 'about:blank';
+  document.body.style.overflow = '';
+};
+
+const openEmbed = (app) => {
+  let overlay = $('#embed-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'embed-overlay';
+    overlay.className = 'embed-overlay';
+    overlay.innerHTML = `
+      <div class="embed-bar">
+        <h2 id="embed-title"></h2>
+        <a class="act" id="embed-external" target="_blank" rel="noopener noreferrer">New Tab</a>
+        <button class="act" type="button" id="embed-close">Close</button>
+      </div>
+      <iframe id="embed-frame" title="Embedded app"></iframe>`;
+    document.body.appendChild(overlay);
+    $('#embed-close').onclick = closeEmbed;
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && overlay.classList.contains('open')) closeEmbed();
+    });
+  }
+  $('#embed-title').textContent = app.name || app.id;
+  const external = $('#embed-external');
+  if (app.url) {
+    external.href = app.url;
+    external.style.display = '';
+  } else {
+    external.removeAttribute('href');
+    external.style.display = 'none';
+  }
+  $('#embed-frame').src = app.embed_url;
+  overlay.classList.add('open');
+  document.body.style.overflow = 'hidden';
+};
+
 const launchApp = (app) => {
   const tierMsg = $('#tier-msg');
   const name = app?.name || 'application';
+  if (app?.embed_url) {
+    openEmbed(app);
+    return;
+  }
   if (!app?.url) {
     tierMsg.className = 'banner bad';
     tierMsg.textContent = `Could not open ${name}. No launch URL is configured.`;

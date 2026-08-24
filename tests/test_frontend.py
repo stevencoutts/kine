@@ -88,6 +88,16 @@ def test_enabled_apps_use_real_open_buttons():
     assert '<a class="link" href="${a.url}"' not in FRONTEND
 
 
+def test_open_embeds_arr_apps_same_origin():
+    assert "openEmbed" in FRONTEND
+    assert "embed_url" in FRONTEND
+    assert "embed-overlay" in FRONTEND
+    assert "/view/" in (ROOT / "helm" / "backend" / "app" / "embed_proxy.py").read_text()
+    assert "embed_proxy.mount" in BACKEND
+    cat = (ROOT / "catalogue.yml").read_text()
+    assert "embed: true" in cat
+
+
 def test_dev_version_checkbox_only_when_supported():
     assert "a.dev_supported" in FRONTEND
     assert 'data-dev="${a.id}"' in FRONTEND

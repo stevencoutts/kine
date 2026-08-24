@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, catalogue, channels, compose, config, downloads, launch, library_rescan, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, updates_info, watching
+from . import auth, catalogue, channels, compose, config, downloads, embed_proxy, launch, library_rescan, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, updates_info, watching
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -263,6 +263,10 @@ def require_user(request: Request) -> str:
     return user
 
 
+# Same-origin app embeds (/view/sonarr/ …) — after require_user exists.
+embed_proxy.mount(app, require_user)
+
+
 @app.get("/api/health")
 async def health():
     """Unauthenticated on purpose: the container healthcheck calls it.
@@ -450,6 +454,12 @@ async def apps(request: Request, user: str = Depends(require_user)):
                 request.url.hostname,
                 env.get("KINE_LOCAL_DOMAIN", "127.0.0.1.nip.io"),
                 env.get("TRAEFIK_HTTPS_PORT", "8443"),
+            ),
+            "embed": embed_proxy.embeddable(meta),
+            "embed_url": (
+                embed_proxy.embed_prefix(key) + "/"
+                if embed_proxy.embeddable(meta) and key in enabled
+                else None
             ),
             "releases": meta.get("releases"),
             "requires": meta.get("requires", []),
