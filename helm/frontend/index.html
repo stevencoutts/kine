@@ -114,9 +114,6 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   background:color-mix(in srgb, var(--panel) 60%, transparent)}
 .panel-grid iframe.tall{grid-column:span 2;height:260px}
 @media (max-width:760px){.panel-grid iframe.tall{grid-column:span 1}}
-.spark{display:block;width:100%;height:26px;margin:.5rem 0 0;opacity:.9}
-.spark path{fill:none;stroke:var(--accent);stroke-width:1.5;vector-effect:non-scaling-stroke}
-.spark path.fill{fill:color-mix(in srgb, var(--accent) 20%, transparent);stroke:none}
 .tier-switch{position:relative;display:inline-flex;align-items:center;flex:none;cursor:pointer}
 .tier-switch input{position:absolute;opacity:0;width:0;height:0;margin:0}
 .tier-switch-ui{display:inline-flex;align-items:center;width:2.6rem;height:1.35rem;
@@ -417,25 +414,10 @@ const watchPanel = (w) => {
   return `<div class="watch-list">${rows}</div>
     ${errors ? `<p style="color:var(--warn);font-size:.8rem;margin:.75rem 0 0">${escHtml(errors)}</p>` : ''}`;
 };
-// Drawn inline rather than embedded: one Prometheus query feeds every
-// card, where twenty iframes would be twenty round trips.
-const sparkline = (values, w = 100, h = 26) => {
-  if (!values || values.length < 2) return '';
-  const max = Math.max(...values, 0.0001);
-  const step = w / (values.length - 1);
-  const line = values.map((v, i) =>
-    `${i ? 'L' : 'M'}${(i * step).toFixed(1)},${(h - (v / max) * (h - 2)).toFixed(1)}`
-  ).join(' ');
-  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">` +
-    `<path class="fill" d="${line} L${w},${h} L0,${h} Z"></path>` +
-    `<path d="${line}"></path></svg>`;
-};
-
 const appCard = a => `
   <div class="card">
     <h3><span class="dot ${a.running?'on':'off'}"></span>${a.name}</h3>
     <p>${a.summary}</p>
-    <div data-spark="${a.id}"></div>
     ${a.tunnelled==='forced'?'<p style="color:var(--warn)">Always Tunnelled</p>':''}
     ${a.dev_supported ? `<label class="tier-switch" style="margin:.15rem 0" aria-label="Dev Version">
       <input type="checkbox" data-dev="${a.id}" ${a.dev_enabled?'checked':''}>
@@ -556,14 +538,6 @@ render.apps = async () => {
   document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
     launchApp(state.apps.find(a => a.id === b.dataset.open));
   });
-  // Fired after the cards are in the DOM: the page must not wait on
-  // Prometheus, and renders unchanged when metrics are off.
-  api('/stats/cards').then(stats => {
-    Object.entries(stats.apps || {}).forEach(([id, series]) => {
-      const host = document.querySelector(`[data-spark="${id}"]`);
-      if (host) host.innerHTML = sparkline(series.cpu);
-    });
-  }).catch(() => {});
 };
 
 render.stats = async () => {
