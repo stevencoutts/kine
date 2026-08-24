@@ -161,16 +161,22 @@ def _bootstrap_script(prefix: str) -> str:
         "var ce=Document.prototype.createElement;"
         "Document.prototype.createElement=function(t,opt){"
         "var el=ce.call(this,t,opt);var n=String(t).toLowerCase();"
+        # Trap script/img src. Do NOT redefine link.href — Safari then fails to
+        # apply webpack CSS chunks, so FA icons render at full SVG size.
         "if(n==='script'||n==='img'||n==='image'||n==='source'||n==='video'||n==='audio')"
         "{trapAttr(el,'src');}"
-        "if(n==='link'||n==='a'||n==='area'){trapAttr(el,'href');}"
         "return el;};"
-        # Catch React setAttribute / style background urls that skip property traps.
+        # Catch React setAttribute for src/href (including <link href> CSS chunks).
         "var sa=Element.prototype.setAttribute;"
         "Element.prototype.setAttribute=function(n,v){"
         "n=String(n).toLowerCase();"
         "if((n==='src'||n==='href')&&typeof v==='string')v=abs(v);"
         "return sa.call(this,n,v);};"
+        # Safety net if FA CSS is late: keep icon SVGs at 1em.
+        "var st=document.createElement('style');st.textContent="
+        "'.svg-inline--fa{display:inline-block;height:1em;overflow:visible;"
+        "vertical-align:-.125em}'"
+        ";document.documentElement.appendChild(st);"
         # Keep the iframe on the embed prefix if something navigates to /.
         "if(location.pathname!==P&&location.pathname.indexOf(P+'/')!==0)"
         "{location.replace(P+'/'+location.pathname.replace(/^\\//,'')+location.search+location.hash);}"
