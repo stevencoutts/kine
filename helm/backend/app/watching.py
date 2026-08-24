@@ -487,6 +487,7 @@ async def fetch_art(
             return await _get_bytes(
                 f"{base}{path}",
                 {"X-Plex-Token": token, "Accept": "image/*"},
+                {"width": 240, "height": 360, "minSize": 1, "upscale": 1},
             )
         if server == "emby":
             if emby_art_proxy_url(item_id, tag) is None:
@@ -495,7 +496,7 @@ async def fetch_art(
             bases = _emby_bases(env)
             if not token or not bases:
                 raise LookupError("emby not configured")
-            params: dict[str, Any] = {"maxHeight": 240, "quality": 90}
+            params: dict[str, Any] = {"maxHeight": 360, "maxWidth": 360, "quality": 92}
             if tag and tag.strip():
                 params["tag"] = tag.strip()
             last_error: Exception | None = None

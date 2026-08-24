@@ -124,22 +124,36 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
 .watch-card.plex{--watch-accent:#e5a00d}
 .watch-card.emby{--watch-accent:#52b54b}
 .watch-card.paused{opacity:.88}
-.watch-card-body{display:flex;gap:.95rem;align-items:stretch}
-.watch-art{flex:none;width:72px;align-self:stretch;min-height:96px;border-radius:10px;
-  overflow:hidden;background:color-mix(in srgb, var(--panel-2) 85%, transparent);
-  border:1px solid color-mix(in srgb, var(--line) 55%, transparent);
-  display:flex;align-items:center;justify-content:center}
+.watch-card-body{display:flex;gap:1rem;align-items:flex-start}
+.watch-art{flex:none;width:88px;aspect-ratio:2 / 3;border-radius:12px;
+  overflow:hidden;background:
+    linear-gradient(160deg,
+      color-mix(in srgb, var(--watch-accent, var(--line)) 18%, var(--panel-2)),
+      color-mix(in srgb, var(--panel-2) 90%, transparent));
+  border:1px solid color-mix(in srgb, var(--line) 50%, transparent);
+  box-shadow:0 6px 16px color-mix(in srgb, #000 8%, transparent);
+  display:flex;align-items:center;justify-content:center;position:relative}
 .watch-art img{width:100%;height:100%;object-fit:cover;display:block}
-.watch-art.channel{width:72px;min-height:72px;align-self:center}
-.watch-art.channel img{object-fit:contain;padding:.35rem;background:#0b0b0b08}
-.watch-art-fallback{font-size:.65rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
-  color:var(--muted);padding:.4rem;text-align:center}
-.watch-card-main{flex:1;min-width:0}
+.watch-art.channel{width:88px;aspect-ratio:1;border-radius:16px;
+  background:
+    radial-gradient(circle at 30% 25%,
+      color-mix(in srgb, #fff 55%, transparent),
+      color-mix(in srgb, var(--panel) 92%, transparent) 55%),
+    color-mix(in srgb, var(--panel-2) 88%, transparent);
+  padding:.55rem;box-sizing:border-box}
+.watch-art.channel img{object-fit:contain;border-radius:8px;
+  background:transparent;filter:drop-shadow(0 1px 2px rgba(0,0,0,.08))}
+.watch-art-fallback{display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:.2rem;width:100%;height:100%;color:color-mix(in srgb, var(--watch-accent, var(--muted)) 70%, var(--muted));
+  font-weight:750;letter-spacing:.04em;text-transform:uppercase;user-select:none}
+.watch-art-fallback .mono{font-size:1.55rem;line-height:1;letter-spacing:-.02em}
+.watch-art-fallback .sub{font-size:.58rem;opacity:.75}
+.watch-card-main{flex:1;min-width:0;padding-top:.05rem}
 .watch-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem}
 .watch-card-title{margin:0;font-size:1.05rem;line-height:1.3;font-weight:650;letter-spacing:-.01em}
 .watch-card-show{margin:.2rem 0 0;color:var(--muted);font-size:.8rem}
 .watch-badges{display:flex;flex-wrap:wrap;gap:.35rem;justify-content:flex-end}
-.watch-badge{display:inline-flex;align-items:center;gap:.25rem;padding:.18rem .55rem;
+.watch-badge{display:inline-flex;align-items:center;gap:.25rem;padding:.22rem .62rem;
   border-radius:999px;font-size:.68rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
   border:1px solid transparent}
 .watch-badge.plex{background:rgba(229,160,13,.14);color:#b87a00;border-color:rgba(229,160,13,.28)}
@@ -150,14 +164,20 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   border-color:rgba(224,160,48,.28)}
 .watch-badge.kind{background:color-mix(in srgb, var(--panel-2) 80%, transparent);color:var(--muted);
   border-color:color-mix(in srgb, var(--line) 70%, transparent)}
-.watch-badge.format{background:color-mix(in srgb, var(--accent) 10%, transparent);color:var(--text);
-  border-color:color-mix(in srgb, var(--accent) 22%, transparent);letter-spacing:.03em}
-.watch-badge.stream{background:color-mix(in srgb, var(--panel-2) 70%, transparent);color:var(--muted);
-  border-color:color-mix(in srgb, var(--line) 65%, transparent)}
+.watch-badge.format-res{background:color-mix(in srgb, var(--panel-2) 78%, transparent);color:var(--text);
+  border-color:color-mix(in srgb, var(--line) 70%, transparent)}
+.watch-badge.format-video{background:rgba(59,130,246,.14);color:#1d5bbf;border-color:rgba(59,130,246,.28)}
+.watch-badge.format-audio{background:rgba(147,51,234,.12);color:#6b21a8;border-color:rgba(147,51,234,.26)}
+.watch-badge.format-bitrate{background:color-mix(in srgb, var(--panel-2) 78%, transparent);color:var(--muted);
+  border-color:color-mix(in srgb, var(--line) 70%, transparent)}
+.watch-badge.stream{background:color-mix(in srgb, var(--ok) 12%, transparent);color:var(--ok);
+  border-color:color-mix(in srgb, var(--ok) 26%, transparent)}
+.watch-badge.stream.transcode{background:rgba(224,160,48,.14);color:var(--warn);
+  border-color:rgba(224,160,48,.28)}
 .watch-meta{display:flex;flex-wrap:wrap;gap:.4rem .7rem;margin-top:.75rem;color:var(--muted);font-size:.8rem}
 .watch-meta span{display:inline-flex;align-items:center;gap:.3rem}
 .watch-meta b{color:var(--text);font-weight:600}
-.watch-formats{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.7rem}
+.watch-formats{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.75rem}
 .watch-source{margin-top:.65rem;padding:.45rem .6rem;border-radius:8px;font-size:.75rem;
   font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text);
   background:color-mix(in srgb, var(--panel-2) 75%, transparent);
@@ -172,7 +192,7 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   background:linear-gradient(90deg, color-mix(in srgb, var(--watch-accent, var(--ok)) 70%, #fff),
     var(--watch-accent, var(--ok)))}
 @media (max-width:560px){
-  .watch-art{width:56px;min-height:76px}
+  .watch-art,.watch-art.channel{width:68px}
   .watch-card-title{font-size:.98rem}
 }
 .panel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:.75rem}
@@ -688,6 +708,17 @@ const watchPanel = (w) => {
   const kindLabel = (k) => ({
     episode: 'Episode', movie: 'Movie', channel: 'Live TV', livetvprogram: 'Live TV',
   }[k] || (k ? k : 'Playing'));
+  const formatClass = (f) => {
+    const u = String(f || '').toUpperCase().replace(/\./g, '');
+    if (/MBPS$/.test(u)) return 'format-bitrate';
+    if (/^\d+P$/.test(u) || /^\d+X\d+$/.test(u)) return 'format-res';
+    if (/^(HEVC|H265|H264|AVC|AV1|VP9|MPEG2|MPEG4|VC1|XVID|WMV)$/.test(u)) return 'format-video';
+    if (/^(AAC|AC3|EAC3|DTS|TRUEHD|FLAC|OPUS|MP3|PCM|VORBIS|ALAC|DDP)$/.test(u)) return 'format-audio';
+    return 'format-res';
+  };
+  const artFallback = (label, mono) =>
+    `<span class="watch-art-fallback"><span class="mono">${escHtml(mono)}</span>` +
+    `<span class="sub">${escHtml(label)}</span></span>`;
   const cards = sessions.map(s => {
     const server = s.server === 'plex' ? 'Plex' : 'Emby';
     const st = s.state === 'paused' ? 'paused' : 'playing';
@@ -702,9 +733,10 @@ const watchPanel = (w) => {
     if (s.product && s.product !== s.player) meta.push(`<span>${escHtml(s.product)}</span>`);
     if (s.library) meta.push(`<span>${escHtml(s.library)}</span>`);
     const formats = Array.isArray(s.formats) ? s.formats : [];
+    const streamClass = s.stream === 'transcode' ? 'stream transcode' : 'stream';
     const formatPills = [
-      ...formats.map(f => `<span class="watch-badge format">${escHtml(f)}</span>`),
-      ...(s.stream ? [`<span class="watch-badge stream">${escHtml(s.stream)}</span>`] : []),
+      ...formats.map(f => `<span class="watch-badge ${formatClass(f)}">${escHtml(f)}</span>`),
+      ...(s.stream ? [`<span class="watch-badge ${streamClass}">${escHtml(s.stream)}</span>`] : []),
     ].join('');
     const formatsRow = formatPills ? `<div class="watch-formats">${formatPills}</div>` : '';
     const source = s.source
@@ -727,11 +759,18 @@ const watchPanel = (w) => {
         ${s.progress != null ? `<div class="watch-bar"><i style="width:${width}%"></i></div>` : ''}
       </div>`;
     }
+    const mono = (s.kind === 'channel'
+      ? (s.channel || s.title || server)
+      : (s.show || s.title || server)).trim().charAt(0).toUpperCase() || server.charAt(0);
     const artClass = s.kind === 'channel' ? 'watch-art channel' : 'watch-art';
+    const fallback = artFallback(server, mono);
     const art = s.art_url
-      ? `<div class="${artClass}"><img src="${escAttr(s.art_url)}" alt="" loading="lazy"
-          onerror="this.parentElement.innerHTML='<span class=watch-art-fallback>${escAttr(server)}</span>'"></div>`
-      : `<div class="${artClass}"><span class="watch-art-fallback">${escHtml(server)}</span></div>`;
+      ? `<div class="${artClass}">
+          <img src="${escAttr(s.art_url)}" alt="" loading="lazy"
+            onerror="this.hidden=true;this.nextElementSibling.hidden=false">
+          <span class="watch-art-fallback" hidden><span class="mono">${escHtml(mono)}</span><span class="sub">${escHtml(server)}</span></span>
+        </div>`
+      : `<div class="${artClass}">${fallback}</div>`;
     return `<article class="watch-card ${escAttr(s.server || '')} ${st}">
       <div class="watch-card-body">
         ${art}

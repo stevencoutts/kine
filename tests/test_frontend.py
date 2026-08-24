@@ -111,7 +111,9 @@ def test_media_overview_uses_settings_servers():
     assert "settings-configured" in FRONTEND
     assert "watch-card" in FRONTEND
     assert "watch-art" in FRONTEND
-    assert "watch-badge format" in FRONTEND
+    assert "formatClass" in FRONTEND
+    assert "format-video" in FRONTEND
+    assert "watch-art-fallback" in FRONTEND
     assert "s.formats" in FRONTEND
     assert "s.art_url" in FRONTEND
     assert "position_label" in (ROOT / "helm" / "backend" / "app" / "watching.py").read_text()
