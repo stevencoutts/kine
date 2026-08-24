@@ -87,8 +87,28 @@ NZBGET_NEWS_KEY = "NZBGET_NEWS_SERVERS"
 
 def _store_nzbget_servers(servers) -> list[dict]:
     recipe = nzbget_news.recipe()
+    incoming = servers if isinstance(servers, list) else []
+    # Blank password in the form must not wipe an existing credential for
+    # the same host (browser password managers often leave the field empty).
+    existing = {
+        str(s.get("host") or "").strip().lower(): s
+        for s in recipe.parse_servers(config.read().get(NZBGET_NEWS_KEY, ""))
+        if s.get("host")
+    }
+    merged = []
+    for row in incoming:
+        if not isinstance(row, dict):
+            continue
+        item = dict(row)
+        host = str(item.get("host") or "").strip().lower()
+        prev = existing.get(host) or {}
+        if not str(item.get("password") or "") and prev.get("password"):
+            item["password"] = prev["password"]
+        if not str(item.get("username") or "") and prev.get("username"):
+            item["username"] = prev["username"]
+        merged.append(item)
     parsed = recipe.parse_servers(
-        recipe.serialize_servers(servers if isinstance(servers, list) else [])
+        recipe.serialize_servers(merged)
     )
     config.write({NZBGET_NEWS_KEY: recipe.serialize_servers(parsed)})
     return parsed

@@ -143,6 +143,9 @@ def test_settings_nzbget_news_servers():
     assert "NZBGET_NEWS_SERVERS" in BACKEND
     assert "news_servers" in BACKEND
     assert "nzbget_news" in BACKEND
+    # Saving the form with an empty password field must not wipe .env creds.
+    assert "Blank password in the form must not wipe" in BACKEND
+    assert 'prev.get("password")' in BACKEND
     text = (ROOT / ".env.example").read_text()
     assert "NZBGET_NEWS_SERVERS=" in text
     provision = (ROOT / "compose" / "core.provision.yml").read_text()
