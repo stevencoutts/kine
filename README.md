@@ -290,6 +290,14 @@ before changing a live mount.
 
 ## VPN and TUN behavior
 
+Helm manages multiple WireGuard profiles under `config/helm/vpn-profiles.json`.
+The first visit to the VPN tab (or `GET /api/vpn`) imports an existing
+`config/gluetun/wireguard/wg0.conf` as profile **Default** when the profiles
+file is missing. Activating a profile writes `wg0.conf` and the derived
+gluetun env keys, then recreates the tunnel group. Tunnelled apps remain
+global via `VPN_TUNNELLED_APPS`. OpenVPN can be stored as a type later; only
+WireGuard activates in this release.
+
 Most of the acquisition tier does not merely route through gluetun. Sonarr,
 Radarr, Prowlarr, Bazarr, Transmission, NZBGet, Unpackerr, and Recyclarr join
 gluetun's network namespace with `network_mode: service:gluetun`. Seerr stays
