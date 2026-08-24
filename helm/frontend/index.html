@@ -171,9 +171,12 @@ textarea{font-family:ui-monospace,monospace;font-size:.8rem;resize:vertical}
 .badge{display:inline-block;padding:.15rem .55rem;border-radius:999px;font-size:.72rem;font-weight:600}
 .badge.ok{background:rgba(63,185,80,.15);color:var(--ok)}
 .badge.warn{background:rgba(224,160,48,.15);color:var(--warn)}
+.badge.bad{background:rgba(248,81,73,.15);color:var(--bad)}
+.badge.busy{background:rgba(100,149,237,.15);color:#7eb6ff}
 .badge.muted{background:color-mix(in srgb, var(--panel-2) 80%, transparent);color:var(--muted)}
 .badge.dev{background:rgba(100,149,237,.15);color:#7eb6ff}
-@media (prefers-color-scheme: light){.badge.dev{color:#2563eb}}
+@media (prefers-color-scheme: light){.badge.dev,.badge.busy{color:#2563eb}}
+#updates-progress{position:sticky;top:.5rem;z-index:2;margin-bottom:.75rem}
 </style>
 </head>
 <body>
@@ -190,7 +193,8 @@ const api = async (path, opts={}) => {
   return data;
 };
 
-const state = { tab:'apps', apps:[], tiers:{}, activeTier:null, watchTimer:null };
+const state = { tab:'apps', apps:[], tiers:{}, activeTier:null, watchTimer:null,
+  updatesLog:'', updatesProgress:null };
 const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({
   '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
 }[c]));
@@ -594,11 +598,14 @@ render.updates = async (refresh=false) => {
   render.shell(`<div class="section"><h2>Image Updates</h2>
     <p style="color:var(--muted);font-size:.85rem">Nothing updates on its own.
     The overnight job only checks digests; applying an update snapshots
-    config first and rolls back if the app does not come back healthy.</p>
+    config first and rolls back if the app does not come back healthy.
+    Update All runs one at a time; dockerproxy is always last because Helm
+    talks to Docker through it.</p>
     <div class="row" style="margin-bottom:1rem">
       <button class="act" id="refresh">Check Now</button>
       <span id="age" style="color:var(--muted);font-size:.8rem"></span>
     </div>
+    <div id="updates-progress" class="banner" style="display:none"></div>
     <div id="updates-body"><p style="color:var(--muted)">${
       refresh ? 'checking registries…' : 'loading…'
     }</p></div>
@@ -620,14 +627,14 @@ render.updates = async (refresh=false) => {
     const run = c.running ? '' : ' <span style="color:var(--muted)">(stopped)</span>';
     const btn = c.update_available
       ? `<button class="act primary" data-up="${c.id}">Update</button>` : '';
-    return `<tr>
+    return `<tr data-row="${c.id}">
       <td><strong>${c.name || c.id}</strong><span style="color:var(--muted)">${run}</span></td>
       <td>${ch}</td>
       <td class="mono">${tag}${stable}</td>
-      <td class="mono">${fmtDigest(c.local_digest)}</td>
+      <td class="mono" data-local-digest="${c.id}">${fmtDigest(c.local_digest)}</td>
       <td class="mono">${fmtDigest(c.remote_digest)}</td>
-      <td>${st}</td>
-      <td>${btn}</td>
+      <td data-row-status="${c.id}">${st}</td>
+      <td data-row-action="${c.id}">${btn}</td>
     </tr>`;
   }).join('');
   const section = (title, list, key) => {
@@ -655,49 +662,144 @@ render.updates = async (refresh=false) => {
     ? section('Apps', apps, 'apps') + section('Core containers', core, 'core')
     : `<p style="color:var(--muted)">No updatable images in the active compose project.</p>`;
 
-  const applyOne = async (id, log) => {
-    log.textContent += (log.textContent ? '\n' : '') +
-      `→ ${id}: snapshotting, pulling and recreating…`;
-    const res = await api('/updates/' + id, {method:'POST'});
-    log.textContent += res.rolled_back
-      ? `\nROLLED BACK ${id}\n${res.log}\n`
-      : `\nOK ${id}\n${res.log}\n`;
-    if (res.rolled_back || !res.ok) throw new Error(id + ' failed');
-  };
-
-  document.querySelectorAll('[data-up]').forEach(b => b.onclick = async () => {
-    b.disabled = true; b.textContent = 'updating…';
+  if (state.updatesLog) {
     const rep = $('#rep');
     rep.style.display = 'block';
-    rep.textContent = '';
-    try {
-      await applyOne(b.dataset.up, rep);
-      // Reload from cache — apply already cleared this row server-side.
-      render.updates(false);
-    } catch (e) {
-      rep.textContent += '\n' + (e.message || e);
-      b.disabled = false; b.textContent = 'Update';
+    rep.textContent = state.updatesLog;
+  }
+
+  const setProgress = (text, kind='ok') => {
+    const bar = $('#updates-progress');
+    if (!bar) return;
+    state.updatesProgress = text ? { text, kind } : null;
+    bar.style.display = text ? 'block' : 'none';
+    bar.className = 'banner ' + (kind === 'bad' ? 'bad' : 'ok');
+    if (kind === 'warn') {
+      bar.className = 'banner';
+      bar.style.borderColor = 'var(--warn)';
+      bar.style.background = 'rgba(224,160,48,.12)';
+    } else {
+      bar.style.borderColor = '';
+      bar.style.background = '';
     }
-  });
+    bar.textContent = text || '';
+  };
+  if (state.updatesProgress) {
+    setProgress(state.updatesProgress.text, state.updatesProgress.kind);
+  }
+  const setRowStatus = (id, kind, label, remoteDigest) => {
+    const cell = document.querySelector(`[data-row-status="${id}"]`);
+    const action = document.querySelector(`[data-row-action="${id}"]`);
+    const local = document.querySelector(`[data-local-digest="${id}"]`);
+    const cls = ({ok:'ok', warn:'warn', bad:'bad', busy:'busy'})[kind] || 'muted';
+    if (cell) cell.innerHTML = `<span class="badge ${cls}">${label}</span>`;
+    if (action) {
+      if (kind === 'busy') action.innerHTML = '<span style="color:var(--muted);font-size:.8rem">working…</span>';
+      else if (kind === 'ok') action.innerHTML = '';
+      else if (kind === 'bad') action.innerHTML = `<button class="act primary" data-up="${id}">Retry</button>`;
+    }
+    if (kind === 'ok' && remoteDigest && local) local.textContent = fmtDigest(remoteDigest);
+  };
+
+  const applyOne = async (id, log) => {
+    const started = Date.now();
+    const tick = setInterval(() => {
+      const secs = Math.round((Date.now() - started) / 1000);
+      const action = document.querySelector(`[data-row-action="${id}"]`);
+      if (action) action.innerHTML =
+        `<span style="color:var(--muted);font-size:.8rem">working… ${secs}s</span>`;
+    }, 1000);
+    log.textContent += (log.textContent ? '\n' : '') +
+      `→ ${id}: snapshotting, pulling and recreating…\n`;
+    log.scrollTop = log.scrollHeight;
+    try {
+      const res = await api('/updates/' + id, {method:'POST'});
+      log.textContent += res.rolled_back
+        ? `ROLLED BACK ${id}\n${res.log}\n`
+        : `OK ${id} (${Math.round((Date.now() - started) / 1000)}s)\n${res.log}\n`;
+      log.scrollTop = log.scrollHeight;
+      if (res.rolled_back || !res.ok) throw new Error(id + ' failed');
+      return res;
+    } catch (e) {
+      log.textContent += `FAILED ${id}: ${e.message || e}\n`;
+      log.scrollTop = log.scrollHeight;
+      throw e;
+    } finally {
+      clearInterval(tick);
+    }
+  };
+
+  // dockerproxy last: recreating it drops Helm's Docker API mid-batch.
+  const orderPending = (ids) => ids.slice().sort((a, b) =>
+    (a === 'dockerproxy') - (b === 'dockerproxy'));
+
+  const bindUpdateButtons = () => {
+    document.querySelectorAll('[data-up]').forEach(b => b.onclick = async () => {
+      const id = b.dataset.up;
+      b.disabled = true;
+      const rep = $('#rep');
+      rep.style.display = 'block';
+      setRowStatus(id, 'busy', 'updating…');
+      setProgress(`Updating ${id}…`, 'warn');
+      try {
+        const row = rows.find(c => c.id === id);
+        await applyOne(id, rep);
+        setRowStatus(id, 'ok', 'current', row && row.remote_digest);
+        setProgress(`Updated ${id}.`, 'ok');
+        state.updatesLog = rep.textContent;
+      } catch (e) {
+        setRowStatus(id, 'bad', 'failed');
+        setProgress(`Failed updating ${id}: ${e.message || e}`, 'bad');
+        state.updatesLog = rep.textContent;
+        bindUpdateButtons();
+      }
+    });
+  };
+  bindUpdateButtons();
 
   document.querySelectorAll('[data-up-all]').forEach(b => b.onclick = async () => {
     const group = b.dataset.upAll === 'core' ? core : apps;
-    const pending = group.filter(c => c.update_available).map(c => c.id);
+    const pending = orderPending(group.filter(c => c.update_available).map(c => c.id));
     if (!pending.length) return;
-    b.disabled = true;
-    document.querySelectorAll('[data-up], [data-up-all]').forEach(el => el.disabled = true);
+    document.querySelectorAll('[data-up], [data-up-all], #refresh').forEach(el => el.disabled = true);
     const rep = $('#rep');
     rep.style.display = 'block';
-    rep.textContent = `Updating ${pending.length} ${b.dataset.upAll} container(s) one at a time…\n`;
-    try {
-      for (const id of pending) {
+    rep.textContent = '';
+    let done = 0;
+    let failed = null;
+    for (let i = 0; i < pending.length; i++) {
+      const id = pending[i];
+      const label = `${i + 1}/${pending.length}`;
+      b.textContent = `Updating ${label}…`;
+      setProgress(
+        `Updating ${label}: ${id}` +
+          (id === 'dockerproxy' ? ' (last — Helm uses this for Docker access)' : '') +
+          '…',
+        'warn'
+      );
+      setRowStatus(id, 'busy', 'updating…');
+      try {
+        const row = rows.find(c => c.id === id);
         await applyOne(id, rep);
+        setRowStatus(id, 'ok', 'current', row && row.remote_digest);
+        done += 1;
+      } catch (e) {
+        setRowStatus(id, 'bad', 'failed');
+        failed = id;
+        setProgress(
+          `Stopped at ${label} (${id}): ${e.message || e}. ${done} succeeded before that.`,
+          'bad'
+        );
+        break;
       }
-      render.updates(false);
-    } catch (e) {
-      rep.textContent += `\nStopped: ${e.message || e}\n`;
-      render.updates(false);
     }
+    state.updatesLog = rep.textContent;
+    if (!failed) {
+      b.textContent = `Done (${done}/${pending.length})`;
+      setProgress(`Finished ${done}/${pending.length} updates.`, 'ok');
+    }
+    // Refresh from cache so digests/pending match disk, but keep the log.
+    await render.updates(false);
   });
 };
 
