@@ -365,7 +365,9 @@ Helm tabs map to the same operations as the CLI:
   entries and compose-only plumbing). Each section has an Update All that
   runs one container at a time and stops on the first failure. Applying an
   update clears that row in the overnight cache immediately; **Check Now**
-  is the only action that re-queries registries.
+  is the only action that re-queries registries. `dockerproxy` is host-only:
+  Helm reaches Docker through it, so recreating it from the UI would cut
+  that path mid-apply and leave the proxy (and often Traefik) down.
 - **Settings** — domain, TLS, NFS paths, Plex/Emby library notify, and
   OpenSubtitles credentials for Bazarr.
 

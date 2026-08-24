@@ -40,11 +40,14 @@ def test_enrich_marks_hidden_and_unknown_as_core(monkeypatch):
         {"id": "sonarr", "tag": "latest", "update_available": False},
         {"id": "cadvisor", "tag": "latest", "update_available": True},
         {"id": "traefik", "tag": "latest", "update_available": False},
+        {"id": "dockerproxy", "tag": "0.3", "update_available": True},
     ])
     by_id = {r["id"]: r for r in rows}
     assert by_id["sonarr"]["core"] is False
     assert by_id["cadvisor"]["core"] is True
     assert by_id["traefik"]["core"] is True
+    assert by_id["dockerproxy"]["host_only"] is True
+    assert by_id["sonarr"]["host_only"] is False
 
 
 def test_mark_container_current_clears_pending(tmp_path, monkeypatch):

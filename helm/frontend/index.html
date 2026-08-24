@@ -599,8 +599,8 @@ render.updates = async (refresh=false) => {
     <p style="color:var(--muted);font-size:.85rem">Nothing updates on its own.
     The overnight job only checks digests; applying an update snapshots
     config first and rolls back if the app does not come back healthy.
-    Update All runs one at a time; dockerproxy is always last because Helm
-    talks to Docker through it.</p>
+    Update All runs one at a time. dockerproxy is host-only: Helm reaches
+    Docker through it, so recreating it from here would cut that path mid-apply.</p>
     <div class="row" style="margin-bottom:1rem">
       <button class="act" id="refresh">Check Now</button>
       <span id="age" style="color:var(--muted);font-size:.8rem"></span>
@@ -625,8 +625,12 @@ render.updates = async (refresh=false) => {
       ? `<span class="badge warn">update</span>`
       : `<span class="badge ok">current</span>`;
     const run = c.running ? '' : ' <span style="color:var(--muted)">(stopped)</span>';
-    const btn = c.update_available
-      ? `<button class="act primary" data-up="${c.id}">Update</button>` : '';
+    let btn = '';
+    if (c.update_available && c.host_only) {
+      btn = `<button class="act" data-host-up="${c.id}" title="Must be updated on the host">Host only</button>`;
+    } else if (c.update_available) {
+      btn = `<button class="act primary" data-up="${c.id}">Update</button>`;
+    }
     return `<tr data-row="${c.id}">
       <td><strong>${c.name || c.id}</strong><span style="color:var(--muted)">${run}</span></td>
       <td>${ch}</td>
@@ -638,7 +642,8 @@ render.updates = async (refresh=false) => {
     </tr>`;
   }).join('');
   const section = (title, list, key) => {
-    const pending = list.filter(c => c.update_available);
+    // host_only rows are listed but never included in Update All.
+    const pending = list.filter(c => c.update_available && !c.host_only);
     const allBtn = pending.length
       ? `<button class="act primary" data-up-all="${key}">Update All (${pending.length})</button>`
       : '';
@@ -729,9 +734,9 @@ render.updates = async (refresh=false) => {
     }
   };
 
-  // dockerproxy last: recreating it drops Helm's Docker API mid-batch.
-  const orderPending = (ids) => ids.slice().sort((a, b) =>
-    (a === 'dockerproxy') - (b === 'dockerproxy'));
+  // dockerproxy is host_only: Helm reaches Docker through it, so applying
+  // an update from here stops the proxy mid-recreate and leaves it down.
+  const applyable = (c) => c.update_available && !c.host_only;
 
   const bindUpdateButtons = () => {
     document.querySelectorAll('[data-up]').forEach(b => b.onclick = async () => {
@@ -754,12 +759,24 @@ render.updates = async (refresh=false) => {
         bindUpdateButtons();
       }
     });
+    document.querySelectorAll('[data-host-up]').forEach(b => b.onclick = () => {
+      const id = b.dataset.hostUp;
+      const rep = $('#rep');
+      rep.style.display = 'block';
+      const cmd = `cd ~/Docker/kine && sudo docker compose pull ${id} && sudo docker compose up -d ${id}`;
+      rep.textContent =
+        `${id} must be updated on the host — Helm talks to Docker through it,\n` +
+        `so recreating it from here cuts that path mid-apply and leaves it down.\n\n` +
+        `Run on osiris:\n  ${cmd}\n`;
+      setProgress(`${id} is host-only — see the command in the log below.`, 'warn');
+      state.updatesLog = rep.textContent;
+    });
   };
   bindUpdateButtons();
 
   document.querySelectorAll('[data-up-all]').forEach(b => b.onclick = async () => {
     const group = b.dataset.upAll === 'core' ? core : apps;
-    const pending = orderPending(group.filter(c => c.update_available).map(c => c.id));
+    const pending = group.filter(applyable).map(c => c.id);
     if (!pending.length) return;
     document.querySelectorAll('[data-up], [data-up-all], #refresh').forEach(el => el.disabled = true);
     const rep = $('#rep');
@@ -771,12 +788,7 @@ render.updates = async (refresh=false) => {
       const id = pending[i];
       const label = `${i + 1}/${pending.length}`;
       b.textContent = `Updating ${label}…`;
-      setProgress(
-        `Updating ${label}: ${id}` +
-          (id === 'dockerproxy' ? ' (last — Helm uses this for Docker access)' : '') +
-          '…',
-        'warn'
-      );
+      setProgress(`Updating ${label}: ${id}…`, 'warn');
       setRowStatus(id, 'busy', 'updating…');
       try {
         const row = rows.find(c => c.id === id);
@@ -796,7 +808,13 @@ render.updates = async (refresh=false) => {
     state.updatesLog = rep.textContent;
     if (!failed) {
       b.textContent = `Done (${done}/${pending.length})`;
-      setProgress(`Finished ${done}/${pending.length} updates.`, 'ok');
+      const skipped = group.filter(c => c.update_available && c.host_only).map(c => c.id);
+      setProgress(
+        skipped.length
+          ? `Finished ${done}/${pending.length} updates. Skipped host-only: ${skipped.join(', ')}.`
+          : `Finished ${done}/${pending.length} updates.`,
+        'ok'
+      );
     }
     // Refresh from cache so digests/pending match disk, but keep the log.
     await render.updates(false);

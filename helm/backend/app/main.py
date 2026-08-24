@@ -600,6 +600,19 @@ async def updates(refresh: bool = False, user: str = Depends(require_user)):
     return await updates_info.fetch(compose, refresh=refresh)
 
 
+# Helm reaches Docker only through dockerproxy. Recreating that container
+# from here stops the proxy mid-apply and leaves it (and often Traefik)
+# down. Update it on the host instead.
+HOST_ONLY_UPDATES = {
+    "dockerproxy": (
+        "dockerproxy cannot be updated from Helm — recreating it cuts "
+        "Helm's Docker access mid-apply. On the host run:\n"
+        "  cd ~/Docker/kine && sudo docker compose pull dockerproxy && "
+        "sudo docker compose up -d dockerproxy"
+    ),
+}
+
+
 @app.post("/api/updates/{app_id}")
 async def apply_update(app_id: str, user: str = Depends(require_user)):
     """Snapshot, pull, recreate, and roll back if it does not come back.
@@ -607,6 +620,8 @@ async def apply_update(app_id: str, user: str = Depends(require_user)):
     Nothing here runs on a schedule. Automatic updates are how a working
     media stack breaks overnight, usually mid-import.
     """
+    if app_id in HOST_ONLY_UPDATES:
+        raise HTTPException(status_code=409, detail=HOST_ONLY_UPDATES[app_id])
     code, out = await compose.script("updates.sh", "apply", app_id, timeout=1200)
     if code == 0:
         # Clear the badge from the overnight cache immediately so the page

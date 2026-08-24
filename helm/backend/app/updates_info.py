@@ -52,6 +52,9 @@ def enrich(rows: list[dict], *, running: set[str] | None = None) -> list[dict]:
             is_running = bool(row.get("running"))
         else:
             is_running = app_id in running
+        # Helm talks to Docker through dockerproxy; applying an update to
+        # it from Helm stops the proxy mid-recreate and leaves it down.
+        host_only = app_id == "dockerproxy"
         item = {
             **row,
             "name": meta.get("name", app_id),
@@ -62,6 +65,7 @@ def enrich(rows: list[dict], *, running: set[str] | None = None) -> list[dict]:
             "enabled": app_id in enabled,
             "running": is_running,
             "core": core,
+            "host_only": host_only,
         }
         out.append(item)
     return out
