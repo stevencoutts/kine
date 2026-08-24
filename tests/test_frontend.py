@@ -97,8 +97,16 @@ def test_open_embeds_arr_apps_same_origin():
     assert "embed_proxy.mount" in BACKEND
     cat = (ROOT / "catalogue.yml").read_text()
     assert "embed: true" in cat
-    # Transmission uses the same same-origin embed path as the *arr apps.
+    # Transmission and NZBGet use the same same-origin embed path as the *arr apps.
     assert re.search(r"(?m)^  transmission:\n(?:    .*\n)*?    embed: true", cat)
+    assert re.search(r"(?m)^  nzbget:\n(?:    .*\n)*?    embed: true", cat)
+
+
+def test_media_overview_uses_settings_servers():
+    assert "/media-servers" in FRONTEND
+    assert "mediaServersPanel" in FRONTEND
+    assert "mediaStatHtml" in FRONTEND
+    assert "media-live" in FRONTEND
 
 
 def test_dev_version_checkbox_only_when_supported():

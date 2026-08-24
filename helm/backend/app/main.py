@@ -14,7 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, catalogue, channels, compose, config, downloads, embed_proxy, launch, library_rescan, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, updates_info, watching
+from . import auth, catalogue, channels, compose, config, downloads, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, updates_info, watching
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -485,6 +485,12 @@ async def apps(request: Request, user: str = Depends(require_user)):
 async def watching_now(user: str = Depends(require_user)):
     """Active Plex and Emby sessions using Settings credentials."""
     return await watching.snapshot()
+
+
+@app.get("/api/media-servers")
+async def media_servers_now(user: str = Depends(require_user)):
+    """Reachability of Settings-configured Plex and Emby for the Media card."""
+    return await media_servers.snapshot()
 
 
 @app.get("/api/downloads")

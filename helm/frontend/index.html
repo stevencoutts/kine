@@ -87,12 +87,14 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   box-shadow:0 6px 28px color-mix(in srgb, var(--accent) 18%, transparent)}
 .overview-btn.off-tier{opacity:.72}
 .overview-btn.watching-live,
-.overview-btn.downloads-live{
+.overview-btn.downloads-live,
+.overview-btn.media-live{
   border-color:color-mix(in srgb, var(--ok) 55%, transparent);
   background:color-mix(in srgb, var(--ok) 16%, transparent);
   box-shadow:0 4px 20px color-mix(in srgb, var(--ok) 18%, transparent)}
 .overview-btn.watching-live.active,
-.overview-btn.downloads-live.active{
+.overview-btn.downloads-live.active,
+.overview-btn.media-live.active{
   border-color:color-mix(in srgb, var(--ok) 70%, transparent);
   background:color-mix(in srgb, var(--ok) 22%, transparent);
   box-shadow:0 6px 28px color-mix(in srgb, var(--ok) 22%, transparent)}
@@ -664,6 +666,38 @@ const downloadsPanel = (d) => {
   }
   return `<div class="watch-list">${blocks.join('')}</div>`;
 };
+const mediaServersPanel = (m) => {
+  const configured = m.configured || {};
+  if (!configured.plex && !configured.emby) {
+    return '<p style="color:var(--muted);margin:0">Add Plex or Emby credentials in Settings to see media servers here.</p>';
+  }
+  const servers = m.servers || [];
+  const rows = servers.map(s => {
+    if (s.ok) {
+      return `<div class="watch-row"><strong>${escHtml(s.label)}</strong>
+        <div class="watch-sub">${escHtml(s.detail || 'online')}`
+          + (s.host ? ` · ${escHtml(s.host)}` : '')
+          + `</div></div>`;
+    }
+    return `<div class="watch-row"><strong>${escHtml(s.label)}</strong>
+      <div class="watch-sub" style="color:var(--warn)">${escHtml(s.error || 'unreachable')}`
+        + (s.host ? ` · ${escHtml(s.host)}` : '')
+        + `</div></div>`;
+  }).join('');
+  return `<div class="watch-list">${rows}</div>`;
+};
+const mediaStatHtml = (m, stats) => {
+  const configured = m.configured || {};
+  const hasSettings = configured.plex || configured.emby;
+  if (hasSettings) {
+    const online = m.online || 0;
+    const count = m.count || 0;
+    if (count) {
+      return `${online}<span> / ${count} online</span>`;
+    }
+  }
+  return `${stats.running}<span> / ${stats.total} running</span>`;
+};
 const appCard = a => `
   <div class="card">
     <h3><span class="dot ${a.running?'on':'off'}"></span>${a.name}</h3>
@@ -686,10 +720,12 @@ const appCard = a => `
 render.apps = async () => {
   if (state.watchTimer) { clearInterval(state.watchTimer); state.watchTimer = null; }
   const emptyDownloads = {active:0, configured:{}, transmission:null, nzbget:null, errors:{}};
-  const [data, watch, dl] = await Promise.all([
+  const emptyMedia = {count:0, online:0, configured:{}, servers:[]};
+  const [data, watch, dl, media] = await Promise.all([
     api('/apps'),
     api('/watching').catch(() => ({count:0, sessions:[], configured:{}, errors:{}})),
     api('/downloads').catch(() => emptyDownloads),
+    api('/media-servers').catch(() => emptyMedia),
   ]);
   state.apps = data.apps;
   state.tiers = data.tiers;
@@ -702,8 +738,11 @@ render.apps = async () => {
     state.activeTier = visibleTiers.find(t => state.tiers[t]?.enabled) || visibleTiers[0] || null;
   const watchingActive = state.activeTier === 'watching';
   const downloadsActive = state.activeTier === 'downloads';
+  const mediaActive = state.activeTier === 'media';
   const watchCount = watch.count || 0;
   const dlActive = dl.active || 0;
+  const mediaOnline = media.online || 0;
+  const mediaConfigured = !!(media.configured?.plex || media.configured?.emby);
   const watchBtn = `<div class="overview-btn ${watchingActive?'active':''}${watchCount?' watching-live':''}"
       data-overview="watching" role="button" tabindex="0" aria-pressed="${watchingActive}">
       <div class="overview-top"><h2>Watching</h2></div>
@@ -718,7 +757,10 @@ render.apps = async () => {
     const meta = state.tiers[tier];
     const stats = tierStats(state.apps.filter(a => a.tier === tier && !a.hidden));
     const active = state.activeTier === tier;
-    return `<div class="overview-btn ${active?'active':''} ${!meta.enabled?'off-tier':''}"
+    const live = tier === 'media' && mediaConfigured && mediaOnline > 0;
+    const stat = tier === 'media' ? mediaStatHtml(media, stats)
+      : `${stats.running}<span> / ${stats.total} running</span>`;
+    return `<div class="overview-btn ${active?'active':''} ${!meta.enabled?'off-tier':''}${live?' media-live':''}"
       data-overview="${tier}" role="button" tabindex="0" aria-pressed="${active}">
       <div class="overview-top">
         <h2>${meta.label}</h2>
@@ -727,7 +769,7 @@ render.apps = async () => {
           <span class="tier-switch-ui" aria-hidden="true"></span>
         </label>
       </div>
-      <div class="overview-stat">${stats.running}<span> / ${stats.total} running</span></div>
+      <div class="overview-stat">${stat}</div>
     </div>`;
   }).join('');
   const activeItems = (!watchingActive && !downloadsActive && state.activeTier)
@@ -735,7 +777,12 @@ render.apps = async () => {
   let panel;
   if (watchingActive) panel = `<div id="watch-panel">${watchPanel(watch)}</div>`;
   else if (downloadsActive) panel = `<div id="downloads-panel">${downloadsPanel(dl)}</div>`;
-  else panel = activeItems.length
+  else if (mediaActive) {
+    const grid = activeItems.length
+      ? `<div class="grid" style="margin-top:1rem">${activeItems.map(appCard).join('')}</div>`
+      : '';
+    panel = `<div id="media-panel">${mediaServersPanel(media)}</div>${grid}`;
+  } else panel = activeItems.length
     ? `<div class="grid">${activeItems.map(appCard).join('')}</div>`
     : '<p style="color:var(--muted);margin:0">No apps in this group.</p>';
   const body = `<div id="tier-msg"></div>
@@ -764,6 +811,19 @@ render.apps = async () => {
       const stat = btn && btn.querySelector('.overview-stat');
       if (stat) stat.innerHTML = `${next.active||0}<span> active</span>`;
       if (btn) btn.classList.toggle('downloads-live', !!(next.active||0));
+    }, 15000);
+  }
+  if (mediaActive) {
+    state.watchTimer = setInterval(async () => {
+      const next = await api('/media-servers').catch(() => null);
+      if (!next || state.activeTier !== 'media') return;
+      const box = $('#media-panel');
+      if (box) box.innerHTML = mediaServersPanel(next);
+      const btn = document.querySelector('[data-overview="media"]');
+      const statEl = btn && btn.querySelector('.overview-stat');
+      const tierApps = state.apps.filter(a => a.tier === 'media' && !a.hidden);
+      if (statEl) statEl.innerHTML = mediaStatHtml(next, tierStats(tierApps));
+      if (btn) btn.classList.toggle('media-live', !!(next.online||0));
     }, 15000);
   }
   document.querySelectorAll('[data-overview]').forEach(el => {

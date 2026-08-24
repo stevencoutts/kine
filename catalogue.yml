@@ -127,6 +127,7 @@ apps:
     releases: https://github.com/nzbgetcom/nzbget/releases
     internal: http://gluetun:6789
     subdomain: nzbget
+    embed: true
     provides: [download-client]
     requires: [gluetun]
     tunnelled: forced
