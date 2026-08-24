@@ -100,8 +100,8 @@ def _rewrite_set_cookie(value: str, prefix: str) -> str:
 
 def _bootstrap_script(prefix: str) -> str:
     # Injected into every HTML response. Goals:
-    # 1) Force window.*.urlBase to the embed prefix (*arr overwrite it with '').
-    # 2) Keep History API + script tags under /view/{app}/ so routes match.
+    # 1) Lock window.*.urlBase to the embed prefix (*arr may clear it later).
+    # 2) Keep History API + script/img tags under /view/{app}/.
     # 3) Prefix fetch/XHR/WebSocket absolute paths.
     return (
         "<script>(function(){"
@@ -114,12 +114,16 @@ def _bootstrap_script(prefix: str) -> str:
         "if(x.origin===location.origin){x.pathname=abs(x.pathname);return x.pathname+x.search+x.hash;}"
         "return u;}catch(e){return u;}}"
         "if(u.charAt(0)!=='/')return u;return abs(u);}"
-        # Force *arr urlBase even when their inline script sets it to ''.
+        # Lock urlBase on the config object so later `obj.urlBase=''` cannot win.
+        "function lockBase(obj){if(!obj||typeof obj!=='object')return obj;"
+        "try{Object.defineProperty(obj,'urlBase',{configurable:true,enumerable:true,"
+        "get:function(){return P;},set:function(){}});}catch(e){obj.urlBase=P;}"
+        "return obj;}"
         "function forceBase(name){try{var cur=window[name];"
-        "if(cur&&typeof cur==='object')cur.urlBase=P;"
+        "if(cur&&typeof cur==='object')cur=lockBase(cur);"
         "Object.defineProperty(window,name,{configurable:true,enumerable:true,"
         "get:function(){return cur;},"
-        "set:function(v){cur=Object.assign({},v||{},{urlBase:P});}});}catch(e){}}"
+        "set:function(v){cur=lockBase(Object.assign({},v||{}));}});}catch(e){}}"
         "forceBase('Sonarr');forceBase('Radarr');forceBase('Prowlarr');forceBase('Bazarr');"
         "var f=window.fetch;window.fetch=function(i,n){"
         "if(typeof i==='string')i=abs(i);"
@@ -142,16 +146,24 @@ def _bootstrap_script(prefix: str) -> str:
         "history.pushState=function(s,t,u){return ps(s,t,u===undefined?u:fixNav(u));};"
         "var rs=history.replaceState.bind(history);"
         "history.replaceState=function(s,t,u){return rs(s,t,u===undefined?u:fixNav(u));};"
+        "function trapAttr(el,attr){var d=Object.getOwnPropertyDescriptor(el.__proto__,attr);"
+        "if(!(d&&d.set))return;"
+        "Object.defineProperty(el,attr,{configurable:true,enumerable:true,"
+        "get:function(){return d.get.call(this);},"
+        "set:function(v){d.set.call(this,abs(v));}});}"
         "var ce=Document.prototype.createElement;"
         "Document.prototype.createElement=function(t,opt){"
         "var el=ce.call(this,t,opt);var n=String(t).toLowerCase();"
-        "if(n==='script'||n==='link'){"
-        "var attr=n==='script'?'src':'href';"
-        "var d=Object.getOwnPropertyDescriptor(el.__proto__,attr);"
-        "if(d&&d.set){Object.defineProperty(el,attr,{configurable:true,enumerable:true,"
-        "get:function(){return d.get.call(this);},"
-        "set:function(v){d.set.call(this,abs(v));}});}}"
+        "if(n==='script'||n==='img'||n==='image'||n==='source'||n==='video'||n==='audio')"
+        "{trapAttr(el,'src');}"
+        "if(n==='link'||n==='a'||n==='area'){trapAttr(el,'href');}"
         "return el;};"
+        # Catch React setAttribute / style background urls that skip property traps.
+        "var sa=Element.prototype.setAttribute;"
+        "Element.prototype.setAttribute=function(n,v){"
+        "n=String(n).toLowerCase();"
+        "if((n==='src'||n==='href')&&typeof v==='string')v=abs(v);"
+        "return sa.call(this,n,v);};"
         # Keep the iframe on the embed prefix if something navigates to /.
         "if(location.pathname!==P&&location.pathname.indexOf(P+'/')!==0)"
         "{location.replace(P+'/'+location.pathname.replace(/^\\//,'')+location.search+location.hash);}"

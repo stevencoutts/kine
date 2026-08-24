@@ -27,7 +27,10 @@ def test_rewrite_html_injects_bootstrap_and_prefixes_assets():
     assert "urlBase:'/view/sonarr'" in out or 'urlBase:"/view/sonarr"' in out or "urlBase: '/view/sonarr'" in out
     assert "createElement" in out
     assert "forceBase" in out or "urlBase=P" in out
+    assert "lockBase" in out
     assert "pushState" in out
+    assert "trapAttr" in out
+    assert "setAttribute" in out
 
 
 def test_rewrite_url_base_empty_string():
