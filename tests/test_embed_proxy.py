@@ -36,6 +36,10 @@ def test_rewrite_html_injects_bootstrap_and_prefixes_assets():
     assert "fixSheet" in out
     # Must not redefine link.href (Safari drops webpack CSS chunks).
     assert "n==='link'" not in out and "n===\"link\"" not in out
+    # Must preserve setAttribute name casing (SVG viewBox ≠ viewbox).
+    assert "var ln=String(n).toLowerCase()" in out
+    assert "sa.call(this,n,v)" in out
+    assert "sa.call(this,ln,v)" not in out
 
 
 def test_rewrite_url_base_empty_string():

@@ -176,10 +176,12 @@ def _bootstrap_script(prefix: str) -> str:
         "{trapAttr(el,'src');}"
         "return el;};"
         # Catch React setAttribute for src/href (including <link href> CSS chunks).
+        # Keep original attribute name casing — lowercasing breaks SVG viewBox
+        # (becomes "viewbox"), so FA paths paint at 512px with overflow:visible.
         "var sa=Element.prototype.setAttribute;"
         "Element.prototype.setAttribute=function(n,v){"
-        "n=String(n).toLowerCase();"
-        "if((n==='src'||n==='href')&&typeof v==='string')v=abs(v);"
+        "var ln=String(n).toLowerCase();"
+        "if((ln==='src'||ln==='href')&&typeof v==='string')v=abs(v);"
         "return sa.call(this,n,v);};"
         # Fix stylesheet URLs when webpack publicPath was still '/' (append time).
         "function fixSheet(n){if(!n||!n.tagName||n.tagName.toLowerCase()!=='link')return;"
