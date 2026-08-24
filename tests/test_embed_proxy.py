@@ -90,6 +90,16 @@ def test_filter_request_headers_forces_identity_encoding():
     assert out["Cookie"] == "kine_session=abc"
     assert "Connection" not in out and "connection" not in out
 
+
+def test_rewrite_initialize_json_sets_url_base():
+    raw = b'{"apiRoot":"/api/v3","urlBase":"","theme":"dark"}'
+    out = embed_proxy._rewrite_initialize_json(raw, "/view/radarr")
+    data = __import__("json").loads(out)
+    assert data["urlBase"] == "/view/radarr"
+    assert data["apiRoot"] == "/api/v3"
+
+
+def test_mount_does_not_treat_request_as_query_param():
     """Regression: local Request import + future annotations made Open return
     {"detail":[{"loc":["query","request"],"msg":"field required"...}]}."""
     from fastapi import FastAPI
