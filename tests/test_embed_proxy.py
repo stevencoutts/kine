@@ -57,3 +57,14 @@ def test_embeddable_requires_flag_and_internal(monkeypatch):
         "embed": False, "internal": "http://gluetun:8989", "subdomain": "sonarr",
     })
     assert not embed_proxy.embeddable({"embed": True, "subdomain": "sonarr"})
+
+
+def test_mount_does_not_treat_request_as_query_param():
+    """Regression: local Request import + future annotations made Open return
+    {"detail":[{"loc":["query","request"],"msg":"field required"...}]}."""
+    from fastapi import FastAPI
+
+    app = FastAPI()
+    embed_proxy.mount(app, require_user=lambda: "u")
+    route = next(r for r in app.routes if getattr(r, "path", "") == "/view/{app_id}")
+    assert "request" not in {p.name for p in route.dependant.query_params}

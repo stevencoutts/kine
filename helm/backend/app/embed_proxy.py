@@ -8,12 +8,17 @@ SPAs keep talking through the prefix without changing UrlBase.
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from typing import TYPE_CHECKING, Iterable
 from urllib.parse import urlsplit
 
 import httpx
+from fastapi import Depends, HTTPException, Request
+from fastapi.responses import Response
 
 from . import catalogue, config
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
 
 _HOP_BY_HOP = {
     "connection",
@@ -44,8 +49,6 @@ def embeddable(meta: dict | None) -> bool:
 
 
 def upstream_base(app_id: str) -> str:
-    from fastapi import HTTPException  # noqa: PLC0415 — keep module importable in unit tests
-
     cat = catalogue.load()
     meta = cat.get(app_id) or {}
     if not embeddable(meta):
@@ -155,10 +158,7 @@ def _rewrite_css(text: str, prefix: str) -> str:
     )
 
 
-async def proxy_http(app_id: str, path: str, request) -> object:
-    from fastapi import HTTPException  # noqa: PLC0415
-    from fastapi.responses import Response  # noqa: PLC0415
-
+async def proxy_http(app_id: str, path: str, request: Request) -> Response:
     prefix = embed_prefix(app_id)
     upstream = upstream_base(app_id)
     rel = (path or "").lstrip("/")
@@ -227,10 +227,13 @@ async def proxy_http(app_id: str, path: str, request) -> object:
     return response
 
 
-def mount(app, require_user) -> None:
-    """Register authenticated embed routes on the FastAPI app."""
-    from fastapi import Depends, Request  # noqa: PLC0415
-    from fastapi.responses import Response  # noqa: PLC0415
+def mount(app: FastAPI, require_user) -> None:
+    """Register authenticated embed routes on the FastAPI app.
+
+    Request must live in this module's globals so FastAPI can resolve the
+    annotation under ``from __future__ import annotations``. A local import
+    inside mount() made ``request`` look like a required query field.
+    """
 
     @app.api_route(
         "/view/{app_id}",
