@@ -108,7 +108,9 @@ def test_media_overview_uses_settings_servers():
     assert "mediaPanelHtml" in FRONTEND
     assert "mediaStatHtml" in FRONTEND
     assert "data-media-url" in FRONTEND
-    assert "media-live" not in FRONTEND
+    assert "settings-configured" in FRONTEND
+    assert "watch-card" in FRONTEND
+    assert "position_label" in (ROOT / "helm" / "backend" / "app" / "watching.py").read_text()
 
 
 def test_dev_version_checkbox_only_when_supported():

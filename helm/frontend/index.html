@@ -104,13 +104,57 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   letter-spacing:.08em;color:var(--muted);font-weight:600;text-align:left}
 .overview-stat{font-size:1.15rem;font-weight:600;line-height:1.2}
 .overview-stat span{color:var(--muted);font-weight:400;font-size:.82rem}
-.watch-list{display:flex;flex-direction:column;gap:.75rem}
+.watch-list{display:flex;flex-direction:column;gap:.85rem}
 .watch-row{padding:.15rem 0}
 .watch-row strong{display:block;font-size:.95rem}
 .watch-row .watch-sub{color:var(--muted);font-size:.8rem}
 .watch-bar{height:4px;margin-top:.45rem;border-radius:999px;
   background:color-mix(in srgb, var(--line) 70%, transparent);overflow:hidden}
 .watch-bar i{display:block;height:100%;border-radius:999px;background:var(--ok)}
+.watch-cards{display:flex;flex-direction:column;gap:.9rem}
+.watch-card{position:relative;overflow:hidden;padding:1rem 1.05rem 1.05rem;
+  border-radius:14px;border:1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  background:
+    linear-gradient(135deg,
+      color-mix(in srgb, var(--panel) 92%, transparent),
+      color-mix(in srgb, var(--panel-2) 70%, transparent));
+  box-shadow:0 10px 28px color-mix(in srgb, #000 6%, transparent)}
+.watch-card::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;
+  background:var(--watch-accent, var(--ok))}
+.watch-card.plex{--watch-accent:#e5a00d}
+.watch-card.emby{--watch-accent:#52b54b}
+.watch-card.paused{opacity:.88}
+.watch-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem}
+.watch-card-title{margin:0;font-size:1.05rem;line-height:1.3;font-weight:650;letter-spacing:-.01em}
+.watch-card-show{margin:.2rem 0 0;color:var(--muted);font-size:.8rem}
+.watch-badges{display:flex;flex-wrap:wrap;gap:.35rem;justify-content:flex-end}
+.watch-badge{display:inline-flex;align-items:center;gap:.25rem;padding:.18rem .55rem;
+  border-radius:999px;font-size:.68rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  border:1px solid transparent}
+.watch-badge.plex{background:rgba(229,160,13,.14);color:#b87a00;border-color:rgba(229,160,13,.28)}
+.watch-badge.emby{background:rgba(82,181,75,.14);color:#2f7a2c;border-color:rgba(82,181,75,.28)}
+.watch-badge.state{background:color-mix(in srgb, var(--ok) 14%, transparent);color:var(--ok);
+  border-color:color-mix(in srgb, var(--ok) 28%, transparent)}
+.watch-badge.state.paused{background:rgba(224,160,48,.14);color:var(--warn);
+  border-color:rgba(224,160,48,.28)}
+.watch-badge.kind{background:color-mix(in srgb, var(--panel-2) 80%, transparent);color:var(--muted);
+  border-color:color-mix(in srgb, var(--line) 70%, transparent)}
+.watch-meta{display:flex;flex-wrap:wrap;gap:.4rem .7rem;margin-top:.75rem;color:var(--muted);font-size:.8rem}
+.watch-meta span{display:inline-flex;align-items:center;gap:.3rem}
+.watch-meta b{color:var(--text);font-weight:600}
+.watch-source{margin-top:.65rem;padding:.45rem .6rem;border-radius:8px;font-size:.75rem;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text);
+  background:color-mix(in srgb, var(--panel-2) 75%, transparent);
+  border:1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.watch-progress{margin-top:.85rem}
+.watch-progress-top{display:flex;justify-content:space-between;gap:.75rem;margin-bottom:.35rem;
+  font-size:.75rem;color:var(--muted)}
+.watch-progress-top strong{color:var(--text);font-weight:650}
+.watch-progress .watch-bar{height:7px;margin-top:0}
+.watch-progress .watch-bar i{
+  background:linear-gradient(90deg, color-mix(in srgb, var(--watch-accent, var(--ok)) 70%, #fff),
+    var(--watch-accent, var(--ok)))}
 .panel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:.75rem}
 .panel-grid iframe{width:100%;height:210px;border:0;border-radius:10px;
   background:color-mix(in srgb, var(--panel) 60%, transparent)}
@@ -148,6 +192,12 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
 .tier-switch input:focus-visible + .tier-switch-ui{
   outline:2px solid color-mix(in srgb, var(--accent) 60%, transparent);outline-offset:2px}
 .tier-switch input:disabled + .tier-switch-ui{opacity:.55;cursor:wait}
+.tier-switch.settings-configured input:disabled + .tier-switch-ui{opacity:1;cursor:default}
+.tier-switch.settings-configured input:checked:disabled + .tier-switch-ui{
+  background:color-mix(in srgb, var(--ok) 55%, transparent);
+  border-color:color-mix(in srgb, var(--ok) 45%, transparent);
+  box-shadow:0 0 12px color-mix(in srgb, var(--ok) 28%, transparent),
+    inset 0 1px 2px color-mix(in srgb, #fff 12%, transparent)}
 .tier-switch > span:not(.tier-switch-ui){user-select:none}
 .apps-panel{background:color-mix(in srgb, var(--panel) 38%, transparent);
   backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
@@ -615,18 +665,62 @@ const watchPanel = (w) => {
     return `<p style="color:var(--muted);margin:0">Nothing is playing right now.</p>
       ${errors ? `<p style="color:var(--warn);font-size:.8rem;margin:.5rem 0 0">${escHtml(errors)}</p>` : ''}`;
   }
-  const rows = sessions.map(s => {
+  const kindLabel = (k) => ({
+    episode: 'Episode', movie: 'Movie', channel: 'Live TV', livetvprogram: 'Live TV',
+  }[k] || (k ? k : 'Playing'));
+  const cards = sessions.map(s => {
     const server = s.server === 'plex' ? 'Plex' : 'Emby';
     const st = s.state === 'paused' ? 'paused' : 'playing';
-    const pct = s.progress == null ? '' : ` · ${s.progress}%`;
-    const bar = s.progress == null ? '' : `<div class="watch-bar"><i style="width:${s.progress}%"></i></div>`;
-    return `<div class="watch-row">
-      <strong>${escHtml(s.title)}</strong>
-      <div class="watch-sub">${escHtml(s.user)} · ${escHtml(s.player)} · ${server} · ${st}${pct}</div>
-      ${bar}
-    </div>`;
+    const showLine = s.kind === 'episode' && s.show
+      ? `<div class="watch-card-show">${escHtml(s.show)}${s.season != null && s.episode != null ? ` · S${String(s.season).padStart(2,'0')}E${String(s.episode).padStart(2,'0')}` : ''}</div>`
+      : (s.kind === 'channel' && s.channel
+        ? `<div class="watch-card-show">Channel${s.channel !== s.title ? ` · ${escHtml(s.channel)}` : ''}</div>`
+        : '');
+    const meta = [];
+    meta.push(`<span><b>${escHtml(s.user || 'unknown')}</b></span>`);
+    meta.push(`<span>${escHtml(s.player || 'Player')}</span>`);
+    if (s.product && s.product !== s.player) meta.push(`<span>${escHtml(s.product)}</span>`);
+    if (s.quality) meta.push(`<span>${escHtml(s.quality)}</span>`);
+    if (s.stream) meta.push(`<span>${escHtml(s.stream)}</span>`);
+    if (s.library) meta.push(`<span>${escHtml(s.library)}</span>`);
+    const source = s.source
+      ? `<div class="watch-source" title="${escAttr(s.source)}">${escHtml(s.source)}</div>`
+      : '';
+    let progress = '';
+    if (s.progress != null || s.position_label || s.remaining_label) {
+      const left = s.position_label && s.duration_label
+        ? `${escHtml(s.position_label)} / ${escHtml(s.duration_label)}`
+        : (s.position_label ? escHtml(s.position_label) : '');
+      const right = s.remaining_label
+        ? `${escHtml(s.remaining_label)} left`
+        : (s.progress != null ? `${s.progress}%` : '');
+      const width = s.progress != null ? Math.max(0, Math.min(100, s.progress)) : 0;
+      progress = `<div class="watch-progress">
+        <div class="watch-progress-top">
+          <span>${left ? `<strong>${left}</strong>` : ''}</span>
+          <span>${right}</span>
+        </div>
+        ${s.progress != null ? `<div class="watch-bar"><i style="width:${width}%"></i></div>` : ''}
+      </div>`;
+    }
+    return `<article class="watch-card ${escAttr(s.server || '')} ${st}">
+      <div class="watch-card-top">
+        <div>
+          <h3 class="watch-card-title">${escHtml(s.title || 'Untitled')}</h3>
+          ${showLine}
+        </div>
+        <div class="watch-badges">
+          <span class="watch-badge ${escAttr(s.server || '')}">${server}</span>
+          <span class="watch-badge kind">${escHtml(kindLabel(s.kind))}</span>
+          <span class="watch-badge state ${st}">${st}</span>
+        </div>
+      </div>
+      <div class="watch-meta">${meta.join('')}</div>
+      ${source}
+      ${progress}
+    </article>`;
   }).join('');
-  return `<div class="watch-list">${rows}</div>
+  return `<div class="watch-cards">${cards}</div>
     ${errors ? `<p style="color:var(--warn);font-size:.8rem;margin:.75rem 0 0">${escHtml(errors)}</p>` : ''}`;
 };
 const downloadsPanel = (d) => {
@@ -760,16 +854,25 @@ render.apps = async () => {
     const meta = state.tiers[tier];
     const stats = tierStats(state.apps.filter(a => a.tier === tier && !a.hidden));
     const active = state.activeTier === tier;
+    const settingsMedia = !!(media.configured?.plex || media.configured?.emby);
+    const mediaTicked = tier === 'media' && settingsMedia;
+    const tierOn = mediaTicked || !!meta.enabled;
     const stat = tier === 'media' ? mediaStatHtml(media, stats)
       : `${stats.running}<span> / ${stats.total} running</span>`;
-    return `<div class="overview-btn ${active?'active':''} ${!meta.enabled?'off-tier':''}"
+    const switchHtml = mediaTicked
+      ? `<label class="tier-switch settings-configured" title="Plex/Emby configured in Settings" aria-label="Media servers configured in Settings">
+          <input type="checkbox" checked disabled>
+          <span class="tier-switch-ui" aria-hidden="true"></span>
+        </label>`
+      : `<label class="tier-switch" aria-label="${meta.enabled?'Disable':'Enable'} ${meta.label}">
+          <input type="checkbox" data-tier="${tier}" ${meta.enabled?'checked':''}>
+          <span class="tier-switch-ui" aria-hidden="true"></span>
+        </label>`;
+    return `<div class="overview-btn ${active?'active':''} ${!tierOn?'off-tier':''}"
       data-overview="${tier}" role="button" tabindex="0" aria-pressed="${active}">
       <div class="overview-top">
         <h2>${meta.label}</h2>
-        <label class="tier-switch" aria-label="${meta.enabled?'Disable':'Enable'} ${meta.label}">
-          <input type="checkbox" data-tier="${tier}" ${meta.enabled?'checked':''}>
-          <span class="tier-switch-ui" aria-hidden="true"></span>
-        </label>
+        ${switchHtml}
       </div>
       <div class="overview-stat">${stat}</div>
     </div>`;
