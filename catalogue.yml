@@ -114,6 +114,7 @@ apps:
     releases: https://github.com/transmission/transmission/releases
     internal: http://gluetun:9091
     subdomain: transmission
+    embed: true
     provides: [download-client]
     requires: [gluetun]
     tunnelled: forced

@@ -1,5 +1,6 @@
 """Small presentation invariants for the single-file Helm UI."""
 import pathlib
+import re
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -96,6 +97,8 @@ def test_open_embeds_arr_apps_same_origin():
     assert "embed_proxy.mount" in BACKEND
     cat = (ROOT / "catalogue.yml").read_text()
     assert "embed: true" in cat
+    # Transmission uses the same same-origin embed path as the *arr apps.
+    assert re.search(r"(?m)^  transmission:\n(?:    .*\n)*?    embed: true", cat)
 
 
 def test_dev_version_checkbox_only_when_supported():
