@@ -1704,6 +1704,18 @@ render.settings = async () => {
       </div>
       <div id="media-msg"></div>
     </div></div>
+    <div class="section"><h2>Live TV</h2><div class="card">
+      <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
+        After you create a Dispatcharr admin and API token in its profile page,
+        paste the token here. Helm wires Emby’s HDHomeRun tuner and updates
+        ECM / Teamarr.</p>
+      <label>Dispatcharr API Token</label>
+      <input id="DISPATCHARR_TOKEN" value="${esc(s.DISPATCHARR_TOKEN)}" autocomplete="off">
+      <div class="row" style="margin-top:1rem">
+        <button class="act primary" id="save-live-tv" type="button">Save Live TV</button>
+      </div>
+      <div id="live-tv-msg"></div>
+    </div></div>
     <div class="section"><h2>Subtitles</h2><div class="card">
       <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
         Bazarr enables Gestdown, TVSubtitles and YIFY by default, with an
@@ -1804,6 +1816,23 @@ render.settings = async () => {
         msg.innerHTML = `<div class="banner bad">Saved with warnings — some connections could not be verified.<pre style="margin:.5rem 0 0;font-size:.75rem;white-space:pre-wrap">${esc(notifyFails.join('\n'))}</pre></div>`;
       } else {
         msg.innerHTML = '<div class="banner ok">Saved. Sonarr and Radarr will notify these servers on new imports.</div>';
+      }
+    } catch (e) {
+      msg.innerHTML = `<div class="banner bad">${esc(e.message || 'Could not save')}</div>`;
+    }
+  };
+  $('#save-live-tv').onclick = async () => {
+    const msg = $('#live-tv-msg');
+    msg.innerHTML = '<div class="banner" style="border:1px solid var(--line)">Saving and wiring Dispatcharr…</div>';
+    try {
+      const r = await api('/settings', {method:'POST', body: JSON.stringify({
+        DISPATCHARR_TOKEN: $('#DISPATCHARR_TOKEN').value.trim(),
+      })});
+      const log = r.media_wire?.log || '';
+      if (r.media_wire && !r.media_wire.ok) {
+        msg.innerHTML = `<div class="banner bad">Saved, but wiring failed.<pre style="margin:.5rem 0 0;font-size:.75rem;white-space:pre-wrap">${esc(log)}</pre></div>`;
+      } else {
+        msg.innerHTML = '<div class="banner ok">Saved. Emby tuner and ECM/Teamarr will use this token.</div>';
       }
     } catch (e) {
       msg.innerHTML = `<div class="banner bad">${esc(e.message || 'Could not save')}</div>`;

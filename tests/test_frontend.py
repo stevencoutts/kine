@@ -147,6 +147,9 @@ def test_settings_media_servers_section():
     assert "EMBY_API_KEY" in BACKEND
     assert "_MEDIA_SERVER_KEYS" in BACKEND
     assert "EMBY_DEFAULT_HOST" in BACKEND
+    assert "DISPATCHARR_TOKEN" in FRONTEND
+    assert "save-live-tv" in FRONTEND
+    assert "_LIVE_TV_KEYS" in BACKEND
     assert 'wiring failed" not in log.lower()' in BACKEND
     assert "notification plex failed" in BACKEND
     assert "notifyFails" in FRONTEND

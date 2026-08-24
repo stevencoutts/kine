@@ -81,6 +81,7 @@ _MEDIA_SERVER_KEYS = (
     "PLEX_HOST", "PLEX_PORT", "PLEX_TOKEN", "PLEX_USE_SSL",
     "EMBY_HOST", "EMBY_PORT", "EMBY_API_KEY", "EMBY_USE_SSL",
 )
+_LIVE_TV_KEYS = ("DISPATCHARR_TOKEN",)
 _SUBTITLE_KEYS = ("OPENSUBTITLES_USERNAME", "OPENSUBTITLES_PASSWORD")
 NZBGET_NEWS_KEY = "NZBGET_NEWS_SERVERS"
 
@@ -913,7 +914,7 @@ async def get_settings(user: str = Depends(require_user)):
     env = config.read()
     public = ("KINE_DOMAIN", "KINE_TLS_MODE", "KINE_ACME_EMAIL", "KINE_ACME_DNS_PROVIDER",
               "KINE_TIMEZONE", "STACK_ROOT", "DATA_ROOT", "HELM_UPDATE_CHECK_CRON",
-              *_NFS_KEYS, *_MEDIA_SERVER_KEYS, *_SUBTITLE_KEYS)
+              *_NFS_KEYS, *_MEDIA_SERVER_KEYS, *_LIVE_TV_KEYS, *_SUBTITLE_KEYS)
     out = {k: env.get(k, "") for k in public}
     out["EMBY_BUNDLED"] = "emby" in config.profiles()
     domain = env.get("KINE_DOMAIN", "").strip()
@@ -933,7 +934,7 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
     body = await request.json()
     allowed = {"KINE_DOMAIN", "KINE_TLS_MODE", "KINE_ACME_EMAIL",
                "KINE_ACME_DNS_PROVIDER", "KINE_TIMEZONE", "HELM_UPDATE_CHECK_CRON",
-               *_NFS_KEYS, *_MEDIA_SERVER_KEYS, *_SUBTITLE_KEYS}
+               *_NFS_KEYS, *_MEDIA_SERVER_KEYS, *_LIVE_TV_KEYS, *_SUBTITLE_KEYS}
     config.write({k: str(v) for k, v in body.items() if k in allowed})
     if {"KINE_TLS_MODE", "KINE_DOMAIN", "KINE_ACME_EMAIL"} & set(body):
         await compose.script("tls-setup.sh")
@@ -954,7 +955,11 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
             changed = set(body) & set(_NFS_KEYS)
             nfs_mount["rescan"] = await _queue_library_sync(changed)
     media_wire = None
-    if set(_MEDIA_SERVER_KEYS) & set(body) or set(_SUBTITLE_KEYS) & set(body):
+    if (
+        set(_MEDIA_SERVER_KEYS) & set(body)
+        or set(_SUBTITLE_KEYS) & set(body)
+        or set(_LIVE_TV_KEYS) & set(body)
+    ):
         code, out = await _provision("wire", reason="settings", timeout=900)
         log = out[-2000:] if out else ""
         media_wire = {
@@ -963,6 +968,12 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
             and "notification emby failed" not in log.lower(),
             "log": log,
         }
+        if "DISPATCHARR_TOKEN" in body:
+            dependents = [a for a in ("ecm", "teamarr") if a in config.profiles()]
+            if dependents:
+                await compose.run(
+                    "up", "-d", "--force-recreate", *dependents, timeout=180
+                )
     nzbget_apply = None
     if "nzbget_news_servers" in body:
         servers = _store_nzbget_servers(body.get("nzbget_news_servers") or [])
