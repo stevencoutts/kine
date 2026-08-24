@@ -99,11 +99,21 @@ def _rewrite_set_cookie(value: str, prefix: str) -> str:
 
 
 def _bootstrap_script(prefix: str) -> str:
+    # Keep this compact: injected into every HTML response.
+    # Patches fetch/XHR/WS plus dynamic <script>/<link> insertion — *arr
+    # webpack chunks use document.createElement('script').src = '/931-….js'.
     return (
         "<script>(function(){"
         f"var P={prefix!r};"
         "function abs(u){if(typeof u!=='string')return u;"
-        "if(u.charAt(0)==='/'&&u.indexOf(P)!==0)return P+u;return u;}"
+        "if(!u||u.charAt(0)!=='/'||u.indexOf(P)===0)return u;return P+u;}"
+        "function fixEl(el,attr){if(!el||!el.setAttribute)return;"
+        "var v=el.getAttribute(attr);if(v&&v.charAt(0)==='/')el.setAttribute(attr,abs(v));"
+        "var d=Object.getOwnPropertyDescriptor(el.__proto__,attr)||"
+        "Object.getOwnPropertyDescriptor(HTMLElement.prototype,attr);"
+        "if(d&&d.set){Object.defineProperty(el,attr,{configurable:true,enumerable:true,"
+        "get:function(){return d.get.call(this);},"
+        "set:function(v){d.set.call(this,abs(v));}});}}"
         "var f=window.fetch;window.fetch=function(i,n){"
         "if(typeof i==='string')i=abs(i);"
         "else if(i&&typeof i.url==='string')i=new Request(abs(i.url),i);"
@@ -113,7 +123,7 @@ def _bootstrap_script(prefix: str) -> str:
         "var a=Array.prototype.slice.call(arguments,2);"
         "return o.apply(this,[m,abs(u)].concat(a));};"
         "var W=window.WebSocket;window.WebSocket=function(u,p){"
-        "if(typeof u==='string'){if(u.charAt(0)==='/')u=P+u;"
+        "if(typeof u==='string'){if(u.charAt(0)==='/')u=abs(u);"
         "else if(u.indexOf('ws')===0){try{var x=new URL(u);"
         "if(x.pathname.indexOf(P)!==0)x.pathname=P+x.pathname;u=x.toString();}"
         "catch(e){}}}"
@@ -121,7 +131,27 @@ def _bootstrap_script(prefix: str) -> str:
         "window.WebSocket.prototype=W.prototype;"
         "window.WebSocket.CONNECTING=W.CONNECTING;window.WebSocket.OPEN=W.OPEN;"
         "window.WebSocket.CLOSING=W.CLOSING;window.WebSocket.CLOSED=W.CLOSED;"
+        "var ce=Document.prototype.createElement;"
+        "Document.prototype.createElement=function(t,o){"
+        "var el=ce.call(this,t,o);var n=String(t).toLowerCase();"
+        "if(n==='script')fixEl(el,'src');"
+        "if(n==='link')fixEl(el,'href');"
+        "return el;};"
+        "var sa=Element.prototype.setAttribute;"
+        "Element.prototype.setAttribute=function(n,v){"
+        "n=String(n).toLowerCase();"
+        "if((n==='src'||n==='href')&&typeof v==='string')v=abs(v);"
+        "return sa.call(this,n,v);};"
         "})();</script>"
+    )
+
+
+def _rewrite_url_base(text: str, prefix: str) -> str:
+    """Sonarr/Radarr/Prowlarr set window.*.urlBase; empty means chunks load at /."""
+    return re.sub(
+        r"(urlBase\s*:\s*)(['\"])\2",
+        rf"\1\2{prefix}\2",
+        text,
     )
 
 
@@ -136,6 +166,7 @@ def _rewrite_html(text: str, prefix: str) -> str:
         )
 
     text = _ATTR_ABS.sub(repl, text)
+    text = _rewrite_url_base(text, prefix)
     boot = _bootstrap_script(prefix)
     lower = text.lower()
     idx = lower.find("<head>")

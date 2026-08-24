@@ -14,7 +14,9 @@ def test_embed_prefix():
 
 def test_rewrite_html_injects_bootstrap_and_prefixes_assets():
     html = (
-        "<html><head><title>x</title></head>"
+        "<html><head><title>x</title>"
+        "<script>window.Sonarr={urlBase:''};</script>"
+        "</head>"
         '<body><a href="/wanted">Wanted</a>'
         '<script src="/Content/app.js"></script></body></html>'
     )
@@ -22,6 +24,14 @@ def test_rewrite_html_injects_bootstrap_and_prefixes_assets():
     assert "var P='/view/sonarr'" in out or 'var P="/view/sonarr"' in out
     assert 'href="/view/sonarr/wanted"' in out
     assert 'src="/view/sonarr/Content/app.js"' in out
+    assert "urlBase:'/view/sonarr'" in out or 'urlBase:"/view/sonarr"' in out
+    assert "createElement" in out
+
+
+def test_rewrite_url_base_empty_string():
+    raw = "window.Radarr = {\n        urlBase: ''\n      };"
+    out = embed_proxy._rewrite_url_base(raw, "/view/radarr")
+    assert "urlBase: '/view/radarr'" in out or 'urlBase: "/view/radarr"' in out
 
 
 def test_rewrite_html_skips_protocol_relative():
