@@ -246,14 +246,14 @@ subfolder** (for example `TV`), then **Use this path**. Values are written to
 
 ```dotenv
 NFS_SERVER=192.168.1.10
-NFS_TV=/exports/media/tv
-NFS_MOVIES=/exports/media/movies
-NFS_DOWNLOADS=/exports/downloads
+NFS_MEDIA=/exports/media
+NFS_DOWNLOADS=/exports/media/downloads
 NFS_CACHE=/exports/cache
 ```
 
-Leave `NFS_CACHE` empty to keep Tdarr's transcode cache on local disk under
-`${DATA_ROOT}/cache/tdarr`.
+Leave `NFS_TV` / `NFS_MOVIES` empty when those folders already live under
+`NFS_MEDIA`. Leave `NFS_CACHE` empty to keep Tdarr's transcode cache on local
+disk under `${DATA_ROOT}/cache/tdarr`.
 
 Apply the settings as root:
 
@@ -263,18 +263,18 @@ sudo ./scripts/mount-media.sh
 
 The script manages a `# BEGIN kine-nfs` block in `/etc/fstab` and mounts:
 
-- `NFS_TV` at `${DATA_ROOT}/media/tv`
-- `NFS_MOVIES` at `${DATA_ROOT}/media/movies`
+- `NFS_MEDIA` at `${DATA_ROOT}/media`
 - `NFS_DOWNLOADS` at `${DATA_ROOT}/downloads`
 - `NFS_CACHE` at `${DATA_ROOT}/cache/tdarr` (optional)
+- optional `NFS_TV` / `NFS_MOVIES` at `${DATA_ROOT}/media/tv` and `…/movies`
 
 Separate NFS mount points cannot hardlink to one another, even when they are
-exports from the same server. If hardlinks matter, export and mount one common
-parent directly at `DATA_ROOT`, keep the per-path `NFS_*` settings empty, and
-verify that media and downloads report the same device ID:
+exports from the same server. For Sonarr/Radarr hardlinks, mount one media
+export, put downloads under that same export (for example
+`…/media/downloads`), leave nested `NFS_TV` / `NFS_MOVIES` empty, and verify:
 
 ```bash
-stat -c '%d' /srv/media-data/media /srv/media-data/downloads
+stat -c '%d' /srv/media-data/media /srv/media-data/downloads /srv/media-data/media/Movies
 ```
 
 After changing NFS settings in Helm, run `mount-media.sh` on the host; Helm

@@ -229,8 +229,22 @@ def test_suggest_assignments_maps_share_names():
     ]
     assert nfs_exports.suggest_assignments(exports) == {
         "NFS_MEDIA": "/var/nfs/shared/media",
-        "NFS_DOWNLOADS": "/var/nfs/shared/Downloads",
+        # Prefer downloads under media so hardlinks work.
+        "NFS_DOWNLOADS": "/var/nfs/shared/media/downloads",
         "NFS_CACHE": "/var/nfs/shared/cache",
+    }
+
+
+def test_suggest_assignments_skips_nested_tv_movies_under_media():
+    exports = [
+        "/var/nfs/shared/media",
+        "/var/nfs/shared/media/TV",
+        "/var/nfs/shared/media/Movies",
+        "/var/nfs/shared/Downloads",
+    ]
+    assert nfs_exports.suggest_assignments(exports) == {
+        "NFS_MEDIA": "/var/nfs/shared/media",
+        "NFS_DOWNLOADS": "/var/nfs/shared/media/downloads",
     }
 
 

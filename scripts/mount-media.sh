@@ -116,6 +116,23 @@ fi
 command -v mountpoint >/dev/null || die "mountpoint is required (install util-linux)"
 command -v findmnt >/dev/null || die "findmnt is required (install util-linux)"
 write_fstab
+
+# Nested TV/Movies mounts break hardlinks even on the same NFS server.
+# When those keys are empty, drop any leftover mounts (either case).
+drop_mount_if_cleared() {
+  local mount_point=$1
+  local wanted=$2
+  [[ -n "$wanted" ]] && return 0
+  if mountpoint -q "$mount_point" 2>/dev/null; then
+    warn "unmounting ${mount_point} (cleared so media+downloads stay one filesystem)"
+    umount "$mount_point" || warn "could not unmount ${mount_point}; stop apps and retry"
+  fi
+}
+drop_mount_if_cleared "$TV_ROOT" "${NFS_TV:-}"
+drop_mount_if_cleared "$(host_path "${DATA_ROOT}/media/TV")" "${NFS_TV:-}"
+drop_mount_if_cleared "$MOVIES_ROOT" "${NFS_MOVIES:-}"
+drop_mount_if_cleared "$(host_path "${DATA_ROOT}/media/Movies")" "${NFS_MOVIES:-}"
+
 mount_export "$MEDIA_ROOT" "${NFS_MEDIA:-}" "Media"
 if [[ -n "${NFS_TV:-}" && "${NFS_TV:-}" != "${NFS_MEDIA:-}" ]]; then
   mount_export "$TV_ROOT" "${NFS_TV:-}" "TV"

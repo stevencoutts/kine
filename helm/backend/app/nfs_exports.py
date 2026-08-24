@@ -130,20 +130,36 @@ def infer_unifi_shared_exports(exports: list[str]) -> list[str]:
 
 
 def suggest_assignments(exports: list[str]) -> dict[str, str]:
-    """Guess Helm NFS_* keys from export path names."""
+    """Guess Helm NFS_* keys from export path names.
+
+    Prefer a single media export plus ``{media}/downloads`` so hardlinks
+    work. Nested ``TV``/``Movies`` mounts under media are not suggested —
+    those break hardlinks even on the same NFS server.
+    """
     suggestions: dict[str, str] = {}
-    for export in filter_pickable_exports(exports):
+    pickable = filter_pickable_exports(exports)
+    for export in pickable:
         name = export.rstrip("/").split("/")[-1].lower()
         if name == "media" or export.lower().endswith("/shared/media"):
             suggestions.setdefault("NFS_MEDIA", export)
-        elif name == "downloads":
-            suggestions.setdefault("NFS_DOWNLOADS", export)
         elif name == "cache":
             suggestions.setdefault("NFS_CACHE", export)
+        elif name == "downloads":
+            suggestions.setdefault("NFS_DOWNLOADS", export)
         elif name == "tv":
             suggestions.setdefault("NFS_TV", export)
         elif name == "movies":
             suggestions.setdefault("NFS_MOVIES", export)
+
+    media = suggestions.get("NFS_MEDIA", "").rstrip("/")
+    if media:
+        # Same filesystem as libraries — required for Sonarr/Radarr hardlinks.
+        suggestions["NFS_DOWNLOADS"] = f"{media}/downloads"
+        media_prefix = media + "/"
+        for key in ("NFS_TV", "NFS_MOVIES"):
+            path = suggestions.get(key, "")
+            if path == media or path.startswith(media_prefix):
+                suggestions.pop(key, None)
     return suggestions
 
 
