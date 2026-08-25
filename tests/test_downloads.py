@@ -151,6 +151,57 @@ def test_parse_nzbget_status_rate():
     assert row["paused"] is False
 
 
+def test_nzbget_snapshot_fetches_rpc_in_parallel(monkeypatch):
+    """listgroups + status must overlap; sequential calls routinely exceed the old 6s timeout."""
+    import asyncio
+    import time
+
+    from app import catalogue, config, downloads
+
+    monkeypatch.setattr(config, "profiles", lambda: ["nzbget"])
+    monkeypatch.setattr(
+        catalogue, "load",
+        lambda: {"nzbget": {"internal": "http://gluetun:6789"}},
+    )
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+    starts: list[float] = []
+
+    async def fake_rpc(client, base, method, params=None):
+        starts.append(time.perf_counter())
+        await asyncio.sleep(0.12)
+        if method == "listgroups":
+            return []
+        if method == "status":
+            return {"DownloadRate": 42, "DownloadPaused": False, "ServerStandBy": False}
+        raise AssertionError(method)
+
+    monkeypatch.setattr(downloads.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(downloads, "_nzbget_rpc", fake_rpc)
+
+    async def _run():
+        t0 = time.perf_counter()
+        summary, err = await downloads._nzbget_snapshot()
+        elapsed = time.perf_counter() - t0
+        assert err is None
+        assert summary["download_rate"] == 42
+        assert len(starts) == 2
+        # Both RPCs started before either finished (overlap), so wall time << 2 * 0.12s.
+        assert abs(starts[0] - starts[1]) < 0.05
+        assert elapsed < 0.22
+
+    asyncio.run(_run())
+
+
 def test_frontend_has_downloads_overview():
     frontend = (ROOT / "helm" / "frontend" / "index.html").read_text()
     backend = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()

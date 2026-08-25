@@ -427,7 +427,7 @@ async def first_run(request: Request):
     # Only lock onboarding after every requested prerequisite succeeded,
     # so a bad tunnel configuration can be corrected and submitted again.
     auth.set_password(pw)
-    admin_user = config.read().get("HELM_ADMIN_USER", "admin")
+    admin_user = config.read().get("HELM_ADMIN_USER", auth.DEFAULT_ADMIN_USER)
     ecm = await asyncio.to_thread(ecm_setup.ensure_admin, admin_user, pw)
     return {"ok": True, "ecm_setup": ecm}
 

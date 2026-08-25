@@ -14,6 +14,7 @@ from . import config
 
 _ph = PasswordHasher()
 MAX_AGE = 60 * 60 * 24 * 14
+DEFAULT_ADMIN_USER = "kine-admin"
 
 
 def _serializer() -> URLSafeTimedSerializer:
@@ -39,7 +40,7 @@ def set_password(pw: str) -> None:
 
 def check(user: str, pw: str) -> bool:
     env = config.read()
-    if user != env.get("HELM_ADMIN_USER", "admin"):
+    if user != env.get("HELM_ADMIN_USER", DEFAULT_ADMIN_USER):
         return False
     stored = env.get("HELM_ADMIN_HASH", "")
     if not stored:

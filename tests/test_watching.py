@@ -13,6 +13,7 @@ from app.watching import (  # noqa: E402
     parse_emby_sessions,
     parse_plex_sessions,
     progress_pct,
+    sort_watching_sessions,
 )
 
 
@@ -30,6 +31,7 @@ PLEX_SAMPLE = {
                 "duration": 3600000,
                 "viewOffset": 900000,
                 "librarySectionTitle": "TV",
+                "sessionKey": "42",
                 "thumb": "/library/metadata/200/thumb/1",
                 "grandparentThumb": "/library/metadata/100/thumb/2",
                 "User": {"title": "steve"},
@@ -58,6 +60,7 @@ PLEX_SAMPLE = {
 
 EMBY_SAMPLE = [
     {
+        "Id": "sess-friends",
         "UserName": "admin",
         "Client": "Emby for iOS",
         "DeviceName": "iPhone",
@@ -83,6 +86,7 @@ EMBY_SAMPLE = [
         "PlayState": {"PositionTicks": 3_300_000_000, "IsPaused": False, "PlayMethod": "DirectPlay"},
     },
     {
+        "Id": "sess-comedy",
         "UserName": "paula",
         "Client": "Emby Theater",
         "DeviceName": "Living Room Apple TV",
@@ -195,3 +199,28 @@ def test_progress_pct_guards():
     assert progress_pct(0, 0) is None
     assert progress_pct(50, 100) == 50
     assert progress_pct(150, 100) == 100
+
+
+def test_sort_watching_sessions_longest_running_first():
+    """Emby/Plex shuffle session order each poll; keep longest-running first."""
+    rows = [
+        {"title": "new", "position_ms": 60_000, "session_id": "b", "user": "a"},
+        {"title": "old", "position_ms": 3_600_000, "session_id": "a", "user": "b"},
+        {"title": "live", "position_ms": None, "session_id": "c", "user": "c"},
+    ]
+    ordered = sort_watching_sessions(rows)
+    assert [r["title"] for r in ordered] == ["old", "new", "live"]
+    # Stable when positions match.
+    tied = [
+        {"title": "z", "position_ms": 100, "session_id": "2", "user": "u"},
+        {"title": "a", "position_ms": 100, "session_id": "1", "user": "u"},
+    ]
+    assert [r["session_id"] for r in sort_watching_sessions(tied)] == ["1", "2"]
+
+
+def test_emby_and_plex_expose_session_id():
+    plex = parse_plex_sessions(PLEX_SAMPLE)
+    assert plex[0]["session_id"] == "42"
+    emby = parse_emby_sessions(EMBY_SAMPLE)
+    assert emby[0]["session_id"] == "sess-friends"
+    assert emby[1]["session_id"] == "sess-comedy"

@@ -286,6 +286,20 @@ def test_seerr_is_untunnelled_with_official_image_and_traefik():
     assert "seerr" not in TUNNELLED
 
 
+def test_game_thumbs_is_untunnelled_for_teamarr_art():
+    """Artwork URLs must be client-reachable via Traefik, not buried in gluetun."""
+    _, thumbs = SERVICES["game-thumbs"]
+    assert thumbs["image"] == "ghcr.io/sethwv/game-thumbs:${GAME_THUMBS_TAG}"
+    assert thumbs.get("network_mode") != "service:gluetun"
+    assert "kine_internal" in thumbs.get("networks", [])
+    assert "${STACK_ROOT}/config/game-thumbs/cache:/app/.cache" in thumbs.get("volumes", [])
+    labels = " ".join(str(label) for label in thumbs.get("labels", []))
+    assert "Host(`thumbs.${KINE_DOMAIN}`)" in labels
+    assert "services.game-thumbs.loadbalancer.server.port=3000" in labels
+    assert "game-thumbs" not in TUNNELLED
+    assert "game-thumbs" in CATALOGUE["teamarr"].get("requires", [])
+
+
 def test_tdarr_is_untunnelled_with_media_and_cache_mounts():
     _, tdarr = SERVICES["tdarr"]
     assert tdarr["image"] == "ghcr.io/haveagitgat/tdarr:${TDARR_TAG}"

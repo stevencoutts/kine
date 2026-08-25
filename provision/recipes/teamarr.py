@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +18,133 @@ BASE_START = 2000
 
 # Select Leagues mode in Teamarr UI is soccer_mode="manual".
 SOCCER_MODE = "manual"
+SOCCER_TEMPLATE_SPORT = "Soccer"
+SOCCER_TEMPLATE_NAME_HINTS = (
+    "soccer club event",
+    "soccer event",
+    "default event",
+)
+
+
+def art_base_url_from_env() -> str:
+    """Public Game-Thumbs origin for Teamarr template art paths."""
+    explicit = (os.environ.get("GAME_THUMBS_PUBLIC_URL") or "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    domain = (os.environ.get("KINE_DOMAIN") or "").strip().rstrip(".")
+    if not domain:
+        return ""
+    return f"https://thumbs.{domain}"
+
+
+def _pick_soccer_template_id(templates: list[Any]) -> int | None:
+    """Prefer Teamarr's Soccer Club Event starter, else any event template."""
+    rows = [t for t in templates if isinstance(t, dict) and t.get("id") is not None]
+    by_hint: dict[str, int] = {}
+    for row in rows:
+        name = str(row.get("name") or "").strip().lower()
+        for hint in SOCCER_TEMPLATE_NAME_HINTS:
+            if hint in name and hint not in by_hint:
+                by_hint[hint] = int(row["id"])
+    for hint in SOCCER_TEMPLATE_NAME_HINTS:
+        if hint in by_hint:
+            return by_hint[hint]
+    for row in rows:
+        if str(row.get("template_type") or "").lower() == "event":
+            return int(row["id"])
+    return None
+
+
+def ensure_soccer_template(http: httpx.Client, log: Callable[[str], None]) -> bool:
+    """Assign a global Soccer template when none exist (required for generation)."""
+    resp = http.get("/api/v1/subscription-templates")
+    resp.raise_for_status()
+    data = resp.json() if resp.content else {}
+    existing = data.get("templates") if isinstance(data, dict) else data
+    if isinstance(existing, list) and existing:
+        log("teamarr: subscription template already assigned")
+        return False
+
+    resp = http.get("/api/v1/templates")
+    resp.raise_for_status()
+    templates = resp.json() if resp.content else []
+    if isinstance(templates, dict):
+        templates = templates.get("templates") or templates.get("items") or []
+    template_id = _pick_soccer_template_id(templates if isinstance(templates, list) else [])
+    if template_id is None:
+        log("teamarr: no event template available to assign")
+        return False
+
+    resp = http.post(
+        "/api/v1/subscription-templates",
+        json={"template_id": template_id, "sports": [SOCCER_TEMPLATE_SPORT], "leagues": None},
+    )
+    resp.raise_for_status()
+    log(f"teamarr: assigned template {template_id} to Soccer")
+    return True
+
+
+def epg_timezone_from_env() -> str:
+    """Teamarr EPG display/schedule timezone — same as the appliance clock."""
+    return (
+        (os.environ.get("KINE_TIMEZONE") or "").strip()
+        or (os.environ.get("TZ") or "").strip()
+    )
+
+
+def ensure_epg_settings(
+    http: httpx.Client,
+    log: Callable[[str], None],
+    *,
+    art_base_url: str = "",
+    epg_timezone: str = "",
+) -> bool:
+    """Align Teamarr EPG settings with Kine (art CDN + timezone)."""
+    base = (art_base_url or art_base_url_from_env()).strip().rstrip("/")
+    tz = (epg_timezone or epg_timezone_from_env()).strip()
+    if not base and not tz:
+        log("teamarr: no EPG art URL or timezone to apply")
+        return False
+
+    resp = http.get("/api/v1/settings/epg")
+    resp.raise_for_status()
+    body = resp.json() if resp.content else {}
+    if not isinstance(body, dict):
+        body = {}
+
+    changed = False
+    if base:
+        current = (body.get("art_base_url") or "").strip().rstrip("/")
+        if current != base:
+            body["art_base_url"] = base
+            changed = True
+            log(f"teamarr: art_base_url -> {base}")
+        else:
+            log("teamarr: art_base_url already set")
+    if tz:
+        current_tz = (body.get("epg_timezone") or "").strip()
+        if current_tz != tz:
+            body["epg_timezone"] = tz
+            changed = True
+            log(f"teamarr: epg_timezone -> {tz}")
+        else:
+            log("teamarr: epg_timezone already set")
+
+    if not changed:
+        return False
+    resp = http.put("/api/v1/settings/epg", json=body)
+    resp.raise_for_status()
+    return True
+
+
+def ensure_art_base_url(
+    http: httpx.Client,
+    log: Callable[[str], None],
+    art_base_url: str = "",
+) -> bool:
+    """Backward-compatible wrapper for Game-Thumbs art_base_url only."""
+    return ensure_epg_settings(http, log, art_base_url=art_base_url, epg_timezone="")
+
 
 # Reserved 20-number blocks starting at 2000 (product defaults).
 DEFAULT_LEAGUES: list[dict[str, Any]] = [
@@ -138,6 +266,7 @@ def configure(
     dispatcharr_token: str = "",
     dispatcharr_username: str = "",
     dispatcharr_password: str = "",
+    art_base_url: str = "",
     base_url: str = TEAMARR_BASE,
     client: httpx.Client | None = None,
     wait_timeout: float = 120.0,
@@ -168,6 +297,9 @@ def configure(
         resp = http.put("/api/v1/settings/channel-numbering", json=num_body)
         resp.raise_for_status()
         log("teamarr: channel numbering set (manual, 2000s blocks)")
+
+        ensure_soccer_template(http, log)
+        ensure_epg_settings(http, log, art_base_url=art_base_url)
 
         disp: dict[str, Any] = {
             "enabled": True,

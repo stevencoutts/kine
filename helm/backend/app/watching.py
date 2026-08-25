@@ -26,6 +26,24 @@ def progress_pct(position: int | float | None, duration: int | float | None) -> 
     return max(0, min(100, round(100 * float(position) / float(duration))))
 
 
+def sort_watching_sessions(sessions: list[dict]) -> list[dict]:
+    """Oldest / longest-running first.
+
+    Emby and Plex reshuffle session order on every poll; without a stable sort
+    the Watching cards jump around. Prefer higher playback position (been
+    watching longer), then a stable session id / user / title tie-break.
+    """
+    return sorted(
+        sessions,
+        key=lambda s: (
+            -(s.get("position_ms") or 0),
+            str(s.get("session_id") or ""),
+            str(s.get("user") or ""),
+            str(s.get("title") or ""),
+        ),
+    )
+
+
 def format_duration_ms(ms: int | float | None) -> str | None:
     if ms is None:
         return None
@@ -231,6 +249,7 @@ def parse_plex_sessions(payload: dict) -> list[dict]:
 
         rows.append({
             "server": "plex",
+            "session_id": str(item.get("sessionKey") or item.get("ratingKey") or "") or None,
             "kind": kind or "unknown",
             "title": display,
             "show": show,
@@ -394,6 +413,7 @@ def parse_emby_sessions(payload: list | dict) -> list[dict]:
 
         rows.append({
             "server": "emby",
+            "session_id": str(item.get("Id") or "") or None,
             "kind": kind,
             "title": display,
             "show": show,
@@ -601,7 +621,7 @@ async def snapshot() -> dict:
     emby_task = asyncio.create_task(_emby_sessions(env))
     plex_rows, plex_error = await plex_task
     emby_rows, emby_error = await emby_task
-    sessions = [*plex_rows, *emby_rows]
+    sessions = sort_watching_sessions([*plex_rows, *emby_rows])
     return {
         "ok": True,
         "configured": {

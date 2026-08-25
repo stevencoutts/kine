@@ -198,6 +198,16 @@ apps:
     dev_tag: dev
     default: true
 
+  game-thumbs:
+    name: Game Thumbs
+    tier: live
+    summary: Matchup thumbnail API used by Teamarr templates for EPG and channel art.
+    releases: https://github.com/sethwv/game-thumbs/releases
+    internal: http://game-thumbs:3000
+    subdomain: thumbs
+    requires: []
+    default: true
+
   teamarr:
     name: Teamarr
     tier: live
@@ -206,7 +216,7 @@ apps:
     internal: http://gluetun:9195
     subdomain: sports
     embed: true
-    requires: [gluetun, dispatcharr]
+    requires: [gluetun, dispatcharr, game-thumbs]
     wires: [dispatcharr-link]
     tunnelled: forced
     dev_tag: dev

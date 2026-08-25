@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from typing import TYPE_CHECKING, Iterable
 from urllib.parse import urlsplit
@@ -24,6 +25,7 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
 SESSION_COOKIE = "kine_session"
+log = logging.getLogger("kine.embed")
 
 _HOP_BY_HOP = {
     "connection",
@@ -283,6 +285,17 @@ _BROWSER_ROUTER_DEF = re.compile(
     r"window:"
 )
 
+# Dispatcharr's WebSocket provider: useCallback deps include connected-state
+# ``e``. onopen → setConnected(true) recreates the callback → useEffect cleanup
+# closes the live socket → reconnect churn → "Maximum reconnection attempts".
+# Keep only the timer-clear + URL builder deps (2nd and 4th of the five).
+_DISPATCHARR_WS_HOOK_DEPS = re.compile(
+    r"(setTimeout\(\(\)=>\{[a-zA-Z$_]+\([a-zA-Z$_]+=>[a-zA-Z$_]+\+1\),"
+    r"[a-zA-Z$_]+\(\)\},[a-zA-Z$_]+\)\}\}\},"
+    r")\[[a-zA-Z$_]+,([a-zA-Z$_]+),[a-zA-Z$_]+,([a-zA-Z$_]+),[a-zA-Z$_]+\]"
+    r"(\);x\.useEffect\(\(\)=>\()"
+)
+
 
 def _rewrite_js(text: str, prefix: str) -> str:
     """Patch SPAs that ship a root-level React Router without basename.
@@ -296,7 +309,14 @@ def _rewrite_js(text: str, prefix: str) -> str:
     Call-site shapes vary by bundler:
     - Dispatcharr (webpack): ``jsxs(J6,{children:…})``
     - Teamarr (Vite): ``(0,P.jsx)(An,{children:…})``
+
+    Also stabilises Dispatcharr's WebSocket hook deps when present.
     """
+    if "Attempting WebSocket connection" in text:
+        text, n = _DISPATCHARR_WS_HOOK_DEPS.subn(r"\1[\2,\3]\4", text, count=1)
+        if n:
+            log.debug("patched Dispatcharr WebSocket hook deps under %s", prefix)
+
     match = _BROWSER_ROUTER_DEF.search(text)
     if not match:
         return text
@@ -429,55 +449,74 @@ async def proxy_websocket(app_id: str, path: str, websocket: WebSocket) -> None:
         return
 
     target = upstream_ws_url(app_id, path, websocket.url.query)
-    await websocket.accept()
+    # Connect upstream first so a dead backend never looks like a successful
+    # browser handshake that immediately 1011s (burns Dispatcharr reconnects).
     try:
-        # ping_interval=None: we are a byte-relay, not an endpoint. Default
-        # client pings fight some app servers (Dispatcharr) and drop the
-        # socket every ~20–60s → perpetual "WebSocket Reconnecting" toast.
-        async with websockets.connect(
+        # ping_interval/ping_timeout=None: byte-relay only. Default client
+        # pings fight some app servers (Dispatcharr) and drop the socket
+        # every ~20–60s → perpetual "WebSocket Reconnecting" toast.
+        upstream_cm = websockets.connect(
             target,
             open_timeout=10,
             max_size=8 * 2**20,
             ping_interval=None,
-        ) as upstream:
-            async def client_to_upstream() -> None:
-                try:
-                    while True:
-                        msg = await websocket.receive()
-                        if msg["type"] == "websocket.disconnect":
-                            break
-                        text = msg.get("text")
-                        if text is not None:
-                            await upstream.send(text)
-                            continue
-                        data = msg.get("bytes")
-                        if data is not None:
-                            await upstream.send(data)
-                except Exception:
-                    return
-
-            async def upstream_to_client() -> None:
-                try:
-                    async for message in upstream:
-                        if isinstance(message, str):
-                            await websocket.send_text(message)
-                        else:
-                            await websocket.send_bytes(message)
-                except Exception:
-                    return
-
-            client_task = asyncio.create_task(client_to_upstream())
-            upstream_task = asyncio.create_task(upstream_to_client())
-            done, pending = await asyncio.wait(
-                {client_task, upstream_task},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            for task in pending:
-                task.cancel()
-            for task in done:
-                task.exception()
-    except Exception:
+            ping_timeout=None,
+        )
+        upstream = await upstream_cm.__aenter__()
+    except Exception as exc:
+        log.warning("embed ws upstream connect failed %s: %s", app_id, exc)
         await websocket.close(code=1011)
+        return
+
+    await websocket.accept()
+    try:
+        async def client_to_upstream() -> None:
+            try:
+                while True:
+                    msg = await websocket.receive()
+                    if msg["type"] == "websocket.disconnect":
+                        break
+                    text = msg.get("text")
+                    if text is not None:
+                        await upstream.send(text)
+                        continue
+                    data = msg.get("bytes")
+                    if data is not None:
+                        await upstream.send(data)
+            except Exception:
+                return
+
+        async def upstream_to_client() -> None:
+            try:
+                async for message in upstream:
+                    if isinstance(message, str):
+                        await websocket.send_text(message)
+                    else:
+                        await websocket.send_bytes(message)
+            except Exception:
+                return
+
+        client_task = asyncio.create_task(client_to_upstream())
+        upstream_task = asyncio.create_task(upstream_to_client())
+        done, pending = await asyncio.wait(
+            {client_task, upstream_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        for task in pending:
+            task.cancel()
+        for task in done:
+            task.exception()
+    except Exception as exc:
+        log.warning("embed ws relay error %s: %s", app_id, exc)
+        try:
+            await websocket.close(code=1011)
+        except Exception:
+            pass
+    finally:
+        try:
+            await upstream_cm.__aexit__(None, None, None)
+        except Exception:
+            pass
 
 
 def mount(app: FastAPI, require_user) -> None:

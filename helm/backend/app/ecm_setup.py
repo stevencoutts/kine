@@ -40,7 +40,7 @@ def ensure_admin(
     """
     if not enabled():
         return {"ok": True, "status": "skipped", "reason": "ecm disabled"}
-    user = (username or "").strip() or "admin"
+    user = (username or "").strip() or "kine-admin"
     if not password or len(password) < 8:
         return {"ok": False, "status": "failed", "reason": "password too short for ECM"}
     if user.lower() in password.lower():

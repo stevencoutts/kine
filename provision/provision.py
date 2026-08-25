@@ -99,7 +99,7 @@ def wire(enabled: set[str]) -> None:
 
     if "emby" in enabled:
         emby.configure(
-            os.environ.get("HELM_ADMIN_USER", "admin"),
+            os.environ.get("HELM_ADMIN_USER", "kine-admin"),
             os.environ.get("KINE_SECRET", "")[:16],
             log,
         )

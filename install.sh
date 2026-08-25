@@ -106,7 +106,7 @@ else
 fi
 
 mkdir -p "${STACK_ROOT}"/{config,backups} "${DATA_ROOT}"/{media,downloads,cache}
-mkdir -p "${STACK_ROOT}"/config/{traefik/dynamic,traefik/certs,unpackerr,recyclarr,seerr/logs,ecm,teamarr,tdarr/{server,configs,logs}}
+mkdir -p "${STACK_ROOT}"/config/{traefik/dynamic,traefik/certs,unpackerr,recyclarr,seerr/logs,ecm,teamarr,game-thumbs/cache,tdarr/{server,configs,logs}}
 mkdir -p "${DATA_ROOT}"/media/{movies,tv,sports,recordings}
 mkdir -p "${DATA_ROOT}"/downloads/{incomplete,complete/{tv-sonarr,radarr}}
 mkdir -p "${DATA_ROOT}/cache/tdarr"

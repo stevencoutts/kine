@@ -1,0 +1,35 @@
+# Untunnelled. Game-Thumbs generates matchup artwork for Teamarr EPG /
+# Dispatcharr channel logos. Emby clients fetch thumbs via Traefik, so
+# this stays on its own network stack (like Seerr/Grafana), not gluetun.
+services:
+  game-thumbs:
+    image: ghcr.io/sethwv/game-thumbs:${GAME_THUMBS_TAG}
+    container_name: kine-game-thumbs
+    profiles: ["game-thumbs"]
+    restart: unless-stopped
+    environment:
+      TZ: ${KINE_TIMEZONE}
+      PORT: "3000"
+      NODE_ENV: production
+      TRUST_PROXY: "1"
+      CORS_ORIGIN: "*"
+      RATE_LIMIT_PER_MINUTE: "120"
+      IMAGE_CACHE_HOURS: "24"
+      SHOW_TIMESTAMP: "true"
+    volumes:
+      - ${STACK_ROOT}/config/game-thumbs/cache:/app/.cache
+    networks: [kine_internal, kine_edge]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:3000/health | grep -q '\"status\":\"ok\"' || exit 1",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.game-thumbs.rule=Host(`thumbs.${KINE_DOMAIN}`) || Host(`thumbs.${KINE_LOCAL_DOMAIN}`)
+      - traefik.http.services.game-thumbs.loadbalancer.server.port=3000

@@ -274,9 +274,13 @@ async def _nzbget_snapshot() -> tuple[dict | None, str | None]:
     if not base:
         return None, "no internal URL"
     try:
-        async with httpx.AsyncClient(timeout=6.0) as client:
-            groups = await _nzbget_rpc(client, base, "listgroups", [0])
-            status = await _nzbget_rpc(client, base, "status")
+        # Sequential listgroups+status often exceeds 6s through gluetun under load;
+        # parallel keeps wall time near the slower of the two (~0.5s typical).
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            groups, status = await asyncio.gather(
+                _nzbget_rpc(client, base, "listgroups", [0]),
+                _nzbget_rpc(client, base, "status"),
+            )
         group_list = groups if isinstance(groups, list) else []
         summary = parse_nzbget_groups(group_list)
         rates = parse_nzbget_status({"result": status} if isinstance(status, dict) else {})

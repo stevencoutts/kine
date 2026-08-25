@@ -205,6 +205,20 @@ def test_settings_media_servers_section():
     assert 'provision", "wire"' in BACKEND
 
 
+def test_settings_section_nav():
+    assert "SETTINGS_SECTIONS" in FRONTEND
+    assert "settingsSection" in FRONTEND
+    assert "settings-nav" in FRONTEND
+    assert "data-settings-section" in FRONTEND
+    assert "data-settings-panel" in FRONTEND
+    for label in ("Appliance", "Storage", "Media Servers", "Live TV", "Subtitles", "NZBGet"):
+        assert label in FRONTEND
+    assert "settingsPanel(" in FRONTEND or "settingsPanel =" in FRONTEND
+    # One-panel UX: inactive panels use the hidden attribute.
+    assert "settings-panel" in FRONTEND
+    assert "panel.hidden" in FRONTEND or "p.hidden" in FRONTEND or "hidden'" in FRONTEND
+
+
 def test_settings_subtitles_opensubtitles():
     assert "OPENSUBTITLES_USERNAME" in FRONTEND
     assert "OPENSUBTITLES_PASSWORD" in FRONTEND

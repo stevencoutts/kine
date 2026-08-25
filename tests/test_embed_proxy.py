@@ -155,6 +155,26 @@ def test_rewrite_js_leaves_unrelated_bundles_unchanged():
     assert embed_proxy._rewrite_js(js, "/view/dispatcharr") == js
 
 
+def test_rewrite_js_stabilises_dispatcharr_websocket_hook_deps():
+    """onopen setConnected(true) must not recreate the connect callback."""
+    js = (
+        'console.log(`Attempting WebSocket connection (attempt ${o+1}/${p})...`);'
+        "a.current=setTimeout(()=>{c(H=>H+1),M()},B)}}},"
+        "[o,T,C,D,e]);x.useEffect(()=>(_&&v?M():i.current&&(T(),null))"
+    )
+    out = embed_proxy._rewrite_js(js, "/view/dispatcharr")
+    assert "[T,D]);x.useEffect(()=>(_&&v?M()" in out
+    assert "[o,T,C,D,e]" not in out
+
+
+def test_rewrite_js_skips_ws_hook_patch_without_marker():
+    js = (
+        "a.current=setTimeout(()=>{c(H=>H+1),M()},B)}}},"
+        "[o,T,C,D,e]);x.useEffect(()=>(_&&v?M():null)"
+    )
+    assert embed_proxy._rewrite_js(js, "/view/dispatcharr") == js
+
+
 def test_rewrite_js_skips_low_level_router_with_default_basename():
     """R6 is react-router's <Router>, not BrowserRouter — do not patch it."""
     js = (
