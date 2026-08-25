@@ -391,7 +391,7 @@ const api = async (path, opts={}) => {
   return data;
 };
 
-const state = { tab:'apps', apps:[], tiers:{}, activeTier:null, watchTimer:null,
+const state = { tab:'apps', apps:[], tiers:{}, activeTier:'watching', watchTimer:null,
   updatesLog:'', updatesProgress:null, settingsSection:'appliance' };
 const SETTINGS_SECTIONS = [
   {id:'appliance', label:'Appliance'},

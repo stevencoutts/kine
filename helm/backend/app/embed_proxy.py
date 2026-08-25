@@ -1,7 +1,7 @@
 """Same-origin reverse proxy so Helm can embed apps without cert prompts.
 
 Apps keep serving at `/` on their own hostnames (and for internal clients).
-Helm exposes them under `/view/{app}/` on `admin.*`, rewrites root-absolute
+Helm exposes them under `/view/{app}/` on `kine-admin.*`, rewrites root-absolute
 URLs in HTML/CSS, and patches fetch/XHR/WebSocket in a bootstrap script so
 SPAs keep talking through the prefix without changing UrlBase.
 """

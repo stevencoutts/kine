@@ -4,7 +4,7 @@
 |---|---|---|
 | `${TRAEFIK_HTTP_PORT}` (default 8080) | Traefik HTTP | Redirects to HTTPS |
 | `${TRAEFIK_HTTPS_PORT}` (default 8443) | Traefik HTTPS | App hostnames |
-| `${HELM_PORT}` (default 8600) | Helm admin UI | Also via `admin.${KINE_DOMAIN}` |
+| `${HELM_PORT}` (default 8600) | Helm admin UI | Also via `kine-admin.${KINE_DOMAIN}` |
 
 Set `TRAEFIK_HTTP_PORT=80` and `TRAEFIK_HTTPS_PORT=443` in `.env` when those
 ports are free on the host.

@@ -35,7 +35,7 @@ apps:
     releases: https://github.com/Sonarr/Sonarr/releases
     internal: http://gluetun:8989
     subdomain: sonarr
-    # Open inside Helm via /view/sonarr/ (same certificate as admin).
+    # Open inside Helm via /view/sonarr/ (same certificate as kine-admin).
     embed: true
     api: v3
     provides: [tv-pvr]

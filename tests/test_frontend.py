@@ -57,6 +57,7 @@ def test_app_overview_buttons_show_running_counts():
     assert "overview-btn" in FRONTEND
     assert "overview-stat" in FRONTEND
     assert "activeTier" in FRONTEND
+    assert "activeTier:'watching'" in FRONTEND
     assert "tierStats" in FRONTEND
     assert "/ ${stats.total} running" in FRONTEND
     assert "tier-switch" in FRONTEND

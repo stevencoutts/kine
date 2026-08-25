@@ -34,7 +34,12 @@ def art_base_url_from_env() -> str:
     domain = (os.environ.get("KINE_DOMAIN") or "").strip().rstrip(".")
     if not domain:
         return ""
-    return f"https://thumbs.{domain}"
+    # Traefik often isn't on 443 (host nginx already owns it). Emby/EPG
+    # clients fetch absolute art URLs, so the port must be in the origin.
+    port = (os.environ.get("TRAEFIK_HTTPS_PORT") or "443").strip() or "443"
+    if port == "443":
+        return f"https://thumbs.{domain}"
+    return f"https://thumbs.{domain}:{port}"
 
 
 def _pick_soccer_template_id(templates: list[Any]) -> int | None:

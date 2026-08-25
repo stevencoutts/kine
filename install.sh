@@ -175,7 +175,7 @@ echo
 bold "Ready"
 https_port="${TRAEFIK_HTTPS_PORT:-8443}"
 https_suffix=""; [[ "$https_port" == "443" ]] || https_suffix=":${https_port}"
-echo "  Admin GUI   https://admin.${KINE_DOMAIN}${https_suffix}    (or http://$(local_ip):${HELM_PORT})"
+echo "  Admin GUI   https://kine-admin.${KINE_DOMAIN}${https_suffix}    (or http://$(local_ip):${HELM_PORT})"
 echo "  Emby        https://emby.${KINE_DOMAIN}${https_suffix}"
 echo
 echo "Finish setup in the admin GUI: set the admin password, then add"

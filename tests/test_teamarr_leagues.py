@@ -145,6 +145,7 @@ def test_configure_puts_subscription_and_numbering(monkeypatch):
     monkeypatch.setattr(teamarr.httpx, "Client", lambda **kw: fake)
     monkeypatch.setenv("KINE_DOMAIN", "example.test")
     monkeypatch.setenv("KINE_TIMEZONE", "Europe/London")
+    monkeypatch.setenv("TRAEFIK_HTTPS_PORT", "8443")
     rows = teamarr.assign_channel_starts([
         {"id": "eng.1", "name": "EPL"},
         {"id": "uefa.champions", "name": "UCL"},
@@ -175,7 +176,7 @@ def test_configure_puts_subscription_and_numbering(monkeypatch):
     assert disp["username"] == "kine"
     assert disp["password"] == "secret"
     epg = next(body for p, body in fake.puts if p.endswith("settings/epg"))
-    assert epg["art_base_url"] == "https://thumbs.example.test"
+    assert epg["art_base_url"] == "https://thumbs.example.test:8443"
     assert epg["epg_timezone"] == "Europe/London"
     assign = next(body for p, body in fake.posts if p.endswith("/subscription-templates"))
     assert assign["template_id"] == 6
@@ -186,6 +187,15 @@ def test_art_base_url_from_env_prefers_explicit(monkeypatch):
     monkeypatch.setenv("GAME_THUMBS_PUBLIC_URL", "http://thumbs.lan:3000/")
     monkeypatch.setenv("KINE_DOMAIN", "ignored.example")
     assert teamarr.art_base_url_from_env() == "http://thumbs.lan:3000"
+
+
+def test_art_base_url_from_env_includes_nonstandard_https_port(monkeypatch):
+    monkeypatch.delenv("GAME_THUMBS_PUBLIC_URL", raising=False)
+    monkeypatch.setenv("KINE_DOMAIN", "example.test")
+    monkeypatch.setenv("TRAEFIK_HTTPS_PORT", "8443")
+    assert teamarr.art_base_url_from_env() == "https://thumbs.example.test:8443"
+    monkeypatch.setenv("TRAEFIK_HTTPS_PORT", "443")
+    assert teamarr.art_base_url_from_env() == "https://thumbs.example.test"
 
 
 def test_epg_timezone_from_env(monkeypatch):

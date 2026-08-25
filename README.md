@@ -70,7 +70,7 @@ The installer is idempotent. On its first run it:
 
 Open the URL printed at the end, normally:
 
-- admin: `https://admin.kine.local:8443` (or `:443` if you set that in `.env`)
+- admin: `https://kine-admin.kine.local:8443` (or `:443` if you set that in `.env`)
 - Emby: `https://emby.kine.local:8443`
 - recovery access to Helm: `http://<host-lan-ip>:8600`
 

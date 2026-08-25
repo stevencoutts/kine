@@ -21,14 +21,14 @@ def test_loopback_helm_uses_resolvable_traefik_aliases():
 
 def test_production_helm_uses_configured_domain():
     assert launch.app_url(
-        "sonarr", "media.example.com", "admin.media.example.com",
+        "sonarr", "media.example.com", "kine-admin.media.example.com",
         "127.0.0.1.nip.io", "8443",
     ) == "https://sonarr.media.example.com:8443"
 
 
 def test_standard_https_port_omits_suffix():
     assert launch.app_url(
-        "sonarr", "media.example.com", "admin.media.example.com",
+        "sonarr", "media.example.com", "kine-admin.media.example.com",
         "127.0.0.1.nip.io", "443",
     ) == "https://sonarr.media.example.com"
 

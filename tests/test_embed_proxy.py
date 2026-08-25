@@ -102,7 +102,7 @@ def test_embeddable_requires_flag_and_internal(monkeypatch):
 
 def test_filter_request_headers_forces_identity_encoding():
     out = embed_proxy._filter_request_headers([
-        ("Host", "admin.example"),
+        ("Host", "kine-admin.example"),
         ("Accept-Encoding", "gzip, deflate, br"),
         ("Cookie", "kine_session=abc"),
         ("Connection", "keep-alive"),
