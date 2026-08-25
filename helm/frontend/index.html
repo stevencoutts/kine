@@ -39,6 +39,8 @@ nav button{background:color-mix(in srgb, var(--panel) 50%, transparent);
 nav button.active{background:color-mix(in srgb, var(--accent) 85%, transparent);
   color:#fff;border-color:color-mix(in srgb, var(--accent) 70%, transparent);
   box-shadow:0 2px 12px color-mix(in srgb, var(--accent) 25%, transparent)}
+nav button.nav-logout{margin-left:.35rem;opacity:.85}
+nav button.nav-logout:hover{color:var(--text);border-color:var(--line);opacity:1}
 main{padding:1.5rem;padding-bottom:4rem;max-width:1100px;margin:0 auto}
 footer#vpnbar{position:fixed;left:0;right:0;bottom:0;z-index:10;
   display:flex;align-items:center;gap:.5rem;padding:.6rem 1.5rem;
@@ -846,12 +848,22 @@ render.shell = (body) => {
         ${['apps','stats','updates','vpn','status','settings'].map(t =>
           `<button class="${state.tab===t?'active':''}" data-tab="${t}">${TAB_LABELS[t]}</button>`
         ).join('')}
+        <button type="button" class="nav-logout" data-logout>Log Out</button>
       </nav>
     </header>
     <main>${body}</main>
     <footer id="vpnbar"><span class="dot off"></span>checking VPN&hellip;</footer>`;
-  document.querySelectorAll('nav button').forEach(b =>
+  document.querySelectorAll('nav button[data-tab]').forEach(b =>
     b.onclick = () => { state.tab = b.dataset.tab; render[state.tab](); });
+  const logoutBtn = document.querySelector('nav button[data-logout]');
+  if (logoutBtn) {
+    logoutBtn.onclick = async () => {
+      try {
+        await fetch('/api/auth/logout', {method:'POST', credentials:'same-origin'});
+      } catch (_) { /* still clear the UI */ }
+      render.login();
+    };
+  }
   updateVpnBar();
 };
 

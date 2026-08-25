@@ -22,6 +22,12 @@ def test_status_page_has_backup_restore_ui():
     assert "id=\"backup-now\"" in FRONTEND
 
 
+def test_header_has_logout_button():
+    assert 'data-logout>Log Out</button>' in FRONTEND
+    assert "/api/auth/logout" in FRONTEND
+    assert '@app.post("/api/auth/logout")' in BACKEND
+
+
 def test_visible_control_labels_use_title_case():
     lower_case_labels = (
         ">First run<",
