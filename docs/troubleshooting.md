@@ -45,7 +45,9 @@ dead namespace.
 
 `KINE_TLS_MODE=internal` uses Traefik's own CA. Either trust
 `/srv/kine/config/traefik/certs/ca.crt`, or switch to
-`acme-dns` in the GUI's settings page and supply DNS credentials.
+`acme-dns` in Settings, set an ACME email, and put ClouDNS API
+credentials (`CLOUDNS_AUTH_ID` / `CLOUDNS_AUTH_PASSWORD`) in
+`/srv/kine/config/traefik/acme.env`.
 
 ## Hardware transcoding is not being used
 

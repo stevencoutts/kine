@@ -438,6 +438,95 @@ def test_traefik_publishes_configurable_host_ports():
     assert env["TRAEFIK_HTTPS_PORT"] == "8443"
 
 
+def test_traefik_loads_acme_args_and_provider_env():
+    """acme-dns writes CLI flags + ClouDNS creds; Traefik must actually consume them."""
+    _, traefik = SERVICES["traefik"]
+    entry = traefik.get("entrypoint") or []
+    if isinstance(entry, str):
+        entry = [entry]
+    joined = " ".join(str(x) for x in entry)
+    vols = " ".join(traefik.get("volumes", []))
+    assert "traefik-entrypoint" in joined or "traefik-entrypoint.sh" in vols
+    assert "traefik-entrypoint.sh" in vols
+    env_files = traefik.get("env_file") or []
+    flat = []
+    for item in env_files:
+        if isinstance(item, dict):
+            flat.append(item.get("path") or "")
+        else:
+            flat.append(str(item))
+    assert any("acme.env" in f for f in flat)
+    example = (ROOT / ".env.example").read_text()
+    assert "KINE_ACME_DNS_PROVIDER=cloudns" in example
+    assert "CLOUDNS_AUTH_ID" in example
+
+
+def test_tls_setup_acme_dns_writes_resolver_args(tmp_path):
+    stack = tmp_path / "stack"
+    (stack / "config" / "traefik" / "dynamic").mkdir(parents=True)
+    (stack / "config" / "traefik" / "certs").mkdir(parents=True)
+    env_file = tmp_path / "proj" / ".env"
+    env_file.parent.mkdir()
+    env_file.write_text(
+        f"STACK_ROOT={stack}\n"
+        "KINE_DOMAIN=example.test\n"
+        "KINE_TLS_MODE=acme-dns\n"
+        "KINE_ACME_EMAIL=ops@example.test\n"
+        "KINE_ACME_DNS_PROVIDER=cloudns\n"
+        "KINE_ACME_CA=https://acme-v02.api.letsencrypt.org/directory\n"
+    )
+    # tls-setup sources lib.sh and load_env .env from cwd
+    script = ROOT / "scripts" / "tls-setup.sh"
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=env_file.parent,
+        text=True,
+        capture_output=True,
+        env={
+            "PATH": __import__("os").environ.get("PATH", ""),
+            "HOME": str(tmp_path),
+        },
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    args = (stack / "config" / "traefik" / "acme-args.txt").read_text()
+    assert "certificatesresolvers.kineresolver.acme.email=ops@example.test" in args
+    assert "dnschallenge.provider=cloudns" in args
+    tls = (stack / "config" / "traefik" / "dynamic" / "tls.yml").read_text()
+    assert "kineresolver" in tls
+    assert "*.example.test" in tls
+    acme_env = stack / "config" / "traefik" / "acme.env"
+    assert acme_env.is_file()
+    assert "CLOUDNS_AUTH_ID" in acme_env.read_text()
+
+
+def test_tls_setup_internal_clears_acme_args(tmp_path):
+    stack = tmp_path / "stack"
+    dyn = stack / "config" / "traefik" / "dynamic"
+    dyn.mkdir(parents=True)
+    (stack / "config" / "traefik" / "certs").mkdir(parents=True)
+    stale = stack / "config" / "traefik" / "acme-args.txt"
+    stale.write_text("--certificatesresolvers.kineresolver.acme.email=old\n")
+    env_file = tmp_path / "proj" / ".env"
+    env_file.parent.mkdir()
+    env_file.write_text(
+        f"STACK_ROOT={stack}\n"
+        "KINE_DOMAIN=example.test\n"
+        "KINE_TLS_MODE=internal\n"
+    )
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts" / "tls-setup.sh")],
+        cwd=env_file.parent,
+        text=True,
+        capture_output=True,
+        env={
+            "PATH": __import__("os").environ.get("PATH", ""),
+            "HOME": str(tmp_path),
+        },
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert not stale.exists() or stale.read_text().strip() == ""
+
+
 def test_helm_mounts_repository_root():
     """Include-relative paths must mount the repo, not compose/."""
     _, helm = SERVICES["helm"]

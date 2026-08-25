@@ -1183,13 +1183,14 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
                "KINE_ACME_DNS_PROVIDER", "KINE_TIMEZONE", "HELM_UPDATE_CHECK_CRON",
                *_NFS_KEYS, *_MEDIA_SERVER_KEYS, *_LIVE_TV_KEYS, *_SUBTITLE_KEYS}
     config.write({k: str(v) for k, v in body.items() if k in allowed})
-    if {"KINE_TLS_MODE", "KINE_DOMAIN", "KINE_ACME_EMAIL"} & set(body):
+    if {"KINE_TLS_MODE", "KINE_DOMAIN", "KINE_ACME_EMAIL", "KINE_ACME_DNS_PROVIDER"} & set(body):
         await compose.script("tls-setup.sh")
     if "KINE_DOMAIN" in body:
         await _apply_domain_routing()
         await _refresh_mdns()
-    elif {"KINE_TLS_MODE", "KINE_ACME_EMAIL"} & set(body):
-        await compose.run("restart", "traefik")
+    elif {"KINE_TLS_MODE", "KINE_ACME_EMAIL", "KINE_ACME_DNS_PROVIDER"} & set(body):
+        # Recreate so acme.env / entrypoint ACME flags are picked up.
+        await compose.run("up", "-d", "--force-recreate", "traefik")
     nfs_changed = bool(set(_NFS_KEYS) & set(body))
     nfs_mount = None
     if nfs_changed:

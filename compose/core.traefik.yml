@@ -7,6 +7,8 @@ services:
       dockerproxy:
         condition: service_started
     security_opt: [no-new-privileges:true]
+    # Append ACME DNS-01 flags from acme-args.txt when KINE_TLS_MODE=acme-dns.
+    entrypoint: ["/bin/sh", "/traefik-entrypoint.sh"]
     command:
       - --providers.docker=true
       - --providers.docker.endpoint=tcp://dockerproxy:2375
@@ -23,11 +25,15 @@ services:
       - --log.level=INFO
       - --accesslog=true
       - --ping=true
+    # ClouDNS / other ACME DNS provider credentials (created by tls-setup.sh).
+    env_file:
+      - ${STACK_ROOT}/config/traefik/acme.env
     ports:
       - "${TRAEFIK_HTTP_PORT:-8080}:${TRAEFIK_HTTP_PORT:-8080}"
       - "${TRAEFIK_HTTPS_PORT:-8443}:${TRAEFIK_HTTPS_PORT:-8443}"
     volumes:
       - ${STACK_ROOT}/config/traefik:/etc/traefik
+      - ../scripts/traefik-entrypoint.sh:/traefik-entrypoint.sh:ro
     networks: [kine_edge, kine_ctrl]
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]

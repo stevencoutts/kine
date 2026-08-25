@@ -2351,10 +2351,15 @@ render.settings = async () => {
         ${['internal','acme-dns','custom'].map(m =>
           `<option ${s.KINE_TLS_MODE===m?'selected':''}>${m}</option>`).join('')}
       </select>
+      <p style="color:var(--muted);font-size:.8rem;margin:.35rem 0 .75rem">
+        <code>acme-dns</code> = Let's Encrypt wildcard via DNS-01 (ClouDNS by default).
+        Put <code>CLOUDNS_AUTH_ID</code> and <code>CLOUDNS_AUTH_PASSWORD</code> in
+        <code>${s.STACK_ROOT||'/srv/kine'}/config/traefik/acme.env</code> before switching.
+      </p>
       <label>ACME Email (acme-dns only)</label>
       <input id="KINE_ACME_EMAIL" value="${s.KINE_ACME_EMAIL}">
       <label>ACME DNS Provider</label>
-      <input id="KINE_ACME_DNS_PROVIDER" value="${s.KINE_ACME_DNS_PROVIDER}">
+      <input id="KINE_ACME_DNS_PROVIDER" value="${s.KINE_ACME_DNS_PROVIDER||'cloudns'}">
       <label>Timezone</label><input id="KINE_TIMEZONE" value="${s.KINE_TIMEZONE}">
       <div class="row" style="margin-top:1rem">
         <button class="act primary" id="save">Save and Reload Traefik</button>

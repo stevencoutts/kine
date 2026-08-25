@@ -6,7 +6,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 load_env .env
 
 DYN="${STACK_ROOT}/config/traefik/dynamic"
-mkdir -p "$DYN" "${STACK_ROOT}/config/traefik/certs"
+TRAEFIK_CFG="${STACK_ROOT}/config/traefik"
+mkdir -p "$DYN" "${TRAEFIK_CFG}/certs"
 
 # Forward-auth in front of every app, backed by Helm's session.
 cat > "${DYN}/middlewares.yml" <<EOF
@@ -26,6 +27,26 @@ http:
         referrerPolicy: same-origin
 EOF
 
+# Drop stale ACME CLI flags unless this run re-creates them.
+rm -f "${TRAEFIK_CFG}/acme-args.txt"
+
+# Ensure ClouDNS (or other provider) env file always exists for Compose env_file=.
+if [[ ! -f "${TRAEFIK_CFG}/acme.env" ]]; then
+  cat > "${TRAEFIK_CFG}/acme.env" <<'EOF'
+# DNS-01 credentials for Traefik / lego (loaded when KINE_TLS_MODE=acme-dns).
+# ClouDNS (https://www.cloudns.net/): API auth id + password from
+#   CloudDNS → API → Auth ID
+# CLOUDNS_AUTH_ID=
+# CLOUDNS_AUTH_PASSWORD=
+#
+# Optional sub-user:
+# CLOUDNS_SUB_AUTH_ID=
+#
+# Other providers: https://doc.traefik.io/traefik/https/acme/#providers
+EOF
+  chmod 600 "${TRAEFIK_CFG}/acme.env"
+fi
+
 case "${KINE_TLS_MODE}" in
   internal)
     cat > "${DYN}/tls.yml" <<EOF
@@ -39,6 +60,8 @@ EOF
     ;;
   acme-dns)
     [[ -n "${KINE_ACME_EMAIL}" ]] || { echo "KINE_ACME_EMAIL is required for acme-dns" >&2; exit 1; }
+    provider="${KINE_ACME_DNS_PROVIDER:-cloudns}"
+    ca="${KINE_ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}"
     cat > "${DYN}/tls.yml" <<EOF
 tls:
   stores:
@@ -52,18 +75,21 @@ tls:
 EOF
     # DNS-01 rather than HTTP-01 on purpose: this appliance should not
     # need an inbound hole in the firewall to renew a certificate.
-    cat > "${STACK_ROOT}/config/traefik/acme-args.txt" <<EOF
+    # delayBeforeCheck gives ClouDNS time to publish the TXT record.
+    cat > "${TRAEFIK_CFG}/acme-args.txt" <<EOF
 --certificatesresolvers.kineresolver.acme.email=${KINE_ACME_EMAIL}
 --certificatesresolvers.kineresolver.acme.storage=/etc/traefik/acme.json
---certificatesresolvers.kineresolver.acme.caserver=${KINE_ACME_CA}
+--certificatesresolvers.kineresolver.acme.caserver=${ca}
 --certificatesresolvers.kineresolver.acme.dnschallenge=true
---certificatesresolvers.kineresolver.acme.dnschallenge.provider=${KINE_ACME_DNS_PROVIDER}
+--certificatesresolvers.kineresolver.acme.dnschallenge.provider=${provider}
+--certificatesresolvers.kineresolver.acme.dnschallenge.delaybeforecheck=30
+--entrypoints.websecure.http.tls.certresolver=kineresolver
 EOF
-    touch "${STACK_ROOT}/config/traefik/acme.json"
-    chmod 600 "${STACK_ROOT}/config/traefik/acme.json"
-    echo "acme-dns selected: put your DNS provider credentials in"
-    echo "  ${STACK_ROOT}/config/traefik/acme.env"
-    echo "then run ./kine restart traefik"
+    touch "${TRAEFIK_CFG}/acme.json"
+    chmod 600 "${TRAEFIK_CFG}/acme.json"
+    echo "acme-dns selected (provider=${provider}): put DNS API credentials in"
+    echo "  ${TRAEFIK_CFG}/acme.env"
+    echo "then recreate Traefik (Settings → Save, or: docker compose up -d --force-recreate traefik)"
     ;;
   custom)
     cat > "${DYN}/tls.yml" <<EOF
@@ -73,7 +99,7 @@ tls:
       keyFile: /etc/traefik/certs/privkey.pem
 EOF
     echo "custom TLS selected: place fullchain.pem and privkey.pem in"
-    echo "  ${STACK_ROOT}/config/traefik/certs/"
+    echo "  ${TRAEFIK_CFG}/certs/"
     ;;
   *)
     echo "unknown KINE_TLS_MODE '${KINE_TLS_MODE}'" >&2; exit 1 ;;
