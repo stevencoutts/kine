@@ -588,15 +588,25 @@ async def enable_tier(tier: str, request: Request, user: str = Depends(require_u
     if "teamarr" in defaults:
         leagues = teamarr_leagues
         env = config.read()
+        login_user, login_password = await dispatcharr_token.ensure_login()
 
         def _apply() -> None:
             recipe = teamarr_setup.recipe()
             recipe.STACK = pathlib.Path(env.get("STACK_ROOT") or "/srv/kine")
+            fresh = config.read()
             recipe.configure(
                 leagues,
                 lambda _m: None,
-                dispatcharr_token=(env.get("DISPATCHARR_TOKEN") or "").strip(),
-                dispatcharr_username=(env.get("HELM_ADMIN_USER") or "admin").strip(),
+                dispatcharr_token=(fresh.get("DISPATCHARR_TOKEN") or "").strip(),
+                dispatcharr_username=(
+                    login_user
+                    or (fresh.get("DISPATCHARR_LOGIN_USER") or "").strip()
+                    or "kine"
+                ),
+                dispatcharr_password=(
+                    login_password
+                    or (fresh.get("DISPATCHARR_LOGIN_PASSWORD") or "").strip()
+                ),
             )
 
         asyncio.create_task(asyncio.to_thread(_apply))
@@ -702,15 +712,25 @@ async def enable(app_id: str, request: Request, user: str = Depends(require_user
         # refresh as soon as the container is up (configure waits on /health).
         leagues = teamarr_leagues
         env = config.read()
+        login_user, login_password = await dispatcharr_token.ensure_login()
 
         def _apply() -> None:
             recipe = teamarr_setup.recipe()
             recipe.STACK = pathlib.Path(env.get("STACK_ROOT") or "/srv/kine")
+            fresh = config.read()
             recipe.configure(
                 leagues,
                 lambda _m: None,
-                dispatcharr_token=(env.get("DISPATCHARR_TOKEN") or "").strip(),
-                dispatcharr_username=(env.get("HELM_ADMIN_USER") or "admin").strip(),
+                dispatcharr_token=(fresh.get("DISPATCHARR_TOKEN") or "").strip(),
+                dispatcharr_username=(
+                    login_user
+                    or (fresh.get("DISPATCHARR_LOGIN_USER") or "").strip()
+                    or "kine"
+                ),
+                dispatcharr_password=(
+                    login_password
+                    or (fresh.get("DISPATCHARR_LOGIN_PASSWORD") or "").strip()
+                ),
             )
 
         asyncio.create_task(asyncio.to_thread(_apply))

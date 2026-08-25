@@ -114,7 +114,13 @@ def test_configure_puts_subscription_and_numbering(monkeypatch):
         {"id": "uefa.champions", "name": "UCL"},
     ])
     logs = []
-    out = teamarr.configure(rows, log=logs.append, dispatcharr_token="tok")
+    out = teamarr.configure(
+        rows,
+        log=logs.append,
+        dispatcharr_token="tok",
+        dispatcharr_username="kine",
+        dispatcharr_password="secret",
+    )
     assert out["ok"] is True
     paths = [p for p, _ in fake.puts]
     assert "/api/v1/sports-subscription" in paths
@@ -129,3 +135,5 @@ def test_configure_puts_subscription_and_numbering(monkeypatch):
     disp = next(body for p, body in fake.puts if p.endswith("settings/dispatcharr"))
     assert disp["enabled"] is True
     assert disp["url"] == "http://127.0.0.1:9191"
+    assert disp["username"] == "kine"
+    assert disp["password"] == "secret"

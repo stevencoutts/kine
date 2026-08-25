@@ -137,6 +137,7 @@ def configure(
     *,
     dispatcharr_token: str = "",
     dispatcharr_username: str = "",
+    dispatcharr_password: str = "",
     base_url: str = TEAMARR_BASE,
     client: httpx.Client | None = None,
     wait_timeout: float = 120.0,
@@ -174,8 +175,11 @@ def configure(
         }
         if dispatcharr_username:
             disp["username"] = dispatcharr_username
-        # Prefer API token only if Teamarr accepts it later; password left unset.
-        _ = dispatcharr_token  # reserved for builds that add api_key support
+        if dispatcharr_password:
+            disp["password"] = dispatcharr_password
+        # Teamarr authenticates via JWT username/password only; the API token
+        # is for ECM / Helm X-API-Key clients and is unused here.
+        _ = dispatcharr_token
         resp = http.put("/api/v1/settings/dispatcharr", json=disp)
         resp.raise_for_status()
         log("teamarr: Dispatcharr URL set to loopback")

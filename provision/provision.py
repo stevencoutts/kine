@@ -129,7 +129,11 @@ def wire(enabled: set[str]) -> None:
     if "teamarr" in enabled:
         try:
             token = os.environ.get("DISPATCHARR_TOKEN", "").strip()
-            user = os.environ.get("HELM_ADMIN_USER", "").strip()
+            user = (
+                os.environ.get("DISPATCHARR_LOGIN_USER", "").strip()
+                or "kine"
+            )
+            password = os.environ.get("DISPATCHARR_LOGIN_PASSWORD", "").strip()
             # Only apply when leagues.json exists (written by Helm enable modal).
             if (teamarr.STACK / "config" / "teamarr" / "leagues.json").is_file():
                 teamarr.configure(
@@ -137,6 +141,7 @@ def wire(enabled: set[str]) -> None:
                     log,
                     dispatcharr_token=token,
                     dispatcharr_username=user,
+                    dispatcharr_password=password,
                 )
             else:
                 log("teamarr: no leagues.json yet, skipping subscription seed")

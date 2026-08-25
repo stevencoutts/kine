@@ -54,3 +54,48 @@ def test_ensure_token_skips_when_disabled(monkeypatch):
     monkeypatch.setattr(dispatcharr_token.config, "profiles", lambda: set())
     monkeypatch.setattr(dispatcharr_token.config, "read", lambda: {})
     assert asyncio.run(dispatcharr_token.ensure_token()) is None
+
+
+def test_ensure_login_returns_existing_creds(monkeypatch):
+    monkeypatch.setattr(dispatcharr_token.config, "profiles", lambda: {"dispatcharr"})
+    monkeypatch.setattr(
+        dispatcharr_token.config, "read",
+        lambda: {
+            "DISPATCHARR_LOGIN_USER": "kine",
+            "DISPATCHARR_LOGIN_PASSWORD": "already",
+        },
+    )
+    run = AsyncMock(return_value=(0, "OK\n"))
+    monkeypatch.setattr(dispatcharr_token.compose, "run", run)
+    user, password = asyncio.run(dispatcharr_token.ensure_login())
+    assert (user, password) == ("kine", "already")
+    run.assert_awaited()
+    script = run.await_args.args[5]
+    assert "kine" in script and "already" in script
+
+
+def test_ensure_login_generates_password_when_missing(monkeypatch):
+    monkeypatch.setattr(dispatcharr_token.config, "profiles", lambda: {"dispatcharr"})
+    state = {"DISPATCHARR_LOGIN_USER": "kine"}
+    monkeypatch.setattr(dispatcharr_token.config, "read", lambda: dict(state))
+    monkeypatch.setattr(
+        dispatcharr_token.config, "write",
+        lambda data: state.update(data),
+    )
+    monkeypatch.setattr(
+        dispatcharr_token.compose, "run",
+        AsyncMock(return_value=(0, "OK\n")),
+    )
+    monkeypatch.setattr(
+        dispatcharr_token.secrets, "token_urlsafe",
+        lambda n=24: "generated-pass",
+    )
+    user, password = asyncio.run(dispatcharr_token.ensure_login())
+    assert user == "kine"
+    assert password == "generated-pass"
+    assert state["DISPATCHARR_LOGIN_PASSWORD"] == "generated-pass"
+
+
+def test_ensure_login_skips_when_disabled(monkeypatch):
+    monkeypatch.setattr(dispatcharr_token.config, "profiles", lambda: set())
+    assert asyncio.run(dispatcharr_token.ensure_login()) == (None, None)

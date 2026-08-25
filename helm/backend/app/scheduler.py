@@ -296,6 +296,7 @@ async def _dispatcharr_wire_loop() -> None:
     while True:
         try:
             await dispatcharr_token.ensure_token(write_env=True)
+            await dispatcharr_token.ensure_login(write_env=True)
             await wire_dispatcharr_if_ready()
         except Exception as exc:  # noqa: BLE001
             data = _load()
