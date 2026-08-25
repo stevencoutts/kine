@@ -353,6 +353,10 @@ textarea{font-family:ui-monospace,monospace;font-size:.8rem;resize:vertical}
 .nzb-server .row{gap:.5rem;flex-wrap:wrap}
 .nzb-server label{font-size:.75rem;margin-top:.35rem}
 .nzb-server input[type=checkbox]{width:auto}
+.teamarr-league-row{display:flex;align-items:center;gap:.6rem;margin:.4rem 0;
+  color:var(--text);font-size:.88rem;cursor:pointer}
+.teamarr-league-row input[type=checkbox]{width:auto;flex:none;margin:0;accent-color:var(--accent)}
+.teamarr-league-row span{flex:1;min-width:0;line-height:1.35}
 </style>
 </head>
 <body>
@@ -762,7 +766,7 @@ const enableNzbgetFlow = async (btn) => {
     method: 'POST',
     body: body === undefined ? '{}' : JSON.stringify(body),
   });
-  render.apps();
+  await render.apps();
 };
 
 const promptTeamarrLeagues = (preselected) => new Promise(async (resolve) => {
@@ -797,7 +801,7 @@ const promptTeamarrLeagues = (preselected) => new Promise(async (resolve) => {
   const rows = catalog.map(r => {
     const checked = selected.has(r.id) ? 'checked' : '';
     const start = r.channel_start != null ? ` · ch ${r.channel_start}` : '';
-    return `<label class="teamarr-league-row" style="display:flex;align-items:center;gap:.55rem;margin:.35rem 0;cursor:pointer">
+    return `<label class="teamarr-league-row">
       <input type="checkbox" data-league-id="${escAttr(r.id)}" data-league-name="${escAttr(r.name || r.id)}" ${checked}>
       <span>${escHtml(r.name || r.id)}${escHtml(start)}</span>
     </label>`;
@@ -845,7 +849,7 @@ const enableTeamarrFlow = async (btn) => {
     method: 'POST',
     body: JSON.stringify({leagues: choice.leagues || []}),
   });
-  render.apps();
+  await render.apps();
 };
 const TIER_ORDER = ['media','acquisition','process','live','metrics','platform'];
 
@@ -1514,7 +1518,7 @@ render.apps = async () => {
           body,
         });
         if (el.checked) state.activeTier = el.dataset.tier;
-        render.apps();
+        await render.apps();
       } catch (e) {
         el.checked = !el.checked;
         const tierMsg = $('#tier-msg');
@@ -1543,37 +1547,37 @@ render.apps = async () => {
   document.querySelectorAll('[data-act]').forEach(b => b.onclick = async () => {
     const id = b.dataset.id;
     const act = b.dataset.act;
+    const labels = {enable:'Enable', disable:'Disable', restart:'Restart'};
+    const reset = () => { b.disabled = false; b.textContent = labels[act] || act; };
+    const fail = (e) => {
+      reset();
+      const tierMsg = $('#tier-msg');
+      if (tierMsg) {
+        tierMsg.className = 'banner bad';
+        tierMsg.textContent = e.message || `Could not ${act} ${id}`;
+      }
+    };
     if (act === 'enable' && id === 'nzbget') {
       b.disabled = true; b.textContent = 'Working...';
       try {
         await enableNzbgetFlow(b);
-      } catch (e) {
-        b.disabled = false; b.textContent = 'Enable';
-        const tierMsg = $('#tier-msg');
-        if (tierMsg) {
-          tierMsg.className = 'banner bad';
-          tierMsg.textContent = e.message || 'Could not enable NZBGet';
-        }
-      }
+      } catch (e) { fail(e); }
       return;
     }
     if (act === 'enable' && id === 'teamarr') {
       b.disabled = true; b.textContent = 'Working...';
       try {
         await enableTeamarrFlow(b);
-      } catch (e) {
-        b.disabled = false; b.textContent = 'Enable';
-        const tierMsg = $('#tier-msg');
-        if (tierMsg) {
-          tierMsg.className = 'banner bad';
-          tierMsg.textContent = e.message || 'Could not enable Teamarr';
-        }
-      }
+      } catch (e) { fail(e); }
       return;
     }
     b.disabled = true; b.textContent = 'Working...';
-    await api(`/apps/${id}/${act}`, {method:'POST'});
-    render.apps();
+    try {
+      await api(`/apps/${id}/${act}`, {method:'POST'});
+      await render.apps();
+    } catch (e) {
+      fail(e);
+    }
   });
   document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
     launchApp(state.apps.find(a => a.id === b.dataset.open));

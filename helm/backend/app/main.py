@@ -585,23 +585,25 @@ async def enable_tier(tier: str, request: Request, user: str = Depends(require_u
             await compose.run("run", "--rm", "provision", "wire")
     except provision_lock.ProvisionBusy as exc:
         raise HTTPException(409, exc.detail) from exc
-    teamarr_apply = None
     if "teamarr" in defaults:
-        recipe = teamarr_setup.recipe()
-        stack = pathlib.Path(config.read().get("STACK_ROOT") or "/srv/kine")
-        recipe.STACK = stack
+        leagues = teamarr_leagues
         env = config.read()
-        teamarr_apply = await asyncio.to_thread(
-            recipe.configure,
-            teamarr_leagues,
-            lambda _m: None,
-            dispatcharr_token=(env.get("DISPATCHARR_TOKEN") or "").strip(),
-            dispatcharr_username=(env.get("HELM_ADMIN_USER") or "admin").strip(),
-        )
+
+        def _apply() -> None:
+            recipe = teamarr_setup.recipe()
+            recipe.STACK = pathlib.Path(env.get("STACK_ROOT") or "/srv/kine")
+            recipe.configure(
+                leagues,
+                lambda _m: None,
+                dispatcharr_token=(env.get("DISPATCHARR_TOKEN") or "").strip(),
+                dispatcharr_username=(env.get("HELM_ADMIN_USER") or "admin").strip(),
+            )
+
+        asyncio.create_task(asyncio.to_thread(_apply))
     await _sync_recyclarr()
     if _nfs_configured() and set(defaults) & {"sonarr", "radarr"}:
         await _queue_library_sync({"NFS_MEDIA", "NFS_TV", "NFS_MOVIES"})
-    return {"ok": True, "enabled": defaults, "teamarr": teamarr_apply}
+    return {"ok": True, "enabled": defaults}
 
 
 @app.post("/api/tiers/{tier}/disable")
@@ -695,21 +697,25 @@ async def enable(app_id: str, request: Request, user: str = Depends(require_user
         # shared gluetun namespace (unlike compose up of a single peer).
         await asyncio.to_thread(_apply_nzbget_conf)
         await compose.run("restart", "nzbget")
-    teamarr_apply = None
     if app_id == "teamarr":
-        recipe = teamarr_setup.recipe()
-        stack = pathlib.Path(config.read().get("STACK_ROOT") or "/srv/kine")
-        recipe.STACK = stack
+        # Apply leagues/numbering in the background so the Apps UI can
+        # refresh as soon as the container is up (configure waits on /health).
+        leagues = teamarr_leagues
         env = config.read()
-        teamarr_apply = await asyncio.to_thread(
-            recipe.configure,
-            teamarr_leagues,
-            lambda _m: None,
-            dispatcharr_token=(env.get("DISPATCHARR_TOKEN") or "").strip(),
-            dispatcharr_username=(env.get("HELM_ADMIN_USER") or "admin").strip(),
-        )
+
+        def _apply() -> None:
+            recipe = teamarr_setup.recipe()
+            recipe.STACK = pathlib.Path(env.get("STACK_ROOT") or "/srv/kine")
+            recipe.configure(
+                leagues,
+                lambda _m: None,
+                dispatcharr_token=(env.get("DISPATCHARR_TOKEN") or "").strip(),
+                dispatcharr_username=(env.get("HELM_ADMIN_USER") or "admin").strip(),
+            )
+
+        asyncio.create_task(asyncio.to_thread(_apply))
     await _sync_recyclarr()
-    return {"ok": True, "log": out[-2000:], "teamarr": teamarr_apply}
+    return {"ok": True, "log": out[-2000:]}
 
 
 @app.post("/api/apps/{app_id}/disable")

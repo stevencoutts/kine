@@ -125,6 +125,10 @@ def test_teamarr_enable_modal_exists():
     assert "/teamarr/leagues" in FRONTEND
     assert "/apps/teamarr/enable" in FRONTEND
     assert '@app.get("/api/teamarr/leagues")' in BACKEND
+    assert "teamarr-league-row" in FRONTEND
+    assert ".teamarr-league-row input[type=checkbox]{width:auto" in FRONTEND
+    assert "await render.apps()" in FRONTEND
+    assert "create_task(asyncio.to_thread(_apply))" in BACKEND
 
 
 def test_open_embeds_arr_apps_same_origin():
