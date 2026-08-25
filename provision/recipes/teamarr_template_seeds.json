@@ -1,0 +1,647 @@
+[
+  {
+    "name": "EPL Default",
+    "template_type": "event",
+    "seed": {
+      "name": "EPL Default",
+      "template_type": "event",
+      "sport": null,
+      "league": null,
+      "title_format": "{league} {sport}",
+      "subtitle_template": "{home_team} vs {away_team}",
+      "program_art_url": "{league_code}/{home_team|pascal}/{away_team|pascal}/cover",
+      "game_duration_mode": "sport",
+      "game_duration_override": null,
+      "pregame_enabled": true,
+      "postgame_enabled": false,
+      "idle_enabled": true,
+      "xmltv_flags": {
+        "new": true,
+        "live": true,
+        "date": false
+      },
+      "xmltv_video": {
+        "enabled": false,
+        "quality": "HDTV"
+      },
+      "xmltv_categories": [
+        "Sports",
+        "Sports event"
+      ],
+      "xmltv_filler_categories": [],
+      "pregame_periods": [
+        {
+          "start_hours_before": 24,
+          "end_hours_before": 6,
+          "title": "Game Preview",
+          "description": "{team_name} plays {opponent.next} in {hours_until.next} hours at {venue.next}"
+        },
+        {
+          "start_hours_before": 6,
+          "end_hours_before": 2,
+          "title": "Pre-Game Coverage",
+          "description": "{team_name} vs {opponent.next} starts at {game_time.next}"
+        },
+        {
+          "start_hours_before": 2,
+          "end_hours_before": 0,
+          "title": "Game Starting Soon",
+          "description": "{team_name} vs {opponent.next} starts in {hours_until.next} hours"
+        }
+      ],
+      "pregame_fallback": {
+        "title": "Coming up: {league} - {home_team} vs {away_team} - starting at {game_time}",
+        "subtitle": "{home_team} vs {away_team}",
+        "description": "{away_team} travel to {venue_city} to play the {home_team} today at {game_time}.",
+        "art_url": "{league_code}/{home_team|pascal}/{away_team|pascal}/cover"
+      },
+      "postgame_periods": [
+        {
+          "start_hours_after": 0,
+          "end_hours_after": 3,
+          "title": "Game Recap",
+          "description": "{team_name} {result_text.last} {final_score.last}"
+        },
+        {
+          "start_hours_after": 3,
+          "end_hours_after": 12,
+          "title": "Extended Highlights",
+          "description": "Highlights: {team_name} {result_text.last} {final_score.last} vs {opponent.last}"
+        },
+        {
+          "start_hours_after": 12,
+          "end_hours_after": 24,
+          "title": "Full Game Replay",
+          "description": "Replay: {team_name} vs {opponent.last}"
+        }
+      ],
+      "postgame_fallback": {
+        "title": "{league} {sport}: {team_name} Postgame Recap",
+        "subtitle": "{away_team} at {home_team}",
+        "description": "{team_name} {result_text} the {opponent} {final_score}",
+        "art_url": null
+      },
+      "postgame_conditional": {
+        "enabled": true,
+        "title_final": null,
+        "title_not_final": null,
+        "subtitle_final": null,
+        "subtitle_not_final": null,
+        "description_final": null,
+        "description_not_final": null
+      },
+      "idle_content": {
+        "title": "No {team_name} Game Today",
+        "subtitle": "Next game: {game_date.next} at {game_time.next} {vs_at.next} the {opponent.next}",
+        "description": "Next game: {game_date.next} at {game_time.next} vs {opponent.next}",
+        "art_url": null
+      },
+      "idle_conditional": {
+        "enabled": true,
+        "title_final": null,
+        "title_not_final": null,
+        "subtitle_final": null,
+        "subtitle_not_final": null,
+        "description_final": null,
+        "description_not_final": null
+      },
+      "idle_offseason": {
+        "title_enabled": false,
+        "title": null,
+        "subtitle_enabled": false,
+        "subtitle": null,
+        "description_enabled": false,
+        "description": null
+      },
+      "pregame_conditional_rows": [],
+      "postgame_conditional_rows": [
+        {
+          "condition": "has_recap",
+          "template": "{game_recap.last}",
+          "priority": 10,
+          "label": "Recap (provider)"
+        }
+      ],
+      "idle_conditional_rows": [],
+      "conditional_descriptions": [],
+      "event_channel_name": "{home_team} vs {away_team}",
+      "event_channel_logo_url": "{league_code}/{home_team|pascal}/{away_team|pascal}/thumb"
+    }
+  },
+  {
+    "name": "Europe",
+    "template_type": "event",
+    "seed": {
+      "name": "Europe",
+      "template_type": "event",
+      "sport": null,
+      "league": null,
+      "title_format": "{league} {sport}",
+      "subtitle_template": "{home_team} vs {away_team}",
+      "program_art_url": null,
+      "game_duration_mode": "sport",
+      "game_duration_override": null,
+      "pregame_enabled": true,
+      "postgame_enabled": false,
+      "idle_enabled": true,
+      "xmltv_flags": {
+        "new": true,
+        "live": true,
+        "date": false
+      },
+      "xmltv_video": {
+        "enabled": false,
+        "quality": "HDTV"
+      },
+      "xmltv_categories": [
+        "Sports",
+        "Sports event"
+      ],
+      "xmltv_filler_categories": [],
+      "pregame_periods": [
+        {
+          "start_hours_before": 24,
+          "end_hours_before": 6,
+          "title": "Game Preview",
+          "description": "{team_name} plays {opponent.next} in {hours_until.next} hours at {venue.next}"
+        },
+        {
+          "start_hours_before": 6,
+          "end_hours_before": 2,
+          "title": "Pre-Game Coverage",
+          "description": "{team_name} vs {opponent.next} starts at {game_time.next}"
+        },
+        {
+          "start_hours_before": 2,
+          "end_hours_before": 0,
+          "title": "Game Starting Soon",
+          "description": "{team_name} vs {opponent.next} starts in {hours_until.next} hours"
+        }
+      ],
+      "pregame_fallback": {
+        "title": "Coming up: {league} - {home_team} vs {away_team} - starting at {game_time}",
+        "subtitle": "{home_team} vs {away_team}",
+        "description": "{away_team} travel to {venue_city} to play the {home_team} today at {game_time}.",
+        "art_url": "{league_code}/{home_team|pascal}/{away_team|pascal}/cover"
+      },
+      "postgame_periods": [
+        {
+          "start_hours_after": 0,
+          "end_hours_after": 3,
+          "title": "Game Recap",
+          "description": "{team_name} {result_text.last} {final_score.last}"
+        },
+        {
+          "start_hours_after": 3,
+          "end_hours_after": 12,
+          "title": "Extended Highlights",
+          "description": "Highlights: {team_name} {result_text.last} {final_score.last} vs {opponent.last}"
+        },
+        {
+          "start_hours_after": 12,
+          "end_hours_after": 24,
+          "title": "Full Game Replay",
+          "description": "Replay: {team_name} vs {opponent.last}"
+        }
+      ],
+      "postgame_fallback": {
+        "title": "{league} {sport}: {team_name} Postgame Recap",
+        "subtitle": "{away_team} at {home_team}",
+        "description": "{team_name} {result_text} the {opponent} {final_score}",
+        "art_url": null
+      },
+      "postgame_conditional": {
+        "enabled": true,
+        "title_final": null,
+        "title_not_final": null,
+        "subtitle_final": null,
+        "subtitle_not_final": null,
+        "description_final": null,
+        "description_not_final": null
+      },
+      "idle_content": {
+        "title": "No {team_name} Game Today",
+        "subtitle": "Next game: {game_date.next} at {game_time.next} {vs_at.next} the {opponent.next}",
+        "description": "Next game: {game_date.next} at {game_time.next} vs {opponent.next}",
+        "art_url": null
+      },
+      "idle_conditional": {
+        "enabled": true,
+        "title_final": null,
+        "title_not_final": null,
+        "subtitle_final": null,
+        "subtitle_not_final": null,
+        "description_final": null,
+        "description_not_final": null
+      },
+      "idle_offseason": {
+        "title_enabled": false,
+        "title": null,
+        "subtitle_enabled": false,
+        "subtitle": null,
+        "description_enabled": false,
+        "description": null
+      },
+      "pregame_conditional_rows": [],
+      "postgame_conditional_rows": [
+        {
+          "condition": "has_recap",
+          "template": "{game_recap.last}",
+          "priority": 10,
+          "label": "Recap (provider)"
+        }
+      ],
+      "idle_conditional_rows": [],
+      "conditional_descriptions": [],
+      "event_channel_name": "{home_team} vs {away_team}",
+      "event_channel_logo_url": "{league_code}/{home_team|pascal}/{away_team|pascal}/thumb"
+    }
+  },
+  {
+    "name": "UFC",
+    "template_type": "event",
+    "seed": {
+      "name": "UFC",
+      "template_type": "event",
+      "sport": null,
+      "league": null,
+      "title_format": "{event_title}",
+      "subtitle_template": "{event_title}",
+      "program_art_url": "/ufc/{fighter1}/{fighter2}/cover",
+      "game_duration_mode": "sport",
+      "game_duration_override": null,
+      "pregame_enabled": true,
+      "postgame_enabled": false,
+      "idle_enabled": true,
+      "xmltv_flags": {
+        "new": true,
+        "live": true,
+        "date": false
+      },
+      "xmltv_video": {
+        "enabled": false,
+        "quality": "HDTV"
+      },
+      "xmltv_categories": [
+        "Sports",
+        "Sports event"
+      ],
+      "xmltv_filler_categories": [],
+      "pregame_periods": [
+        {
+          "start_hours_before": 24,
+          "end_hours_before": 6,
+          "title": "Game Preview",
+          "description": "{team_name} plays {opponent.next} in {hours_until.next} hours at {venue.next}"
+        },
+        {
+          "start_hours_before": 6,
+          "end_hours_before": 2,
+          "title": "Pre-Game Coverage",
+          "description": "{team_name} vs {opponent.next} starts at {game_time.next}"
+        },
+        {
+          "start_hours_before": 2,
+          "end_hours_before": 0,
+          "title": "Game Starting Soon",
+          "description": "{team_name} vs {opponent.next} starts in {hours_until.next} hours"
+        }
+      ],
+      "pregame_fallback": {
+        "title": "Coming up: {event_title}- starting at {game_time}",
+        "subtitle": "{event_title}",
+        "description": "{fighter1} vs {fighter2} to fight  today at {game_time}.",
+        "art_url": "/ufc/{fighter1}/{fighter2}/cover"
+      },
+      "postgame_periods": [
+        {
+          "start_hours_after": 0,
+          "end_hours_after": 3,
+          "title": "Game Recap",
+          "description": "{team_name} {result_text.last} {final_score.last}"
+        },
+        {
+          "start_hours_after": 3,
+          "end_hours_after": 12,
+          "title": "Extended Highlights",
+          "description": "Highlights: {team_name} {result_text.last} {final_score.last} vs {opponent.last}"
+        },
+        {
+          "start_hours_after": 12,
+          "end_hours_after": 24,
+          "title": "Full Game Replay",
+          "description": "Replay: {team_name} vs {opponent.last}"
+        }
+      ],
+      "postgame_fallback": {
+        "title": "{league} {sport}: {team_name} Postgame Recap",
+        "subtitle": "{away_team} at {home_team}",
+        "description": "{team_name} {result_text} the {opponent} {final_score}",
+        "art_url": null
+      },
+      "postgame_conditional": {
+        "enabled": true,
+        "title_final": null,
+        "title_not_final": null,
+        "subtitle_final": null,
+        "subtitle_not_final": null,
+        "description_final": null,
+        "description_not_final": null
+      },
+      "idle_content": {
+        "title": "No {team_name} Game Today",
+        "subtitle": "Next game: {game_date.next} at {game_time.next} {vs_at.next} the {opponent.next}",
+        "description": "Next game: {game_date.next} at {game_time.next} vs {opponent.next}",
+        "art_url": null
+      },
+      "idle_conditional": {
+        "enabled": true,
+        "title_final": null,
+        "title_not_final": null,
+        "subtitle_final": null,
+        "subtitle_not_final": null,
+        "description_final": null,
+        "description_not_final": null
+      },
+      "idle_offseason": {
+        "title_enabled": false,
+        "title": null,
+        "subtitle_enabled": false,
+        "subtitle": null,
+        "description_enabled": false,
+        "description": null
+      },
+      "pregame_conditional_rows": [],
+      "postgame_conditional_rows": [
+        {
+          "condition": "has_recap",
+          "template": "{game_recap.last}",
+          "priority": 10,
+          "label": "Recap (provider)"
+        }
+      ],
+      "idle_conditional_rows": [],
+      "conditional_descriptions": [],
+      "event_channel_name": "{event_title}",
+      "event_channel_logo_url": "/ufc/{fighter1}/{fighter2}/thumb"
+    }
+  },
+  {
+    "name": "World Cup",
+    "template_type": "event",
+    "seed": {
+      "name": "World Cup",
+      "template_type": "event",
+      "sport": null,
+      "league": null,
+      "title_format": "{league} {sport}",
+      "subtitle_template": "{home_team} vs {away_team}",
+      "program_art_url": null,
+      "game_duration_mode": "sport",
+      "game_duration_override": null,
+      "pregame_enabled": true,
+      "postgame_enabled": false,
+      "idle_enabled": true,
+      "xmltv_flags": {
+        "new": true,
+        "live": true,
+        "date": false
+      },
+      "xmltv_video": {
+        "enabled": false,
+        "quality": "HDTV"
+      },
+      "xmltv_categories": [
+        "Sports",
+        "Sports event"
+      ],
+      "xmltv_filler_categories": [],
+      "pregame_periods": [
+        {
+          "start_hours_before": 24,
+          "end_hours_before": 6,
+          "title": "Game Preview",
+          "description": "{team_name} plays {opponent.next} in {hours_until.next} hours at {venue.next}"
+        },
+        {
+          "start_hours_before": 6,
+          "end_hours_before": 2,
+          "title": "Pre-Game Coverage",
+          "description": "{team_name} vs {opponent.next} starts at {game_time.next}"
+        },
+        {
+          "start_hours_before": 2,
+          "end_hours_before": 0,
+          "title": "Game Starting Soon",
+          "description": "{team_name} vs {opponent.next} starts in {hours_until.next} hours"
+        }
+      ],
+      "pregame_fallback": {
+        "title": "Coming up: {league} - {home_team} vs {away_team} - starting at {game_time}",
+        "subtitle": "{home_team} vs {away_team}",
+        "description": "{away_team} travel to {venue_city} to play the {home_team} today at {game_time}.",
+        "art_url": "{league_code}/{home_team|pascal}/{away_team|pascal}/cover"
+      },
+      "postgame_periods": [
+        {
+          "start_hours_after": 0,
+          "end_hours_after": 3,
+          "title": "Game Recap",
+          "description": "{team_name} {result_text.last} {final_score.last}"
+        },
+        {
+          "start_hours_after": 3,
+          "end_hours_after": 12,
+          "title": "Extended Highlights",
+          "description": "Highlights: {team_name} {result_text.last} {final_score.last} vs {opponent.last}"
+        },
+        {
+          "start_hours_after": 12,
+          "end_hours_after": 24,
+          "title": "Full Game Replay",
+          "description": "Replay: {team_name} vs {opponent.last}"
+        }
+      ],
+      "postgame_fallback": {
+        "title": "{league} {sport}: {team_name} Postgame Recap",
+        "subtitle": "{away_team} at {home_team}",
+        "description": "{team_name} {result_text} the {opponent} {final_score}",
+        "art_url": null
+      },
+      "postgame_conditional": {
+        "enabled": true,
+        "title_final": null,
+        "title_not_final": null,
+        "subtitle_final": null,
+        "subtitle_not_final": null,
+        "description_final": null,
+        "description_not_final": null
+      },
+      "idle_content": {
+        "title": "No {team_name} Game Today",
+        "subtitle": "Next game: {game_date.next} at {game_time.next} {vs_at.next} the {opponent.next}",
+        "description": "Next game: {game_date.next} at {game_time.next} vs {opponent.next}",
+        "art_url": null
+      },
+      "idle_conditional": {
+        "enabled": true,
+        "title_final": null,
+        "title_not_final": null,
+        "subtitle_final": null,
+        "subtitle_not_final": null,
+        "description_final": null,
+        "description_not_final": null
+      },
+      "idle_offseason": {
+        "title_enabled": false,
+        "title": null,
+        "subtitle_enabled": false,
+        "subtitle": null,
+        "description_enabled": false,
+        "description": null
+      },
+      "pregame_conditional_rows": [],
+      "postgame_conditional_rows": [
+        {
+          "condition": "has_recap",
+          "template": "{game_recap.last}",
+          "priority": 10,
+          "label": "Recap (provider)"
+        }
+      ],
+      "idle_conditional_rows": [],
+      "conditional_descriptions": [],
+      "event_channel_name": "{home_team} vs {away_team}",
+      "event_channel_logo_url": "{league_code}/{home_team|pascal}/{away_team|pascal}/thumb"
+    }
+  },
+  {
+    "name": "Boxing",
+    "template_type": "event",
+    "seed": {
+      "name": "Boxing",
+      "template_type": "event",
+      "sport": null,
+      "league": null,
+      "title_format": "{event_title}",
+      "subtitle_template": "{event_title}",
+      "program_art_url": null,
+      "game_duration_mode": "sport",
+      "game_duration_override": null,
+      "pregame_enabled": true,
+      "postgame_enabled": false,
+      "idle_enabled": true,
+      "xmltv_flags": {
+        "new": true,
+        "live": true,
+        "date": false
+      },
+      "xmltv_video": {
+        "enabled": false,
+        "quality": "HDTV"
+      },
+      "xmltv_categories": [
+        "Sports",
+        "Sports event"
+      ],
+      "xmltv_filler_categories": [],
+      "pregame_periods": [
+        {
+          "start_hours_before": 24,
+          "end_hours_before": 6,
+          "title": "Game Preview",
+          "description": "{team_name} plays {opponent.next} in {hours_until.next} hours at {venue.next}"
+        },
+        {
+          "start_hours_before": 6,
+          "end_hours_before": 2,
+          "title": "Pre-Game Coverage",
+          "description": "{team_name} vs {opponent.next} starts at {game_time.next}"
+        },
+        {
+          "start_hours_before": 2,
+          "end_hours_before": 0,
+          "title": "Game Starting Soon",
+          "description": "{team_name} vs {opponent.next} starts in {hours_until.next} hours"
+        }
+      ],
+      "pregame_fallback": {
+        "title": "Coming up: {event_title}- starting at {game_time}",
+        "subtitle": "{event_title}",
+        "description": "{fighter1} vs {fighter2} to fight  today at {game_time}.",
+        "art_url": "/ufc/{fighter1}/{fighter2}/cover"
+      },
+      "postgame_periods": [
+        {
+          "start_hours_after": 0,
+          "end_hours_after": 3,
+          "title": "Game Recap",
+          "description": "{team_name} {result_text.last} {final_score.last}"
+        },
+        {
+          "start_hours_after": 3,
+          "end_hours_after": 12,
+          "title": "Extended Highlights",
+          "description": "Highlights: {team_name} {result_text.last} {final_score.last} vs {opponent.last}"
+        },
+        {
+          "start_hours_after": 12,
+          "end_hours_after": 24,
+          "title": "Full Game Replay",
+          "description": "Replay: {team_name} vs {opponent.last}"
+        }
+      ],
+      "postgame_fallback": {
+        "title": "{league} {sport}: {team_name} Postgame Recap",
+        "subtitle": "{away_team} at {home_team}",
+        "description": "{team_name} {result_text} the {opponent} {final_score}",
+        "art_url": null
+      },
+      "postgame_conditional": {
+        "enabled": true,
+        "title_final": null,
+        "title_not_final": null,
+        "subtitle_final": null,
+        "subtitle_not_final": null,
+        "description_final": null,
+        "description_not_final": null
+      },
+      "idle_content": {
+        "title": "No {team_name} Game Today",
+        "subtitle": "Next game: {game_date.next} at {game_time.next} {vs_at.next} the {opponent.next}",
+        "description": "Next game: {game_date.next} at {game_time.next} vs {opponent.next}",
+        "art_url": null
+      },
+      "idle_conditional": {
+        "enabled": true,
+        "title_final": null,
+        "title_not_final": null,
+        "subtitle_final": null,
+        "subtitle_not_final": null,
+        "description_final": null,
+        "description_not_final": null
+      },
+      "idle_offseason": {
+        "title_enabled": false,
+        "title": null,
+        "subtitle_enabled": false,
+        "subtitle": null,
+        "description_enabled": false,
+        "description": null
+      },
+      "pregame_conditional_rows": [],
+      "postgame_conditional_rows": [
+        {
+          "condition": "has_recap",
+          "template": "{game_recap.last}",
+          "priority": 10,
+          "label": "Recap (provider)"
+        }
+      ],
+      "idle_conditional_rows": [],
+      "conditional_descriptions": [],
+      "event_channel_name": "{event_title}",
+      "event_channel_logo_url": "{league_code}/{home_team|pascal}/{away_team|pascal}/thumb"
+    }
+  }
+]

@@ -28,7 +28,7 @@ def test_extra_leagues_continue_after_reserved_block():
         {"id": "esp.1", "name": "La Liga"},
     ])
     assert starts[0]["channel_start"] == 2000
-    assert starts[1]["channel_start"] == 2180
+    assert starts[1]["channel_start"] == 3520
 
 
 def test_assign_rejects_empty():
@@ -61,7 +61,38 @@ def test_default_catalog_covers_uk_set():
         "uefa.champions", "uefa.champions_qual",
         "uefa.europa", "uefa.europa.conf",
         "fifa.world", "fifa.wcq.ply",
+        "boxing", "ufc",
     }
+    starts = {row["id"]: row["channel_start"] for row in teamarr.DEFAULT_LEAGUES}
+    assert starts["boxing"] == 3000
+    assert starts["ufc"] == 3500
+
+
+def test_default_followed_teams():
+    names = [t["name"] for t in teamarr.DEFAULT_FOLLOWED_TEAMS]
+    assert names == ["Liverpool", "Sunderland", "Arsenal"]
+    assert all(t.get("provider") == "espn" and t.get("team_id") for t in teamarr.DEFAULT_FOLLOWED_TEAMS)
+
+
+def test_default_template_assignments_cover_kore_set():
+    names = [a["name"] for a in teamarr.DEFAULT_TEMPLATE_ASSIGNMENTS]
+    assert names == ["EPL Default", "Europe", "World Cup", "Boxing", "UFC"]
+    epl = next(a for a in teamarr.DEFAULT_TEMPLATE_ASSIGNMENTS if a["name"] == "EPL Default")
+    assert epl["leagues"] == ["eng.1", "eng.league_cup", "eng.fa"]
+    ufc = next(a for a in teamarr.DEFAULT_TEMPLATE_ASSIGNMENTS if a["name"] == "UFC")
+    assert ufc["sports"] == ["mma"]
+    assert ufc["leagues"] == ["ufc"]
+
+
+def test_resolve_stream_profile_id_prefers_stable():
+    rows = [
+        {"id": 1, "name": "ffmpeg"},
+        {"id": 5, "name": "VLC"},
+        {"id": 19, "name": "Stable"},
+    ]
+    assert teamarr.resolve_stream_profile_id(rows) == 19
+    assert teamarr.resolve_stream_profile_id([{"id": 1, "name": "ffmpeg"}]) == 1
+    assert teamarr.resolve_stream_profile_id([]) is None
 
 
 class _FakeResp:
@@ -83,15 +114,37 @@ class _FakeResp:
 
 
 class _FakeClient:
-    def __init__(self, assignments=None):
+    def __init__(self, assignments=None, dispatcharr=None, stream_profiles=None):
         self.puts = []
         self.posts = []
+        self.deletes = []
         self.healthy = True
         self.assignments = list(assignments or [])
         self.templates = [
             {"id": 6, "name": "Soccer Club Event (Starter)", "template_type": "event"},
             {"id": 4, "name": "Default Event (Starter)", "template_type": "event"},
+            {"id": 7, "name": "Combat Event (Starter)", "template_type": "event"},
+            {"id": 8, "name": "International Event (Starter)", "template_type": "event"},
         ]
+        self.next_template_id = 100
+        self.dispatcharr = dict(dispatcharr or {
+            "enabled": True,
+            "url": "http://127.0.0.1:9191",
+            "default_channel_profile_ids": None,
+            "default_stream_profile_id": None,
+            "default_channel_group_id": None,
+            "default_channel_group_mode": "static",
+            "cleanup_unused_logos": False,
+        })
+        self.stream_profiles = list(stream_profiles or [
+            {"id": 1, "name": "ffmpeg"},
+            {"id": 19, "name": "Stable"},
+        ])
+        self.subscription = {
+            "leagues": [],
+            "soccer_mode": "manual",
+            "soccer_followed_teams": [],
+        }
 
     def __enter__(self):
         return self
@@ -119,21 +172,48 @@ class _FakeClient:
                 "art_base_url": "",
                 "epg_timezone": "America/New_York",
             })
+        if path.endswith("/settings/dispatcharr"):
+            return _FakeResp(200, dict(self.dispatcharr))
+        if path.endswith("/dispatcharr/stream-profiles"):
+            return _FakeResp(200, self.stream_profiles)
+        if path.endswith("/sports-subscription"):
+            return _FakeResp(200, dict(self.subscription))
         return _FakeResp(200, {})
 
     def put(self, path, **kwargs):
-        self.puts.append((path, kwargs.get("json")))
-        return _FakeResp(200, kwargs.get("json") or {})
+        body = kwargs.get("json") or {}
+        self.puts.append((path, body))
+        if path.endswith("/settings/dispatcharr"):
+            self.dispatcharr.update(body)
+        if path.endswith("/sports-subscription"):
+            self.subscription.update(body)
+        return _FakeResp(200, body)
+
+    def delete(self, path, **kwargs):
+        self.deletes.append(path)
+        if "/subscription-templates/" in path:
+            aid = int(path.rstrip("/").split("/")[-1])
+            self.assignments = [a for a in self.assignments if a.get("id") != aid]
+        return _FakeResp(200, {})
 
     def post(self, path, **kwargs):
         body = kwargs.get("json") or {}
         self.posts.append((path, body))
+        if path.endswith("/templates"):
+            row = {"id": self.next_template_id, **body}
+            self.next_template_id += 1
+            self.templates.append(row)
+            return _FakeResp(201, row)
         if path.endswith("/subscription-templates"):
             row = {
                 "id": len(self.assignments) + 1,
                 "template_id": body.get("template_id"),
                 "sports": body.get("sports"),
                 "leagues": body.get("leagues"),
+                "template_name": next(
+                    (t["name"] for t in self.templates if t["id"] == body.get("template_id")),
+                    None,
+                ),
             }
             self.assignments.append(row)
             return _FakeResp(201, row)
@@ -167,6 +247,7 @@ def test_configure_puts_subscription_and_numbering(monkeypatch):
     sub = next(body for p, body in fake.puts if p.endswith("sports-subscription"))
     assert sub["soccer_mode"] == "manual"
     assert sub["leagues"] == ["eng.1", "uefa.champions"]
+    assert sub["soccer_followed_teams"] == teamarr.DEFAULT_FOLLOWED_TEAMS
     num = next(body for p, body in fake.puts if p.endswith("channel-numbering"))
     assert num["global_channel_mode"] == "manual"
     assert num["league_channel_starts"] == {"eng.1": 2000, "uefa.champions": 2060}
@@ -175,12 +256,20 @@ def test_configure_puts_subscription_and_numbering(monkeypatch):
     assert disp["url"] == "http://127.0.0.1:9191"
     assert disp["username"] == "kine"
     assert disp["password"] == "secret"
+    assert disp["default_channel_group_mode"] == "{sport} | {league}"
+    assert disp["default_channel_profile_ids"] == ["{sport}"]
+    assert disp["default_stream_profile_id"] == 19
     epg = next(body for p, body in fake.puts if p.endswith("settings/epg"))
     assert epg["art_base_url"] == "https://thumbs.example.test:8443"
     assert epg["epg_timezone"] == "Europe/London"
-    assign = next(body for p, body in fake.posts if p.endswith("/subscription-templates"))
-    assert assign["template_id"] == 6
-    assert assign["sports"] == ["Soccer"]
+    assigned_names = [
+        body.get("template_id")
+        for p, body in fake.posts
+        if p.endswith("/subscription-templates")
+    ]
+    assert len(assigned_names) == len(teamarr.DEFAULT_TEMPLATE_ASSIGNMENTS)
+    created = [body["name"] for p, body in fake.posts if p.endswith("/templates")]
+    assert created == [a["name"] for a in teamarr.DEFAULT_TEMPLATE_ASSIGNMENTS]
 
 
 def test_art_base_url_from_env_prefers_explicit(monkeypatch):
@@ -227,9 +316,39 @@ def test_configure_sets_epg_timezone_from_kine(monkeypatch):
     assert any("epg_timezone" in m for m in logs)
 
 
-def test_configure_skips_template_when_already_assigned(monkeypatch):
+def test_configure_skips_channel_output_when_already_customized(monkeypatch):
+    fake = _FakeClient(dispatcharr={
+        "enabled": True,
+        "url": "http://127.0.0.1:9191",
+        "default_channel_profile_ids": ["{sport}"],
+        "default_stream_profile_id": 19,
+        "default_channel_group_id": None,
+        "default_channel_group_mode": "{sport} | {league}",
+        "cleanup_unused_logos": False,
+    })
+    monkeypatch.setattr(teamarr.httpx, "Client", lambda **kw: fake)
+    monkeypatch.delenv("KINE_DOMAIN", raising=False)
+    monkeypatch.delenv("GAME_THUMBS_PUBLIC_URL", raising=False)
+    monkeypatch.delenv("KINE_TIMEZONE", raising=False)
+    monkeypatch.delenv("TZ", raising=False)
+    out = teamarr.configure(
+        [{"id": "eng.1", "name": "EPL"}],
+        log=lambda _m: None,
+        dispatcharr_username="kine",
+        dispatcharr_password="secret",
+    )
+    assert out["ok"] is True
+    disp_puts = [body for p, body in fake.puts if p.endswith("settings/dispatcharr")]
+    # Still writes URL/creds, but does not re-stamp group/profile defaults.
+    assert "default_channel_group_mode" not in disp_puts[-1]
+    assert "default_channel_profile_ids" not in disp_puts[-1]
+    assert "default_stream_profile_id" not in disp_puts[-1]
+
+
+def test_configure_replaces_placeholder_template_assignments(monkeypatch):
     fake = _FakeClient(assignments=[{
         "id": 1, "template_id": 6, "sports": ["Soccer"], "leagues": None,
+        "template_name": "Soccer Club Event (Starter)",
     }])
     monkeypatch.setattr(teamarr.httpx, "Client", lambda **kw: fake)
     monkeypatch.delenv("KINE_DOMAIN", raising=False)
@@ -241,5 +360,26 @@ def test_configure_skips_template_when_already_assigned(monkeypatch):
         log=lambda _m: None,
     )
     assert out["ok"] is True
-    assert fake.posts == []
-    assert not any(p.endswith("settings/epg") for p, _ in fake.puts)
+    assert any(path.endswith("/subscription-templates/1") for path in fake.deletes)
+    assert len([1 for p, _ in fake.posts if p.endswith("/subscription-templates")]) == 5
+
+
+def test_configure_skips_templates_when_already_customized(monkeypatch):
+    fake = _FakeClient(assignments=[{
+        "id": 1, "template_id": 100, "sports": None,
+        "leagues": ["eng.1", "eng.league_cup", "eng.fa"],
+        "template_name": "EPL Default",
+    }])
+    monkeypatch.setattr(teamarr.httpx, "Client", lambda **kw: fake)
+    monkeypatch.delenv("KINE_DOMAIN", raising=False)
+    monkeypatch.delenv("GAME_THUMBS_PUBLIC_URL", raising=False)
+    monkeypatch.delenv("KINE_TIMEZONE", raising=False)
+    monkeypatch.delenv("TZ", raising=False)
+    out = teamarr.configure(
+        [{"id": "eng.1", "name": "EPL"}],
+        log=lambda _m: None,
+    )
+    assert out["ok"] is True
+    assert fake.deletes == []
+    assert not any(p.endswith("/subscription-templates") for p, _ in fake.posts)
+    assert not any(p.endswith("/templates") for p, _ in fake.posts)
