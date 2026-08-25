@@ -58,6 +58,45 @@ def test_write_dispatcharr_token_preserves_extra_keys(tmp_path, monkeypatch):
     assert "DISPATCHARR_TOKEN=tok" in text
 
 
+def test_write_dispatcharr_token_seeds_ecm_settings_json(tmp_path, monkeypatch):
+    import json
+    from recipes import envfiles
+    monkeypatch.setattr(envfiles, "STACK", tmp_path)
+    d = tmp_path / "config" / "ecm"
+    d.mkdir(parents=True)
+    (d / "settings.json").write_text(json.dumps({
+        "url": "",
+        "auth_method": "password",
+        "theme": "dark",
+        "dispatcharr_api_key": "",
+    }))
+    changed = envfiles.write_dispatcharr_token("ecm", "abc-token", lambda m: None)
+    assert changed is True
+    data = json.loads((d / "settings.json").read_text())
+    assert data["url"] == "http://127.0.0.1:9191"
+    assert data["auth_method"] == "api_key"
+    assert data["dispatcharr_api_key"] == "abc-token"
+    assert data["api_key"] == "abc-token"
+    assert data["theme"] == "dark"
+    assert envfiles.write_dispatcharr_token("ecm", "abc-token", lambda m: None) is False
+
+
+def test_write_ecm_settings_skips_empty_token(tmp_path, monkeypatch):
+    import json
+    from recipes import envfiles
+    monkeypatch.setattr(envfiles, "STACK", tmp_path)
+    d = tmp_path / "config" / "ecm"
+    d.mkdir(parents=True)
+    (d / "settings.json").write_text(json.dumps({
+        "url": "http://127.0.0.1:9191",
+        "auth_method": "api_key",
+        "dispatcharr_api_key": "keep-me",
+    }))
+    assert envfiles.write_ecm_dispatcharr_settings("", lambda m: None) is False
+    data = json.loads((d / "settings.json").read_text())
+    assert data["dispatcharr_api_key"] == "keep-me"
+
+
 class _FakeResp:
     def __init__(self, status_code=200, payload=None):
         self.status_code = status_code

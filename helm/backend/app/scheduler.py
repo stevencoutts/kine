@@ -198,6 +198,27 @@ def _dispatcharr_env_needs_token() -> bool:
     return False
 
 
+def _ecm_settings_needs_dispatcharr() -> bool:
+    """True when ECM is enabled but settings.json has no API-key connection."""
+    if "ecm" not in config.profiles():
+        return False
+    path = pathlib.Path("/stack/config/ecm/settings.json")
+    if not path.is_file():
+        return True
+    try:
+        data = json.loads(path.read_text() or "{}")
+    except (OSError, json.JSONDecodeError):
+        return True
+    if not isinstance(data, dict):
+        return True
+    url = (data.get("url") or "").strip()
+    method = (data.get("auth_method") or "").strip()
+    key = (
+        (data.get("dispatcharr_api_key") or data.get("api_key") or "")
+    ).strip()
+    return not (url and method == "api_key" and key)
+
+
 async def _dispatcharr_needs_wire() -> bool:
     if "dispatcharr" not in config.profiles():
         return False
@@ -205,7 +226,7 @@ async def _dispatcharr_needs_wire() -> bool:
     if not token:
         return False
     # Token present: wire if dependents need it, or Emby may need tuner.
-    if _dispatcharr_env_needs_token():
+    if _dispatcharr_env_needs_token() or _ecm_settings_needs_dispatcharr():
         return True
     if "emby" not in config.profiles():
         return False
@@ -239,6 +260,11 @@ async def wire_dispatcharr_if_ready() -> None:
     if provision_lock.status().get("busy"):
         return
     token = _dispatcharr_token() or ""
+    # Capture before wire: fingerprint alone misses "token in .env but
+    # ecm.env / settings.json still empty" after a stale provision image.
+    dependents_needed = (
+        _dispatcharr_env_needs_token() or _ecm_settings_needs_dispatcharr()
+    )
     try:
         async with provision_lock.acquire(reason="dispatcharr auto-wire"):
             code, out = await compose.run(
@@ -259,7 +285,7 @@ async def wire_dispatcharr_if_ready() -> None:
         "token_fp": fp,
     }
     _save(data)
-    if code == 0 and fp != fingerprint:
+    if code == 0 and (fp != fingerprint or dependents_needed):
         dependents = [a for a in ("ecm", "teamarr") if a in config.profiles()]
         if dependents:
             await compose.run("up", "-d", "--force-recreate", *dependents, timeout=180)

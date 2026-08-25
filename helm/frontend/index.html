@@ -303,6 +303,12 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   border:1px solid color-mix(in srgb, var(--line) 45%, transparent);
   border-radius:var(--radius);padding:1.25rem;
   box-shadow:0 8px 32px color-mix(in srgb, #000 7%, transparent)}
+.apps-section{margin-top:1.1rem}
+.apps-section:first-child{margin-top:0}
+.apps-section-title{margin:0 0 .75rem;font-size:.72rem;font-weight:650;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.apps-section + .apps-section{padding-top:1.1rem;
+  border-top:1px solid color-mix(in srgb, var(--line) 55%, transparent)}
 label{display:block;font-size:.8rem;color:var(--muted);margin:.75rem 0 .25rem}
 input,select,textarea{width:100%;background:var(--panel-2);border:1px solid var(--line);
   color:var(--text);padding:.5rem;border-radius:6px;font:inherit}
@@ -1219,9 +1225,25 @@ const mediaServersCards = (m) => {
   if (!configured.plex && !configured.emby) return '';
   return (m.servers || []).map(mediaServerCard).join('');
 };
+const appsSectionsHtml = (items) => {
+  const enabled = items.filter(a => a.enabled);
+  const disabled = items.filter(a => !a.enabled);
+  const section = (title, apps) => {
+    if (!apps.length) return '';
+    return `<div class="apps-section">
+      <h3 class="apps-section-title">${title}</h3>
+      <div class="grid">${apps.map(appCard).join('')}</div>
+    </div>`;
+  };
+  const body = `${section('Enabled', enabled)}${section('Disabled', disabled)}`;
+  return body || '<p style="color:var(--muted);margin:0">No apps in this group.</p>';
+};
 const mediaPanelHtml = (m, items) => {
-  const cards = `${mediaServersCards(m)}${items.map(appCard).join('')}`;
-  if (cards) return `<div id="media-panel" class="grid">${cards}</div>`;
+  const servers = mediaServersCards(m);
+  const apps = items.length ? appsSectionsHtml(items) : '';
+  if (servers || apps) {
+    return `<div id="media-panel">${servers ? `<div class="grid">${servers}</div>` : ''}${apps}</div>`;
+  }
   return '<p style="color:var(--muted);margin:0">Add Plex or Emby credentials in Settings, or enable a media app.</p>';
 };
 const mediaStatHtml = (m, stats) => {
@@ -1324,7 +1346,7 @@ render.apps = async () => {
   else if (mediaActive) {
     panel = mediaPanelHtml(media, activeItems);
   } else panel = activeItems.length
-    ? `<div class="grid">${activeItems.map(appCard).join('')}</div>`
+    ? appsSectionsHtml(activeItems)
     : '<p style="color:var(--muted);margin:0">No apps in this group.</p>';
   const body = `<div id="tier-msg"></div>
     <div class="overview-bar">${watchBtn}${downloadsBtn}${overview}</div>

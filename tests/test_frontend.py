@@ -109,6 +109,15 @@ def test_enabled_apps_use_real_open_buttons():
     assert '<a class="link" href="${a.url}"' not in FRONTEND
 
 
+def test_apps_panel_splits_enabled_and_disabled():
+    assert "appsSectionsHtml" in FRONTEND
+    assert "apps-section-title" in FRONTEND
+    assert "section('Enabled', enabled)" in FRONTEND
+    assert "section('Disabled', disabled)" in FRONTEND
+    assert "appsSectionsHtml(activeItems)" in FRONTEND
+    assert "appsSectionsHtml(items)" in FRONTEND
+
+
 def test_open_embeds_arr_apps_same_origin():
     assert "openEmbed" in FRONTEND
     assert "embed_url" in FRONTEND
