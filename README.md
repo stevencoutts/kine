@@ -86,11 +86,10 @@ certificate, so browsers warn. `custom` mode reads `fullchain.pem` and
 `privkey.pem` from `${STACK_ROOT}/config/traefik/certs/`.
 
 `acme-dns` issues a Let's Encrypt wildcard for `*.${KINE_DOMAIN}` via
-DNS-01 (default provider: ClouDNS). Set `KINE_ACME_EMAIL`, put
-`CLOUDNS_AUTH_ID` / `CLOUDNS_AUTH_PASSWORD` in
-`${STACK_ROOT}/config/traefik/acme.env`, switch the mode in Settings (or
-`.env`), then Save so Traefik recreates. No inbound port 80/443 is
-required for renewal.
+DNS-01 (default provider: ClouDNS). Set `KINE_ACME_EMAIL` and enter your
+ClouDNS API Auth ID / password in Helm → Settings → Appliance (stored in
+`${STACK_ROOT}/config/traefik/acme.env`), then Save so Traefik recreates.
+No inbound port 80/443 is required for renewal.
 
 ## Application defaults
 

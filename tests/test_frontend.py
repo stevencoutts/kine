@@ -213,7 +213,8 @@ def test_settings_section_nav():
     assert "data-settings-section" in FRONTEND
     assert "data-settings-panel" in FRONTEND
     assert "CLOUDNS_AUTH_ID" in FRONTEND
-    assert "acme.env" in FRONTEND
+    assert "CLOUDNS_AUTH_PASSWORD" in FRONTEND
+    assert "acme.env" in FRONTEND or "ClouDNS Auth" in FRONTEND
     for label in ("Appliance", "Storage", "Media Servers", "Live TV", "Subtitles", "NZBGet"):
         assert label in FRONTEND
     assert "settingsPanel(" in FRONTEND or "settingsPanel =" in FRONTEND

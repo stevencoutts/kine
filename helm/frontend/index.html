@@ -2353,13 +2353,18 @@ render.settings = async () => {
       </select>
       <p style="color:var(--muted);font-size:.8rem;margin:.35rem 0 .75rem">
         <code>acme-dns</code> = Let's Encrypt wildcard via DNS-01 (ClouDNS by default).
-        Put <code>CLOUDNS_AUTH_ID</code> and <code>CLOUDNS_AUTH_PASSWORD</code> in
-        <code>${s.STACK_ROOT||'/srv/kine'}/config/traefik/acme.env</code> before switching.
+        Enter your ClouDNS API Auth ID and password below (from CloudDNS → API).
       </p>
       <label>ACME Email (acme-dns only)</label>
       <input id="KINE_ACME_EMAIL" value="${s.KINE_ACME_EMAIL}">
       <label>ACME DNS Provider</label>
       <input id="KINE_ACME_DNS_PROVIDER" value="${s.KINE_ACME_DNS_PROVIDER||'cloudns'}">
+      <label>ClouDNS Auth ID</label>
+      <input id="CLOUDNS_AUTH_ID" value="${s.CLOUDNS_AUTH_ID||''}" autocomplete="off">
+      <label>ClouDNS Auth Password</label>
+      <input id="CLOUDNS_AUTH_PASSWORD" type="password" value=""
+        placeholder="${s.CLOUDNS_AUTH_PASSWORD_SET?'•••••••• (unchanged if blank)':''}"
+        autocomplete="new-password">
       <label>Timezone</label><input id="KINE_TIMEZONE" value="${s.KINE_TIMEZONE}">
       <div class="row" style="margin-top:1rem">
         <button class="act primary" id="save">Save and Reload Traefik</button>
@@ -2516,8 +2521,11 @@ render.settings = async () => {
   if (sharesBox) sharesBox.style.display = 'block';
   $('#save').onclick = async () => {
     const keys = ['KINE_DOMAIN','KINE_TLS_MODE','KINE_ACME_EMAIL','KINE_ACME_DNS_PROVIDER','KINE_TIMEZONE'];
-    await api('/settings', {method:'POST',
-      body: JSON.stringify(Object.fromEntries(keys.map(k=>[k,$('#'+k).value])))});
+    const body = Object.fromEntries(keys.map(k=>[k,$('#'+k).value]));
+    body.CLOUDNS_AUTH_ID = $('#CLOUDNS_AUTH_ID')?.value || '';
+    const pw = $('#CLOUDNS_AUTH_PASSWORD')?.value || '';
+    if (pw) body.CLOUDNS_AUTH_PASSWORD = pw;
+    await api('/settings', {method:'POST', body: JSON.stringify(body)});
     $('#msg').innerHTML = '<div class="banner ok">Saved. Certificates may take a minute.</div>';
   };
   $('#load-nfs-shares').onclick = () => loadNfsShares(true);

@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, teamarr_setup, updates_info, vpn_profiles, watching
+from . import acme_env, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, teamarr_setup, updates_info, vpn_profiles, watching
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -1173,6 +1173,9 @@ async def get_settings(user: str = Depends(require_user)):
     out["nzbget_enabled"] = "nzbget" in config.profiles()
     out["dispatcharr_enabled"] = dispatcharr_sources.enabled()
     out["dispatcharr_configured"] = dispatcharr_sources.configured()
+    cloudns = acme_env.read_cloudns()
+    out["CLOUDNS_AUTH_ID"] = cloudns["auth_id"]
+    out["CLOUDNS_AUTH_PASSWORD_SET"] = cloudns["password_set"]
     return out
 
 
@@ -1182,13 +1185,35 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
     allowed = {"KINE_DOMAIN", "KINE_TLS_MODE", "KINE_ACME_EMAIL",
                "KINE_ACME_DNS_PROVIDER", "KINE_TIMEZONE", "HELM_UPDATE_CHECK_CRON",
                *_NFS_KEYS, *_MEDIA_SERVER_KEYS, *_LIVE_TV_KEYS, *_SUBTITLE_KEYS}
-    config.write({k: str(v) for k, v in body.items() if k in allowed})
-    if {"KINE_TLS_MODE", "KINE_DOMAIN", "KINE_ACME_EMAIL", "KINE_ACME_DNS_PROVIDER"} & set(body):
+    before = config.read()
+    incoming = {k: str(v) for k, v in body.items() if k in allowed}
+    config.write(incoming)
+
+    domain_changed = (
+        "KINE_DOMAIN" in incoming
+        and incoming["KINE_DOMAIN"].strip() != (before.get("KINE_DOMAIN") or "").strip()
+    )
+    tls_keys = {"KINE_TLS_MODE", "KINE_ACME_EMAIL", "KINE_ACME_DNS_PROVIDER", "KINE_DOMAIN"}
+    tls_changed = any(
+        k in incoming and incoming[k].strip() != (before.get(k) or "").strip()
+        for k in tls_keys
+    )
+    if tls_changed:
         await compose.script("tls-setup.sh")
-    if "KINE_DOMAIN" in body:
+
+    cloudns_changed = False
+    if "CLOUDNS_AUTH_ID" in body or "CLOUDNS_AUTH_PASSWORD" in body:
+        cloudns_changed = acme_env.write_cloudns(
+            auth_id=str(body.get("CLOUDNS_AUTH_ID", "")),
+            password=str(body.get("CLOUDNS_AUTH_PASSWORD", "")),
+        )
+
+    if domain_changed:
+        # Recreating helm from inside a helm request kills this handler (137).
+        # Only do it when the domain value actually changed.
         await _apply_domain_routing()
         await _refresh_mdns()
-    elif {"KINE_TLS_MODE", "KINE_ACME_EMAIL", "KINE_ACME_DNS_PROVIDER"} & set(body):
+    elif tls_changed or cloudns_changed:
         # Recreate so acme.env / entrypoint ACME flags are picked up.
         await compose.run("up", "-d", "--force-recreate", "traefik")
     nfs_changed = bool(set(_NFS_KEYS) & set(body))
