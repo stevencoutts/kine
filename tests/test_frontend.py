@@ -118,6 +118,15 @@ def test_apps_panel_splits_enabled_and_disabled():
     assert "appsSectionsHtml(items)" in FRONTEND
 
 
+def test_teamarr_enable_modal_exists():
+    assert "promptTeamarrLeagues" in FRONTEND
+    assert "enableTeamarrFlow" in FRONTEND
+    assert "Teamarr Soccer Leagues" in FRONTEND
+    assert "/teamarr/leagues" in FRONTEND
+    assert "/apps/teamarr/enable" in FRONTEND
+    assert '@app.get("/api/teamarr/leagues")' in BACKEND
+
+
 def test_open_embeds_arr_apps_same_origin():
     assert "openEmbed" in FRONTEND
     assert "embed_url" in FRONTEND

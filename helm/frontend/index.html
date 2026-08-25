@@ -764,6 +764,89 @@ const enableNzbgetFlow = async (btn) => {
   });
   render.apps();
 };
+
+const promptTeamarrLeagues = (preselected) => new Promise(async (resolve) => {
+  let catalog = [];
+  let selected = new Set();
+  try {
+    const data = await api('/teamarr/leagues');
+    catalog = (data.catalog && data.catalog.length) ? data.catalog : (data.leagues || []);
+    const picks = (preselected && preselected.length)
+      ? preselected
+      : (data.leagues || []);
+    picks.forEach(r => { if (r && r.id) selected.add(r.id); });
+  } catch (_) {
+    catalog = [];
+  }
+  if (!catalog.length) {
+    catalog = [
+      {id:'eng.1', name:'English Premier League'},
+      {id:'eng.fa', name:'FA Cup'},
+      {id:'eng.league_cup', name:'Carabao Cup'},
+      {id:'uefa.champions', name:'UEFA Champions League'},
+      {id:'uefa.champions_qual', name:'UEFA Champions League Qualifying'},
+      {id:'uefa.europa', name:'UEFA Europa League'},
+      {id:'uefa.europa.conf', name:'UEFA Europa Conference League'},
+      {id:'fifa.world', name:'FIFA World Cup'},
+      {id:'fifa.wcq.ply', name:'FIFA World Cup Qualifying - Playoff Tournament'},
+    ];
+    if (!selected.size) catalog.forEach(r => selected.add(r.id));
+  }
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  const rows = catalog.map(r => {
+    const checked = selected.has(r.id) ? 'checked' : '';
+    const start = r.channel_start != null ? ` · ch ${r.channel_start}` : '';
+    return `<label class="teamarr-league-row" style="display:flex;align-items:center;gap:.55rem;margin:.35rem 0;cursor:pointer">
+      <input type="checkbox" data-league-id="${escAttr(r.id)}" data-league-name="${escAttr(r.name || r.id)}" ${checked}>
+      <span>${escHtml(r.name || r.id)}${escHtml(start)}</span>
+    </label>`;
+  }).join('');
+  backdrop.innerHTML = `
+    <div class="modal" role="dialog" aria-labelledby="teamarr-modal-title">
+      <h3 id="teamarr-modal-title">Teamarr Soccer Leagues</h3>
+      <p>Choose leagues for Select Leagues mode. Channel numbers use fixed
+         blocks of 20 starting at 2000. Your last picks are remembered.</p>
+      <div id="teamarr-modal-list" style="max-height:50vh;overflow:auto;margin:.75rem 0">${rows}</div>
+      <div class="row" style="gap:.5rem;flex-wrap:wrap">
+        <button type="button" class="act primary" id="teamarr-modal-enable">Enable With These Leagues</button>
+        <button type="button" class="act" id="teamarr-modal-cancel">Cancel</button>
+      </div>
+      <div id="teamarr-modal-err" class="banner bad" style="display:none;margin-top:.75rem"></div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const finish = (result) => { backdrop.remove(); resolve(result); };
+  $('#teamarr-modal-cancel', backdrop).onclick = () => finish({cancelled: true});
+  $('#teamarr-modal-enable', backdrop).onclick = () => {
+    const leagues = [...backdrop.querySelectorAll('[data-league-id]:checked')].map(el => ({
+      id: el.dataset.leagueId,
+      name: el.dataset.leagueName || el.dataset.leagueId,
+    }));
+    if (!leagues.length) {
+      const err = $('#teamarr-modal-err', backdrop);
+      err.style.display = 'block';
+      err.textContent = 'Select at least one league.';
+      return;
+    }
+    finish({leagues});
+  };
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) finish({cancelled: true});
+  });
+});
+
+const enableTeamarrFlow = async (btn) => {
+  const choice = await promptTeamarrLeagues();
+  if (choice.cancelled) {
+    btn.disabled = false; btn.textContent = 'Enable';
+    return;
+  }
+  await api('/apps/teamarr/enable', {
+    method: 'POST',
+    body: JSON.stringify({leagues: choice.leagues || []}),
+  });
+  render.apps();
+};
 const TIER_ORDER = ['media','acquisition','process','live','metrics','platform'];
 
 // Embeddable apps open in an in-page iframe on /view/{app}/ (same host
@@ -1413,7 +1496,23 @@ render.apps = async () => {
     el.onchange = async () => {
       el.disabled = true;
       try {
-        await api(`/tiers/${el.dataset.tier}/${el.checked?'enable':'disable'}`, {method:'POST'});
+        let body = '{}';
+        if (el.checked && el.dataset.tier === 'live') {
+          const teamarr = state.apps.find(a => a.id === 'teamarr');
+          if (teamarr && !teamarr.enabled) {
+            const choice = await promptTeamarrLeagues();
+            if (choice.cancelled) {
+              el.checked = false;
+              el.disabled = false;
+              return;
+            }
+            body = JSON.stringify({leagues: choice.leagues || []});
+          }
+        }
+        await api(`/tiers/${el.dataset.tier}/${el.checked?'enable':'disable'}`, {
+          method:'POST',
+          body,
+        });
         if (el.checked) state.activeTier = el.dataset.tier;
         render.apps();
       } catch (e) {
@@ -1454,6 +1553,20 @@ render.apps = async () => {
         if (tierMsg) {
           tierMsg.className = 'banner bad';
           tierMsg.textContent = e.message || 'Could not enable NZBGet';
+        }
+      }
+      return;
+    }
+    if (act === 'enable' && id === 'teamarr') {
+      b.disabled = true; b.textContent = 'Working...';
+      try {
+        await enableTeamarrFlow(b);
+      } catch (e) {
+        b.disabled = false; b.textContent = 'Enable';
+        const tierMsg = $('#tier-msg');
+        if (tierMsg) {
+          tierMsg.className = 'banner bad';
+          tierMsg.textContent = e.message || 'Could not enable Teamarr';
         }
       }
       return;

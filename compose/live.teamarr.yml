@@ -20,4 +20,4 @@ services:
     env_file:
       - ${STACK_ROOT}/config/teamarr/teamarr.env
     volumes:
-      - ${STACK_ROOT}/config/teamarr:/config
+      - ${STACK_ROOT}/config/teamarr:/app/data

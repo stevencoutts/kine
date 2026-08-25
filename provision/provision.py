@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
-from recipes import arr, bazarr, dispatcharr, emby, envfiles, jackett, metrics, nzbget, prowlarr, recyclarr, seerr, transmission  # noqa: E402
+from recipes import arr, bazarr, dispatcharr, emby, envfiles, jackett, metrics, nzbget, prowlarr, recyclarr, seerr, teamarr, transmission  # noqa: E402
 from seed import seed_all  # noqa: E402
 
 STATE = pathlib.Path("/stack/provision.log")
@@ -125,6 +125,23 @@ def wire(enabled: set[str]) -> None:
                 log(f"dispatcharr: env updated for {', '.join(changed)} (recreate from Helm)")
         except Exception as exc:  # noqa: BLE001
             log(f"dispatcharr: wiring failed ({exc})")
+
+    if "teamarr" in enabled:
+        try:
+            token = os.environ.get("DISPATCHARR_TOKEN", "").strip()
+            user = os.environ.get("HELM_ADMIN_USER", "").strip()
+            # Only apply when leagues.json exists (written by Helm enable modal).
+            if (teamarr.STACK / "config" / "teamarr" / "leagues.json").is_file():
+                teamarr.configure(
+                    None,
+                    log,
+                    dispatcharr_token=token,
+                    dispatcharr_username=user,
+                )
+            else:
+                log("teamarr: no leagues.json yet, skipping subscription seed")
+        except Exception as exc:  # noqa: BLE001
+            log(f"teamarr: wiring failed ({exc})")
 
     log("Provisioning complete")
 

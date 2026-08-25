@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, updates_info, vpn_profiles, watching
+from . import auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, teamarr_setup, updates_info, vpn_profiles, watching
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -534,11 +534,30 @@ async def downloads_now(user: str = Depends(require_user)):
 
 
 @app.post("/api/tiers/{tier}/enable")
-async def enable_tier(tier: str, user: str = Depends(require_user)):
+async def enable_tier(tier: str, request: Request, user: str = Depends(require_user)):
     defaults = catalogue.tier_default_apps(tier)
     if not defaults:
         raise HTTPException(404, "no default apps in this section")
     label = catalogue.TIER_LABELS.get(tier, tier.title())
+    body = {}
+    try:
+        raw = await request.json()
+        if isinstance(raw, dict):
+            body = raw
+    except Exception:  # noqa: BLE001
+        body = {}
+
+    teamarr_leagues = None
+    if "teamarr" in defaults and "leagues" in body:
+        recipe = teamarr_setup.recipe()
+        try:
+            teamarr_leagues = recipe.assign_channel_starts(body.get("leagues") or [])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        stack = pathlib.Path(config.read().get("STACK_ROOT") or "/srv/kine")
+        recipe.STACK = stack
+        recipe.save_leagues(teamarr_leagues)
+
     cat = catalogue.load()
     wanted = config.profiles()
     for app_id in defaults:
@@ -566,10 +585,23 @@ async def enable_tier(tier: str, user: str = Depends(require_user)):
             await compose.run("run", "--rm", "provision", "wire")
     except provision_lock.ProvisionBusy as exc:
         raise HTTPException(409, exc.detail) from exc
+    teamarr_apply = None
+    if "teamarr" in defaults:
+        recipe = teamarr_setup.recipe()
+        stack = pathlib.Path(config.read().get("STACK_ROOT") or "/srv/kine")
+        recipe.STACK = stack
+        env = config.read()
+        teamarr_apply = await asyncio.to_thread(
+            recipe.configure,
+            teamarr_leagues,
+            lambda _m: None,
+            dispatcharr_token=(env.get("DISPATCHARR_TOKEN") or "").strip(),
+            dispatcharr_username=(env.get("HELM_ADMIN_USER") or "admin").strip(),
+        )
     await _sync_recyclarr()
     if _nfs_configured() and set(defaults) & {"sonarr", "radarr"}:
         await _queue_library_sync({"NFS_MEDIA", "NFS_TV", "NFS_MOVIES"})
-    return {"ok": True, "enabled": defaults}
+    return {"ok": True, "enabled": defaults, "teamarr": teamarr_apply}
 
 
 @app.post("/api/tiers/{tier}/disable")
@@ -618,6 +650,18 @@ async def enable(app_id: str, request: Request, user: str = Depends(require_user
     if app_id == "nzbget" and "news_servers" in body:
         _store_nzbget_servers(body.get("news_servers") or [])
 
+    teamarr_leagues = None
+    if app_id == "teamarr" and "leagues" in body:
+        recipe = teamarr_setup.recipe()
+        try:
+            teamarr_leagues = recipe.assign_channel_starts(body.get("leagues") or [])
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        # Point recipe STACK at the live stack root for leagues.json.
+        stack = pathlib.Path(config.read().get("STACK_ROOT") or "/srv/kine")
+        recipe.STACK = stack
+        recipe.save_leagues(teamarr_leagues)
+
     wanted = config.profiles()
     # Pull in anything this app cannot work without, rather than
     # starting it into a broken state and letting the user find out.
@@ -651,8 +695,21 @@ async def enable(app_id: str, request: Request, user: str = Depends(require_user
         # shared gluetun namespace (unlike compose up of a single peer).
         await asyncio.to_thread(_apply_nzbget_conf)
         await compose.run("restart", "nzbget")
+    teamarr_apply = None
+    if app_id == "teamarr":
+        recipe = teamarr_setup.recipe()
+        stack = pathlib.Path(config.read().get("STACK_ROOT") or "/srv/kine")
+        recipe.STACK = stack
+        env = config.read()
+        teamarr_apply = await asyncio.to_thread(
+            recipe.configure,
+            teamarr_leagues,
+            lambda _m: None,
+            dispatcharr_token=(env.get("DISPATCHARR_TOKEN") or "").strip(),
+            dispatcharr_username=(env.get("HELM_ADMIN_USER") or "admin").strip(),
+        )
     await _sync_recyclarr()
-    return {"ok": True, "log": out[-2000:]}
+    return {"ok": True, "log": out[-2000:], "teamarr": teamarr_apply}
 
 
 @app.post("/api/apps/{app_id}/disable")
@@ -1048,6 +1105,25 @@ async def nfs_apply_mounts(user: str = Depends(require_user)):
         await _recreate_media_volume_apps()
         result["rescan"] = await _queue_library_sync()
     return result
+
+
+@app.get("/api/teamarr/leagues")
+async def teamarr_leagues(user: str = Depends(require_user)):
+    """Last Teamarr league picks (or product defaults) for the enable dialog."""
+    recipe = teamarr_setup.recipe()
+    stack = pathlib.Path(config.read().get("STACK_ROOT") or "/srv/kine")
+    recipe.STACK = stack
+    data = recipe.load_leagues()
+    return {
+        "ok": True,
+        "soccer_mode": data.get("soccer_mode") or "manual",
+        "leagues": data.get("leagues") or [],
+        "catalog": [
+            {"id": r["id"], "name": r["name"], "channel_start": r["channel_start"]}
+            for r in recipe.DEFAULT_LEAGUES
+        ],
+        "updated_at": data.get("updated_at"),
+    }
 
 
 @app.get("/api/settings")
