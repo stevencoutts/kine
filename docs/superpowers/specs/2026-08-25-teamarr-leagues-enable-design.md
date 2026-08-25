@@ -146,7 +146,7 @@ If enabling the Live TV tier starts Teamarr as a default, show the same modal **
 
 ## Success criteria
 
-1. Enable Teamarr without the dialog is impossible from the Apps UI (must go through modal or cancel).
+1. From the Apps UI, Enable on Teamarr always goes through the modal (or Cancel). Direct API enable may still exist for automation but is not the operator path.
 2. After confirm, Teamarr UI shows Select Leagues with the chosen set.
 3. Channel starts match the 20-block map (and extras continue the sequence).
 4. Re-enable opens the dialog pre-ticked from last time and overwrites Teamarr on confirm.
