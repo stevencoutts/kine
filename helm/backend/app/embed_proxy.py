@@ -144,6 +144,15 @@ def _bootstrap_script(prefix: str) -> str:
         "get:function(){return cur;},"
         "set:function(v){cur=lockBase(Object.assign({},v||{}));}});}catch(e){}}"
         "forceBase('Sonarr');forceBase('Radarr');forceBase('Prowlarr');forceBase('Bazarr');"
+        # Dispatcharr (and similar SPAs) assign location.href='/login' on auth failure.
+        "try{var _as=Location.prototype.assign;"
+        "Location.prototype.assign=function(u){return _as.call(this,abs(String(u)));};"
+        "var _rs=Location.prototype.replace;"
+        "Location.prototype.replace=function(u){return _rs.call(this,abs(String(u)));};"
+        "var _hd=Object.getOwnPropertyDescriptor(Location.prototype,'href');"
+        "if(_hd&&_hd.set){Object.defineProperty(Location.prototype,'href',"
+        "{configurable:true,enumerable:_hd.enumerable,get:_hd.get,"
+        "set:function(v){_hd.set.call(this,abs(String(v)));}});}}catch(e){}"
         "var f=window.fetch;window.fetch=function(i,n){"
         "var u=typeof i==='string'?i:(i&&i.url);"
         "if(typeof i==='string')i=abs(i);"
@@ -266,6 +275,39 @@ def _rewrite_css(text: str, prefix: str) -> str:
     )
 
 
+_BROWSER_ROUTER_DEF = re.compile(
+    r"function ([A-Za-z0-9_$]+)\(\{"
+    r"basename:[A-Za-z0-9_$]+,"
+    r"children:[A-Za-z0-9_$]+,"
+    r"useTransitions:[A-Za-z0-9_$]+,"
+    r"window:"
+)
+
+
+def _rewrite_js(text: str, prefix: str) -> str:
+    """Patch SPAs that ship a root-level React Router without basename.
+
+    Dispatcharr's bundle creates ``<BrowserRouter>`` with default basename ``/``,
+    so when Helm serves it under ``/view/dispatcharr/`` no route matches and the
+    iframe content area stays black. Minified symbol names change between
+    builds (``W6`` → ``J6``), so detect BrowserRouter by its function signature
+    and inject basename at the call site.
+    """
+    match = _BROWSER_ROUTER_DEF.search(text)
+    if not match:
+        return text
+    sym = match.group(1)
+    for kind in ("jsxs", "jsx"):
+        opener = f"{kind}({sym},{{children:"
+        if opener not in text:
+            continue
+        if f"{kind}({sym},{{basename:" in text:
+            return text
+        injected = f"{kind}({sym},{{basename:{prefix!r},children:"
+        return text.replace(opener, injected, 1)
+    return text
+
+
 def _rewrite_initialize_json(raw: bytes, prefix: str) -> bytes:
     """*arr initialize.json has urlBase:'' — webpack then loads CSS from /Content/… on admin."""
     try:
@@ -320,6 +362,12 @@ async def proxy_http(app_id: str, path: str, request: Request) -> Response:
         except (LookupError, UnicodeDecodeError):
             text = raw.decode("utf-8", errors="replace")
         raw = _rewrite_css(text, prefix).encode("utf-8")
+    elif media in {"application/javascript", "text/javascript"} or rel.endswith(".js"):
+        try:
+            text = raw.decode(upstream_resp.charset_encoding or "utf-8")
+        except (LookupError, UnicodeDecodeError):
+            text = raw.decode("utf-8", errors="replace")
+        raw = _rewrite_js(text, prefix).encode("utf-8")
     elif media == "application/json" and rel.split("?", 1)[0].endswith("initialize.json"):
         raw = _rewrite_initialize_json(raw, prefix)
 

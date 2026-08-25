@@ -69,6 +69,17 @@ def test_delete_active_refused(tmp_path):
         pass
 
 
+def test_vpn_tunnel_group_only_includes_enabled_profiles():
+    main = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()
+    assert "def _vpn_tunnel_group" in main
+    assert "_tunnelled_profiles()" in main.split("def _vpn_tunnel_group", 1)[1].split("\n\n", 1)[0]
+
+
+def test_kine_vpn_group_filters_by_compose_profiles():
+    kine = (ROOT / "kine").read_text()
+    assert "COMPOSE_PROFILES=" in kine.split("vpn_group()", 1)[1].split("\n}\n", 1)[0]
+
+
 def test_vpn_profile_routes_exist():
     main = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()
     assert '@app.post("/api/vpn/profiles")' in main

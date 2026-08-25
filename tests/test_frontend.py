@@ -8,6 +8,20 @@ FRONTEND = (ROOT / "helm" / "frontend" / "index.html").read_text()
 BACKEND = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()
 
 
+def test_backup_restore_api_routes_exist():
+    assert '@app.get("/api/backups")' in BACKEND
+    assert '@app.post("/api/backups/restore")' in BACKEND
+    assert "backups.resolve" in BACKEND
+    assert "restore.sh" in BACKEND
+
+
+def test_status_page_has_backup_restore_ui():
+    assert "Backup and Restore" in FRONTEND
+    assert "/backups/restore" in FRONTEND
+    assert "data-backup-restore" in FRONTEND
+    assert "id=\"backup-now\"" in FRONTEND
+
+
 def test_visible_control_labels_use_title_case():
     lower_case_labels = (
         ">First run<",
@@ -117,6 +131,7 @@ def test_media_overview_uses_settings_servers():
     assert "formatClass" in FRONTEND
     assert "format-video" in FRONTEND
     assert "watch-art-fallback" in FRONTEND
+    assert ".watch-art-fallback[hidden]" in FRONTEND
     assert "photo/:/transcode" in (ROOT / "helm" / "backend" / "app" / "watching.py").read_text()
     assert 'image="Logo"' in (ROOT / "helm" / "backend" / "app" / "watching.py").read_text()
     assert "s.formats" in FRONTEND

@@ -43,6 +43,9 @@ def test_rewrite_html_injects_bootstrap_and_prefixes_assets():
     assert "sa.call(this,n,v)" in out
     assert "sa.call(this,ln,v)" not in out
     # Same-origin absolute URLs (Socket.IO) must be rewritten.
+    assert "Location.prototype.assign" in out
+    assert "Location.prototype.replace" in out
+    # Same-origin absolute URLs (Socket.IO) must be rewritten.
     assert "x.origin!==location.origin" in out or "x.origin===location.origin" in out
 
 
@@ -115,6 +118,40 @@ def test_rewrite_initialize_json_sets_url_base():
     data = __import__("json").loads(out)
     assert data["urlBase"] == "/view/radarr"
     assert data["apiRoot"] == "/api/v3"
+
+
+def test_rewrite_js_injects_react_router_basename():
+    js = (
+        "function W6({basename:n,children:e,useTransitions:t,window:s}){}"
+        "function App(){return jsxs(W6,{children:[jsx(Routes,{})]})}"
+    )
+    out = embed_proxy._rewrite_js(js, "/view/dispatcharr")
+    assert "jsxs(W6,{basename:'/view/dispatcharr',children:" in out
+
+
+def test_rewrite_js_detects_renamed_browser_router_symbol():
+    """Dispatcharr 0.29 minifies BrowserRouter as J6 instead of W6."""
+    js = (
+        "function J6({basename:n,children:e,useTransitions:t,window:s}){}"
+        "function App(){return jsxs(J6,{children:[jsx(fi,{path:'/sources'})]})}"
+    )
+    out = embed_proxy._rewrite_js(js, "/view/dispatcharr")
+    assert "jsxs(J6,{basename:'/view/dispatcharr',children:" in out
+    assert "jsxs(W6," not in out
+
+
+def test_rewrite_js_leaves_unrelated_bundles_unchanged():
+    js = "console.log('jsxs(W6,{children:');"
+    assert embed_proxy._rewrite_js(js, "/view/dispatcharr") == js
+
+
+def test_rewrite_js_skips_low_level_router_with_default_basename():
+    """R6 is react-router's <Router>, not BrowserRouter — do not patch it."""
+    js = (
+        'function R6({basename:n="/",children:e=null,location:t}){}'
+        "jsxs(R6,{children:[1]})"
+    )
+    assert embed_proxy._rewrite_js(js, "/view/dispatcharr") == js
 
 
 def test_mount_does_not_treat_request_as_query_param():

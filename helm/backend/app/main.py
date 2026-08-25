@@ -9,12 +9,13 @@ something you do not expose to the internet.
 import asyncio
 import os
 import pathlib
+from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import auth, catalogue, channels, compose, config, downloads, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, updates_info, vpn_profiles, watching
+from . import auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, updates_info, vpn_profiles, watching
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -319,13 +320,18 @@ async def auth_verify(request: Request):
 @app.post("/api/auth/login")
 async def login(request: Request):
     body = await request.json()
-    if not auth.check(body.get("username", ""), body.get("password", "")):
+    username = body.get("username", "")
+    password = body.get("password", "")
+    if not auth.check(username, password):
         # Deliberately slow and vague: no distinction between a bad
         # username and a bad password.
         await asyncio.sleep(1.0)
         raise HTTPException(401, "invalid credentials")
-    token = auth.issue(body["username"])
-    resp = JSONResponse({"ok": True})
+    # ECM only stores a hash of its own admin; create it the first time we
+    # see the live Helm password (first-run or a later login after enabling).
+    ecm = await asyncio.to_thread(ecm_setup.ensure_admin, username, password)
+    token = auth.issue(username)
+    resp = JSONResponse({"ok": True, "ecm_setup": ecm})
     resp.set_cookie(COOKIE, token, httponly=True, samesite="lax", max_age=auth.MAX_AGE)
     return resp
 
@@ -421,7 +427,9 @@ async def first_run(request: Request):
     # Only lock onboarding after every requested prerequisite succeeded,
     # so a bad tunnel configuration can be corrected and submitted again.
     auth.set_password(pw)
-    return {"ok": True}
+    admin_user = config.read().get("HELM_ADMIN_USER", "admin")
+    ecm = await asyncio.to_thread(ecm_setup.ensure_admin, admin_user, pw)
+    return {"ok": True, "ecm_setup": ecm}
 
 
 # ── catalogue and lifecycle ─────────────────────────────────────
@@ -811,10 +819,10 @@ def _vpn_stack_root() -> str:
     return env.get("STACK_ROOT") or os.environ.get("KINE_ROOT", "/stack")
 
 
-def _vpn_tunnel_group(env: dict) -> list[str]:
-    return ["gluetun", "vpn-portsync"] + [
-        a for a in env.get("VPN_TUNNELLED_APPS", "").split(",") if a
-    ]
+def _vpn_tunnel_group(env: dict | None = None) -> list[str]:
+    """Tunnel services to restart/recreate — only apps the user has enabled."""
+    _ = env  # callers pass freshly-read env; profiles come from config
+    return ["gluetun", "vpn-portsync", *_tunnelled_profiles()]
 
 
 async def _vpn_recreate_tunnel(env: dict) -> tuple[int, str, list[str]]:
@@ -1044,6 +1052,8 @@ async def nfs_apply_mounts(user: str = Depends(require_user)):
 
 @app.get("/api/settings")
 async def get_settings(user: str = Depends(require_user)):
+    if dispatcharr_sources.enabled() and not dispatcharr_sources.configured():
+        await dispatcharr_token.ensure_token(write_env=True)
     env = config.read()
     public = ("KINE_DOMAIN", "KINE_TLS_MODE", "KINE_ACME_EMAIL", "KINE_ACME_DNS_PROVIDER",
               "KINE_TIMEZONE", "STACK_ROOT", "DATA_ROOT", "HELM_UPDATE_CHECK_CRON",
@@ -1059,6 +1069,8 @@ async def get_settings(user: str = Depends(require_user)):
         env.get(NZBGET_NEWS_KEY, "")
     )
     out["nzbget_enabled"] = "nzbget" in config.profiles()
+    out["dispatcharr_enabled"] = dispatcharr_sources.enabled()
+    out["dispatcharr_configured"] = dispatcharr_sources.configured()
     return out
 
 
@@ -1119,10 +1131,143 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
     return {"ok": True, "nfs_mount": nfs_mount, "media_wire": media_wire, "nzbget_apply": nzbget_apply}
 
 
+@app.get("/api/backups")
+async def backups_list(user: str = Depends(require_user)):
+    rows = await asyncio.to_thread(backups.list_snapshots)
+    return {"ok": True, "snapshots": rows, "busy": provision_lock.status().get("busy")}
+
+
 @app.post("/api/backup")
 async def backup(user: str = Depends(require_user)):
-    code, out = await compose.script("backup.sh", timeout=1800)
-    return {"ok": code == 0, "path": out.strip().splitlines()[-1] if code == 0 else None}
+    if provision_lock.status().get("busy"):
+        raise HTTPException(409, "Another stack operation is in progress")
+    try:
+        async with provision_lock.acquire(reason="backup"):
+            code, out = await compose.script("backup.sh", timeout=1800)
+    except provision_lock.ProvisionBusy as exc:
+        raise HTTPException(409, exc.detail) from exc
+    path = out.strip().splitlines()[-1] if code == 0 and out.strip() else None
+    if code == 0 and path:
+        data = scheduler._load()
+        data["backup"] = {
+            "ran": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "ok": True,
+            "path": path,
+        }
+        scheduler._save(data)
+    return {"ok": code == 0, "path": path, "log": out[-2000:] if out else ""}
+
+
+@app.post("/api/backups/restore")
+async def backups_restore(request: Request, user: str = Depends(require_user)):
+    """Restore a local snapshot: app configs + .env (enabled apps) then up -d."""
+    body = await request.json()
+    name = str(body.get("name") or "").strip()
+    try:
+        path = await asyncio.to_thread(backups.resolve, name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    if provision_lock.status().get("busy"):
+        raise HTTPException(409, "Another stack operation is in progress")
+    try:
+        async with provision_lock.acquire(reason="restore"):
+            code, out = await compose.script(
+                "restore.sh", str(path), timeout=1800,
+            )
+    except provision_lock.ProvisionBusy as exc:
+        raise HTTPException(409, exc.detail) from exc
+    return {
+        "ok": code == 0,
+        "name": name,
+        "log": out[-4000:] if out else "",
+    }
+
+
+def _dispatcharr_http_error(exc: ValueError) -> HTTPException:
+    msg = str(exc)
+    if "token" in msg.lower():
+        return HTTPException(409, msg)
+    return HTTPException(400, msg)
+
+
+@app.get("/api/dispatcharr/m3u")
+async def dispatcharr_m3u_list(user: str = Depends(require_user)):
+    await dispatcharr_sources.ensure_ready()
+    try:
+        rows = await asyncio.to_thread(dispatcharr_sources.list_m3u)
+    except ValueError as exc:
+        raise _dispatcharr_http_error(exc) from exc
+    return {"ok": True, "accounts": rows}
+
+
+@app.post("/api/dispatcharr/m3u")
+async def dispatcharr_m3u_create(request: Request, user: str = Depends(require_user)):
+    await dispatcharr_sources.ensure_ready()
+    body = await request.json()
+    try:
+        row = await asyncio.to_thread(dispatcharr_sources.create_m3u, body)
+    except ValueError as exc:
+        raise _dispatcharr_http_error(exc) from exc
+    return {"ok": True, "account": row}
+
+
+@app.delete("/api/dispatcharr/m3u/{account_id}")
+async def dispatcharr_m3u_delete(account_id: int, user: str = Depends(require_user)):
+    try:
+        await asyncio.to_thread(dispatcharr_sources.delete_m3u, account_id)
+    except ValueError as exc:
+        raise _dispatcharr_http_error(exc) from exc
+    return {"ok": True}
+
+
+@app.post("/api/dispatcharr/m3u/{account_id}/refresh")
+async def dispatcharr_m3u_refresh(account_id: int, user: str = Depends(require_user)):
+    try:
+        await asyncio.to_thread(dispatcharr_sources.refresh_m3u, account_id)
+    except ValueError as exc:
+        raise _dispatcharr_http_error(exc) from exc
+    return {"ok": True}
+
+
+@app.get("/api/dispatcharr/epg")
+async def dispatcharr_epg_list(user: str = Depends(require_user)):
+    await dispatcharr_sources.ensure_ready()
+    try:
+        rows = await asyncio.to_thread(dispatcharr_sources.list_epg)
+    except ValueError as exc:
+        raise _dispatcharr_http_error(exc) from exc
+    return {"ok": True, "sources": rows}
+
+
+@app.post("/api/dispatcharr/epg")
+async def dispatcharr_epg_create(request: Request, user: str = Depends(require_user)):
+    await dispatcharr_sources.ensure_ready()
+    body = await request.json()
+    try:
+        row = await asyncio.to_thread(dispatcharr_sources.create_epg, body)
+    except ValueError as exc:
+        raise _dispatcharr_http_error(exc) from exc
+    return {"ok": True, "source": row}
+
+
+@app.delete("/api/dispatcharr/epg/{source_id}")
+async def dispatcharr_epg_delete(source_id: int, user: str = Depends(require_user)):
+    try:
+        await asyncio.to_thread(dispatcharr_sources.delete_epg, source_id)
+    except ValueError as exc:
+        raise _dispatcharr_http_error(exc) from exc
+    return {"ok": True}
+
+
+@app.post("/api/dispatcharr/epg/{source_id}/refresh")
+async def dispatcharr_epg_refresh(source_id: int, user: str = Depends(require_user)):
+    try:
+        await asyncio.to_thread(dispatcharr_sources.refresh_epg, source_id)
+    except ValueError as exc:
+        raise _dispatcharr_http_error(exc) from exc
+    return {"ok": True}
 
 
 @app.post("/api/provision")

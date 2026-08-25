@@ -59,7 +59,17 @@ profiles_remove() {
 # a bigger event than it looks: expect roughly a minute of no *arr and
 # no downloads.
 vpn_group() {
-  echo "gluetun ${VPN_TUNNELLED_APPS//,/ } vpn-portsync"
+  local cur on=""
+  cur=$(grep '^COMPOSE_PROFILES=' .env | cut -d= -f2-)
+  echo -n "gluetun vpn-portsync"
+  local IFS=,
+  for app in ${VPN_TUNNELLED_APPS}; do
+    app="${app// /}"
+    [[ -z "$app" ]] && continue
+    [[ ",$cur," == *",$app,"* ]] || continue
+    echo -n " $app"
+  done
+  echo
 }
 
 cmd="${1:-}"; shift || true

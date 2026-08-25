@@ -128,15 +128,17 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
 .watch-art{flex:none;width:168px;position:relative;overflow:hidden;
   background:#12151c;border:0;border-radius:0;box-shadow:none;
   display:flex;align-items:center;justify-content:center}
-.watch-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.watch-art img{position:absolute;inset:0;z-index:1;width:100%;height:100%;object-fit:cover;display:block}
 .watch-art.channel{background:#0c0e14}
 .watch-art.channel img{object-fit:contain;padding:16%;box-sizing:border-box;
   filter:drop-shadow(0 2px 6px rgba(0,0,0,.35))}
-.watch-art-fallback{display:flex;align-items:center;justify-content:center;
-  width:100%;height:100%;min-height:148px;padding:.5rem;box-sizing:border-box;
+.watch-art-fallback{position:absolute;inset:0;z-index:0;display:flex;align-items:center;justify-content:center;
+  padding:.5rem;box-sizing:border-box;
   color:color-mix(in srgb, var(--watch-accent, #9aa3b2) 55%, #9aa3b2);
   font-weight:750;letter-spacing:.02em;text-transform:uppercase;user-select:none;
   background:linear-gradient(160deg,#1a1e28,#0f1218)}
+/* class display:flex must not defeat the HTML hidden attribute */
+.watch-art-fallback[hidden]{display:none!important}
 .watch-art-fallback .mono{font-size:1.35rem;line-height:1.1;text-align:center;
   word-break:break-all;max-width:100%}
 .watch-card-main{flex:1;min-width:0;padding:1rem 1.1rem 1.05rem}
@@ -244,6 +246,12 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
 .vpn-modal textarea{min-height:160px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
   font-size:.78rem;line-height:1.4}
 .vpn-modal .err{color:var(--bad);font-size:.8rem;margin:.5rem 0 0;min-height:1.1rem}
+.dispatch-source{border:1px solid var(--line);border-radius:10px;padding:.85rem 1rem;margin:.65rem 0;
+  background:color-mix(in srgb, var(--panel-2) 65%, transparent)}
+.dispatch-source-top{display:flex;justify-content:space-between;gap:.75rem;align-items:flex-start}
+.dispatch-source-title{margin:0;font-size:.92rem;font-weight:650}
+.dispatch-source-meta{font-size:.78rem;color:var(--muted);margin-top:.25rem;word-break:break-all}
+.dispatch-source-actions{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.65rem}
 .panel-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:.75rem}
 .panel-grid iframe{width:100%;height:210px;border:0;border-radius:10px;
   background:color-mix(in srgb, var(--panel) 60%, transparent)}
@@ -427,6 +435,257 @@ const bindNzbServerList = (listEl, addBtn) => {
   if (addBtn) addBtn.onclick = () => {
     listEl.insertAdjacentHTML('beforeend', nzbServerRowHtml(emptyNzbServer(), listEl.children.length));
   };
+};
+
+const dispatchStatusBadge = (status) => {
+  const s = String(status || 'unknown').toLowerCase();
+  const ok = s === 'success' || s === 'idle';
+  const cls = ok ? 'vpn-active' : (s === 'error' ? 'watch-badge' : 'vpn-wg');
+  return `<span class="watch-badge ${cls}">${escHtml(status || 'unknown')}</span>`;
+};
+
+const renderDispatchM3uList = (rows=[]) => {
+  const listed = rows.filter(r => !(r.account_type === 'STD' && !r.server_url));
+  if (!listed.length) {
+    return '<p style="color:var(--muted);font-size:.85rem;margin:.5rem 0">No M3U accounts yet.</p>';
+  }
+  return listed.map(row => `
+    <article class="dispatch-source" data-m3u-id="${escAttr(row.id)}">
+      <div class="dispatch-source-top">
+        <div>
+          <h4 class="dispatch-source-title">${escHtml(row.name || 'Unnamed')}</h4>
+          <div class="dispatch-source-meta">${escHtml(row.account_type || '')}${row.server_url ? ` · ${escHtml(row.server_url)}` : ''}${row.max_streams != null ? ` · ${row.max_streams === 0 ? 'unlimited streams' : `${escHtml(String(row.max_streams))} streams`}` : ''}</div>
+        </div>
+        ${dispatchStatusBadge(row.status)}
+      </div>
+      <div class="dispatch-source-actions">
+        <button type="button" class="act" data-dispatch-m3u-refresh="${escAttr(row.id)}">Refresh</button>
+        <button type="button" class="act" data-dispatch-m3u-delete="${escAttr(row.id)}">Delete</button>
+      </div>
+    </article>`).join('');
+};
+
+const renderDispatchEpgList = (rows=[]) => {
+  if (!rows.length) {
+    return '<p style="color:var(--muted);font-size:.85rem;margin:.5rem 0">No EPG sources yet.</p>';
+  }
+  return rows.map(row => `
+    <article class="dispatch-source" data-epg-id="${escAttr(row.id)}">
+      <div class="dispatch-source-top">
+        <div>
+          <h4 class="dispatch-source-title">${escHtml(row.name || 'Unnamed')}</h4>
+          <div class="dispatch-source-meta">${escHtml(row.source_type || '')}${row.url ? ` · ${escHtml(row.url)}` : ''}</div>
+        </div>
+        ${dispatchStatusBadge(row.status)}
+      </div>
+      <div class="dispatch-source-actions">
+        <button type="button" class="act" data-dispatch-epg-refresh="${escAttr(row.id)}">Refresh</button>
+        <button type="button" class="act" data-dispatch-epg-delete="${escAttr(row.id)}">Delete</button>
+      </div>
+    </article>`).join('');
+};
+
+const promptDispatchM3u = () => new Promise((resolve) => {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.innerHTML = `
+    <div class="modal vpn-modal" role="dialog" aria-labelledby="dispatch-m3u-title">
+      <h3 id="dispatch-m3u-title">Add M3U Account</h3>
+      <label for="dispatch-m3u-name">Name</label>
+      <input id="dispatch-m3u-name" autocomplete="off" placeholder="Lumen-direct">
+      <label for="dispatch-m3u-type">Type</label>
+      <select id="dispatch-m3u-type">
+        <option value="XC" selected>Xtream Codes</option>
+        <option value="STD">M3U URL</option>
+      </select>
+      <label for="dispatch-m3u-url">Server URL</label>
+      <input id="dispatch-m3u-url" autocomplete="off" placeholder="https://my.xc4.net">
+      <label for="dispatch-m3u-user">Username</label>
+      <input id="dispatch-m3u-user" autocomplete="username">
+      <label for="dispatch-m3u-pass">Password</label>
+      <input id="dispatch-m3u-pass" type="password" autocomplete="current-password">
+      <label for="dispatch-m3u-streams">Maximum streams</label>
+      <input id="dispatch-m3u-streams" type="number" min="0" step="1" value="0" inputmode="numeric">
+      <p style="color:var(--muted);font-size:.8rem;margin:.25rem 0 0">Concurrent streams for this account. Use 0 for unlimited.</p>
+      <p class="err" id="dispatch-m3u-err"></p>
+      <div class="row" style="margin-top:1rem">
+        <button type="button" class="act primary" id="dispatch-m3u-save">Add Account</button>
+        <button type="button" class="act" id="dispatch-m3u-cancel">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const finish = (value) => { backdrop.remove(); resolve(value); };
+  $('#dispatch-m3u-cancel', backdrop).onclick = () => finish(null);
+  backdrop.onclick = (e) => { if (e.target === backdrop) finish(null); };
+  $('#dispatch-m3u-save', backdrop).onclick = () => {
+    const name = $('#dispatch-m3u-name', backdrop).value.trim();
+    const server_url = $('#dispatch-m3u-url', backdrop).value.trim();
+    const maxRaw = $('#dispatch-m3u-streams', backdrop).value.trim();
+    const max_streams = maxRaw === '' ? 0 : Number(maxRaw);
+    if (!name) { $('#dispatch-m3u-err', backdrop).textContent = 'Name is required.'; return; }
+    if (!server_url) { $('#dispatch-m3u-err', backdrop).textContent = 'Server URL is required.'; return; }
+    if (!Number.isInteger(max_streams) || max_streams < 0) {
+      $('#dispatch-m3u-err', backdrop).textContent = 'Maximum streams must be 0 or a positive whole number.';
+      return;
+    }
+    finish({
+      name,
+      account_type: $('#dispatch-m3u-type', backdrop).value,
+      server_url,
+      username: $('#dispatch-m3u-user', backdrop).value.trim(),
+      password: $('#dispatch-m3u-pass', backdrop).value,
+      max_streams,
+    });
+  };
+});
+
+const promptDispatchEpg = () => new Promise((resolve) => {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.innerHTML = `
+    <div class="modal vpn-modal" role="dialog" aria-labelledby="dispatch-epg-title">
+      <h3 id="dispatch-epg-title">Add EPG Source</h3>
+      <label for="dispatch-epg-name">Name</label>
+      <input id="dispatch-epg-name" autocomplete="off" placeholder="Provider EPG">
+      <label for="dispatch-epg-type">Type</label>
+      <select id="dispatch-epg-type">
+        <option value="xmltv" selected>XMLTV URL</option>
+        <option value="schedules_direct">Schedules Direct</option>
+        <option value="dummy">Custom Dummy EPG</option>
+      </select>
+      <label for="dispatch-epg-url">URL</label>
+      <input id="dispatch-epg-url" autocomplete="off" placeholder="https://example.com/epg.xml">
+      <label for="dispatch-epg-user">Username</label>
+      <input id="dispatch-epg-user" autocomplete="username">
+      <label for="dispatch-epg-pass">Password</label>
+      <input id="dispatch-epg-pass" type="password" autocomplete="current-password">
+      <p class="err" id="dispatch-epg-err"></p>
+      <div class="row" style="margin-top:1rem">
+        <button type="button" class="act primary" id="dispatch-epg-save">Add Source</button>
+        <button type="button" class="act" id="dispatch-epg-cancel">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(backdrop);
+  const finish = (value) => { backdrop.remove(); resolve(value); };
+  $('#dispatch-epg-cancel', backdrop).onclick = () => finish(null);
+  backdrop.onclick = (e) => { if (e.target === backdrop) finish(null); };
+  $('#dispatch-epg-save', backdrop).onclick = () => {
+    const name = $('#dispatch-epg-name', backdrop).value.trim();
+    const source_type = $('#dispatch-epg-type', backdrop).value;
+    const url = $('#dispatch-epg-url', backdrop).value.trim();
+    if (!name) { $('#dispatch-epg-err', backdrop).textContent = 'Name is required.'; return; }
+    if (source_type === 'xmltv' && !url) {
+      $('#dispatch-epg-err', backdrop).textContent = 'URL is required for XMLTV sources.';
+      return;
+    }
+    finish({
+      name,
+      source_type,
+      url,
+      username: $('#dispatch-epg-user', backdrop).value.trim(),
+      password: $('#dispatch-epg-pass', backdrop).value,
+    });
+  };
+});
+
+const loadDispatcharrSources = async () => {
+  const m3uBox = $('#dispatcharr-m3u-list');
+  const epgBox = $('#dispatcharr-epg-list');
+  const note = $('#dispatcharr-sources-note');
+  if (!m3uBox || !epgBox) return;
+  if (note) note.textContent = 'Loading Dispatcharr sources…';
+  try {
+    const [m3u, epg] = await Promise.all([
+      api('/dispatcharr/m3u'),
+      api('/dispatcharr/epg'),
+    ]);
+    m3uBox.innerHTML = renderDispatchM3uList(m3u.accounts || []);
+    epgBox.innerHTML = renderDispatchEpgList(epg.sources || []);
+    if (note) note.textContent = '';
+  } catch (e) {
+    m3uBox.innerHTML = '';
+    epgBox.innerHTML = '';
+    if (note) note.innerHTML = `<span style="color:var(--bad)">${escHtml(e.message || String(e))}</span>`;
+  }
+};
+
+const bindDispatcharrSources = () => {
+  const msg = $('#live-tv-msg');
+  const showMsg = (html) => { if (msg) msg.innerHTML = html; };
+  $('#dispatcharr-m3u-add')?.addEventListener('click', async () => {
+    const body = await promptDispatchM3u();
+    if (!body) return;
+    showMsg('<div class="banner" style="border:1px solid var(--line)">Adding M3U account… this can take a few minutes.</div>');
+    try {
+      await api('/dispatcharr/m3u', {method:'POST', body: JSON.stringify(body)});
+      showMsg('<div class="banner ok">M3U account added.</div>');
+      await loadDispatcharrSources();
+    } catch (e) {
+      showMsg(`<div class="banner bad">${escHtml(e.message || String(e))}</div>`);
+    }
+  });
+  $('#dispatcharr-epg-add')?.addEventListener('click', async () => {
+    const body = await promptDispatchEpg();
+    if (!body) return;
+    showMsg('<div class="banner" style="border:1px solid var(--line)">Adding EPG source…</div>');
+    try {
+      await api('/dispatcharr/epg', {method:'POST', body: JSON.stringify(body)});
+      showMsg('<div class="banner ok">EPG source added.</div>');
+      await loadDispatcharrSources();
+    } catch (e) {
+      showMsg(`<div class="banner bad">${escHtml(e.message || String(e))}</div>`);
+    }
+  });
+  $('#dispatcharr-m3u-list')?.addEventListener('click', async (e) => {
+    const refreshBtn = e.target.closest('[data-dispatch-m3u-refresh]');
+    const deleteBtn = e.target.closest('[data-dispatch-m3u-delete]');
+    if (refreshBtn) {
+      showMsg('<div class="banner" style="border:1px solid var(--line)">Refreshing M3U account…</div>');
+      try {
+        await api(`/dispatcharr/m3u/${refreshBtn.dataset.dispatchM3uRefresh}/refresh`, {method:'POST'});
+        showMsg('<div class="banner ok">M3U refresh started.</div>');
+        await loadDispatcharrSources();
+      } catch (err) {
+        showMsg(`<div class="banner bad">${escHtml(err.message || String(err))}</div>`);
+      }
+      return;
+    }
+    if (deleteBtn) {
+      if (!confirm('Delete this M3U account from Dispatcharr?')) return;
+      try {
+        await api(`/dispatcharr/m3u/${deleteBtn.dataset.dispatchM3uDelete}`, {method:'DELETE'});
+        showMsg('<div class="banner ok">M3U account deleted.</div>');
+        await loadDispatcharrSources();
+      } catch (err) {
+        showMsg(`<div class="banner bad">${escHtml(err.message || String(err))}</div>`);
+      }
+    }
+  });
+  $('#dispatcharr-epg-list')?.addEventListener('click', async (e) => {
+    const refreshBtn = e.target.closest('[data-dispatch-epg-refresh]');
+    const deleteBtn = e.target.closest('[data-dispatch-epg-delete]');
+    if (refreshBtn) {
+      showMsg('<div class="banner" style="border:1px solid var(--line)">Refreshing EPG source…</div>');
+      try {
+        await api(`/dispatcharr/epg/${refreshBtn.dataset.dispatchEpgRefresh}/refresh`, {method:'POST'});
+        showMsg('<div class="banner ok">EPG refresh started.</div>');
+        await loadDispatcharrSources();
+      } catch (err) {
+        showMsg(`<div class="banner bad">${escHtml(err.message || String(err))}</div>`);
+      }
+      return;
+    }
+    if (deleteBtn) {
+      if (!confirm('Delete this EPG source from Dispatcharr?')) return;
+      try {
+        await api(`/dispatcharr/epg/${deleteBtn.dataset.dispatchEpgDelete}`, {method:'DELETE'});
+        showMsg('<div class="banner ok">EPG source deleted.</div>');
+        await loadDispatcharrSources();
+      } catch (err) {
+        showMsg(`<div class="banner bad">${escHtml(err.message || String(err))}</div>`);
+      }
+    }
+  });
 };
 
 const promptNzbgetServers = (existing=[]) => new Promise((resolve) => {
@@ -1664,8 +1923,19 @@ render.vpn = async () => {
 };
 
 
+const fmtBytes = (n) => {
+  const x = Number(n) || 0;
+  if (x < 1024) return `${x} B`;
+  if (x < 1024 * 1024) return `${(x / 1024).toFixed(1)} KB`;
+  if (x < 1024 * 1024 * 1024) return `${(x / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(x / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+};
+
 render.status = async () => {
-  const s = await api('/status');
+  const [s, bak] = await Promise.all([
+    api('/status'),
+    api('/backups').catch(() => ({snapshots: []})),
+  ]);
   const disk = (label, d) => d.error
     ? `<div class="card"><h3>${label}</h3><p>${d.path}</p><p style="color:var(--warn)">${d.error}</p></div>`
     : `<div class="card">
@@ -1676,6 +1946,21 @@ render.status = async () => {
        </div>`;
   const jobs = s.jobs || {};
   const pending = (jobs.updates?.pending || []);
+  const snaps = bak.snapshots || [];
+  const snapRows = snaps.length
+    ? snaps.map(row => `
+      <article class="dispatch-source" data-backup="${escAttr(row.name)}">
+        <div class="dispatch-source-top">
+          <div>
+            <h4 class="dispatch-source-title">${escHtml(row.name)}</h4>
+            <div class="dispatch-source-meta">${escHtml(row.created || row.mtime || '')} · ${fmtBytes(row.size_bytes)}</div>
+          </div>
+        </div>
+        <div class="dispatch-source-actions">
+          <button type="button" class="act" data-backup-restore="${escAttr(row.name)}">Restore</button>
+        </div>
+      </article>`).join('')
+    : '<p style="color:var(--muted);font-size:.85rem;margin:.5rem 0">No snapshots yet. Create one with Back Up Now.</p>';
   render.shell(`
     <div class="section"><h2>Storage</h2><div class="grid">
       ${disk('Stack', s.disks.stack)}${disk('Media and downloads', s.disks.data)}
@@ -1687,11 +1972,50 @@ render.status = async () => {
                             : 'Everything is on its pinned image'}</p></div>
       <div class="card"><h3>Config Backup</h3>
         <p>Last run: ${jobs.backup?.ran || 'never'}</p>
-        <p>${jobs.backup?.path || 'no snapshot recorded'}</p></div>
+        <p style="font-size:.8rem;color:var(--muted);word-break:break-all">${jobs.backup?.path || 'no snapshot recorded'}</p></div>
+    </div></div>
+    <div class="section"><h2>Backup and Restore</h2><div class="card">
+      <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
+        Snapshots include enabled apps (<code>COMPOSE_PROFILES</code>) and each app's
+        config under the stack. Media files are not included. Restore stops apps,
+        replaces config and profiles from the snapshot, then starts the stack again.</p>
+      <div class="row" style="margin:0 0 1rem">
+        <button type="button" class="act primary" id="backup-now">Back Up Now</button>
+      </div>
+      <div id="backup-msg"></div>
+      <div id="backup-list">${snapRows}</div>
     </div></div>
     ${Object.keys(jobs.errors||{}).length ? `<div class="banner bad">
       Job errors: ${Object.entries(jobs.errors).map(([k,v])=>k+': '+v).join(' | ')}</div>`:''}
   `);
+  const msg = $('#backup-msg');
+  const show = (html) => { if (msg) msg.innerHTML = html; };
+  $('#backup-now')?.addEventListener('click', async () => {
+    show('<div class="banner" style="border:1px solid var(--line)">Creating snapshot…</div>');
+    try {
+      const r = await api('/backup', {method:'POST'});
+      if (!r.ok) throw new Error(r.log || 'Backup failed');
+      show(`<div class="banner ok">Saved ${escHtml(r.path || 'snapshot')}</div>`);
+      await render.status();
+    } catch (e) {
+      show(`<div class="banner bad">${escHtml(e.message || String(e))}</div>`);
+    }
+  });
+  $('#backup-list')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-backup-restore]');
+    if (!btn) return;
+    const name = btn.dataset.backupRestore;
+    if (!confirm(`Restore ${name}?\n\nThis replaces app configs and which apps are enabled, then restarts the stack. Media is unchanged.`)) return;
+    show(`<div class="banner" style="border:1px solid var(--line)">Restoring ${escHtml(name)}… apps will restart.</div>`);
+    try {
+      const r = await api('/backups/restore', {method:'POST', body: JSON.stringify({name})});
+      if (!r.ok) throw new Error(r.log || 'Restore failed');
+      show(`<div class="banner ok">Restored ${escHtml(name)}. Reloading…</div>`);
+      setTimeout(() => location.reload(), 2500);
+    } catch (err) {
+      show(`<div class="banner bad">${escHtml(err.message || String(err))}</div>`);
+    }
+  });
 };
 
 render.settings = async () => {
@@ -1914,15 +2238,28 @@ render.settings = async () => {
     </div></div>
     <div class="section"><h2>Live TV</h2><div class="card">
       <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
-        After you create a Dispatcharr admin and API token in its profile page,
-        paste the token here. Helm wires Emby’s HDHomeRun tuner and updates
-        ECM / Teamarr.</p>
+        Helm talks to Dispatcharr directly — no embed login required.
+        When Dispatcharr is enabled, the admin API token is generated automatically
+        on first use (same random key Dispatcharr would create in Users → API key).
+        You can paste a different token below if you prefer.</p>
       <label>Dispatcharr API Token</label>
       <input id="DISPATCHARR_TOKEN" value="${esc(s.DISPATCHARR_TOKEN)}" autocomplete="off">
       <div class="row" style="margin-top:1rem">
-        <button class="act primary" id="save-live-tv" type="button">Save Live TV</button>
+        <button class="act primary" id="save-live-tv" type="button">Save Token</button>
       </div>
       <div id="live-tv-msg"></div>
+      ${s.dispatcharr_enabled ? `
+      <h3 style="margin:1.5rem 0 .35rem;font-size:.85rem">M3U Accounts</h3>
+      <p id="dispatcharr-sources-note" style="color:var(--muted);font-size:.8rem;margin:0 0 .5rem"></p>
+      <div id="dispatcharr-m3u-list"></div>
+      <div class="row" style="margin:.5rem 0 1rem">
+        <button type="button" class="act" id="dispatcharr-m3u-add">Add M3U Account</button>
+      </div>
+      <h3 style="margin:1.25rem 0 .35rem;font-size:.85rem">EPG Sources</h3>
+      <div id="dispatcharr-epg-list"></div>
+      <div class="row" style="margin:.5rem 0 .25rem">
+        <button type="button" class="act" id="dispatcharr-epg-add">Add EPG Source</button>
+      </div>` : `<p style="color:var(--muted);font-size:.85rem;margin:1rem 0 0">Enable Dispatcharr on the Apps tab to manage sources here.</p>`}
     </div></div>
     <div class="section"><h2>Subtitles</h2><div class="card">
       <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
@@ -1960,6 +2297,10 @@ render.settings = async () => {
       <div id="nzbget-msg"></div>
     </div></div>`);
   bindNzbServerList($('#nzb-settings-list'), $('#nzb-settings-add'));
+  if (s.dispatcharr_enabled) {
+    bindDispatcharrSources();
+    loadDispatcharrSources();
+  }
   const sharesBox = $('#nfs-shares');
   if (sharesBox) sharesBox.style.display = 'block';
   $('#save').onclick = async () => {
@@ -2042,6 +2383,7 @@ render.settings = async () => {
       } else {
         msg.innerHTML = '<div class="banner ok">Saved. Emby tuner and ECM/Teamarr will use this token.</div>';
       }
+      if (s.dispatcharr_enabled) await loadDispatcharrSources();
     } catch (e) {
       msg.innerHTML = `<div class="banner bad">${esc(e.message || 'Could not save')}</div>`;
     }
@@ -2085,7 +2427,11 @@ render.settings = async () => {
   bindMediaPortToggle('EMBY_USE_SSL', 'EMBY_PORT', 443, 8096);
   $('#bk').onclick = async () => {
     const r = await api('/backup', {method:'POST'});
-    $('#msg').innerHTML = `<div class="banner ok">Backup: ${r.path}</div>`;
+    if (!r.ok) {
+      $('#msg').innerHTML = `<div class="banner bad">Backup failed</div>`;
+      return;
+    }
+    $('#msg').innerHTML = `<div class="banner ok">Backup: ${esc(r.path)}</div>`;
   };
   if (s.NFS_SERVER) await loadNfsShares(false);
 };

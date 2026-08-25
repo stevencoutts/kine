@@ -16,8 +16,8 @@ Two of them, and both are deliberately conservative:
                  before Sign In, so the first link needs a later pass).
 
   dispatcharr-wire
-                 after DISPATCHARR_TOKEN is set in Settings, links Emby
-                 HDHomeRun and fills ECM/Teamarr env tokens.
+                 auto-generates a Dispatcharr admin API key when missing,
+                 then links Emby HDHomeRun and fills ECM/Teamarr env tokens.
 """
 import asyncio
 import contextlib
@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 import httpx
 from croniter import croniter
 
-from . import compose, config, metrics, provision_lock, updates_info
+from . import compose, config, dispatcharr_token, metrics, provision_lock, updates_info
 
 STATE = pathlib.Path("/stack/helm-jobs.json")
 SEERR_SETTINGS = pathlib.Path("/stack/config/seerr/settings.json")
@@ -269,6 +269,7 @@ async def _dispatcharr_wire_loop() -> None:
     await asyncio.sleep(60)
     while True:
         try:
+            await dispatcharr_token.ensure_token(write_env=True)
             await wire_dispatcharr_if_ready()
         except Exception as exc:  # noqa: BLE001
             data = _load()
