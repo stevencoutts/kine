@@ -292,19 +292,32 @@ def _rewrite_js(text: str, prefix: str) -> str:
     iframe content area stays black. Minified symbol names change between
     builds (``W6`` → ``J6``), so detect BrowserRouter by its function signature
     and inject basename at the call site.
+
+    Call-site shapes vary by bundler:
+    - Dispatcharr (webpack): ``jsxs(J6,{children:…})``
+    - Teamarr (Vite): ``(0,P.jsx)(An,{children:…})``
     """
     match = _BROWSER_ROUTER_DEF.search(text)
     if not match:
         return text
     sym = match.group(1)
+    # Already patched (any known call shape).
+    if re.search(rf"(?:jsxs?|\([^)]+\.jsxs?\))\({re.escape(sym)},\{{basename:", text):
+        return text
     for kind in ("jsxs", "jsx"):
-        opener = f"{kind}({sym},{{children:"
-        if opener not in text:
-            continue
-        if f"{kind}({sym},{{basename:" in text:
-            return text
-        injected = f"{kind}({sym},{{basename:{prefix!r},children:"
-        return text.replace(opener, injected, 1)
+        for opener in (
+            f"{kind}({sym},{{children:",
+            # Vite / esbuild jsx-runtime: (0,mod.jsx)(Sym,{children:
+            f".{kind})({sym},{{children:",
+        ):
+            if opener not in text:
+                continue
+            injected = opener.replace(
+                f"{sym},{{children:",
+                f"{sym},{{basename:{prefix!r},children:",
+                1,
+            )
+            return text.replace(opener, injected, 1)
     return text
 
 
@@ -418,7 +431,15 @@ async def proxy_websocket(app_id: str, path: str, websocket: WebSocket) -> None:
     target = upstream_ws_url(app_id, path, websocket.url.query)
     await websocket.accept()
     try:
-        async with websockets.connect(target, open_timeout=10, max_size=2**20) as upstream:
+        # ping_interval=None: we are a byte-relay, not an endpoint. Default
+        # client pings fight some app servers (Dispatcharr) and drop the
+        # socket every ~20–60s → perpetual "WebSocket Reconnecting" toast.
+        async with websockets.connect(
+            target,
+            open_timeout=10,
+            max_size=8 * 2**20,
+            ping_interval=None,
+        ) as upstream:
             async def client_to_upstream() -> None:
                 try:
                     while True:

@@ -140,6 +140,16 @@ def test_rewrite_js_detects_renamed_browser_router_symbol():
     assert "jsxs(W6," not in out
 
 
+def test_rewrite_js_injects_basename_for_vite_jsx_runtime_calls():
+    """Teamarr's Vite build calls BrowserRouter as (0,P.jsx)(An,{children:…})."""
+    js = (
+        "function An({basename:e,children:t,useTransitions:n,window:r}){}"
+        "const root=(0,P.jsx)(hv,{}),(0,P.jsx)(An,{children:(0,P.jsx)(Bt,{path:`/`})})"
+    )
+    out = embed_proxy._rewrite_js(js, "/view/teamarr")
+    assert "(0,P.jsx)(An,{basename:'/view/teamarr',children:" in out
+
+
 def test_rewrite_js_leaves_unrelated_bundles_unchanged():
     js = "console.log('jsxs(W6,{children:');"
     assert embed_proxy._rewrite_js(js, "/view/dispatcharr") == js

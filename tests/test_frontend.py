@@ -135,8 +135,11 @@ def test_open_embeds_arr_apps_same_origin():
     assert "openEmbed" in FRONTEND
     assert "embed_url" in FRONTEND
     assert "embed-overlay" in FRONTEND
+    # overflow:hidden clips capital glyph side-bearings without a hair of padding
+    assert ".embed-bar h2" in FRONTEND and "padding-inline:2px" in FRONTEND
     assert "/view/" in (ROOT / "helm" / "backend" / "app" / "embed_proxy.py").read_text()
     assert "embed_proxy.mount" in BACKEND
+    assert "ping_interval=None" in (ROOT / "helm" / "backend" / "app" / "embed_proxy.py").read_text()
     cat = (ROOT / "catalogue.yml").read_text()
     assert "embed: true" in cat
     # Transmission and NZBGet use the same same-origin embed path as the *arr apps.
