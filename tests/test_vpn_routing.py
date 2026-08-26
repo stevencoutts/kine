@@ -1,0 +1,146 @@
+"""Compose override generator for multi-Gluetun egress."""
+import pathlib
+import sys
+
+import yaml
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "helm" / "backend"))
+
+from app import vpn_routing  # noqa: E402
+
+VALID_WG = """[Interface]
+PrivateKey = YJqK8nV3mP0sL2wQ9eR5tY7uI1oP3aS4dF6gH8jK0lM=
+Address = 10.2.0.2/32
+[Peer]
+PublicKey = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx=
+Endpoint = 1.2.3.4:51820
+"""
+
+PRIMARY_ID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+SECONDARY_ID = "11111111-2222-3333-4444-555555555555"
+
+
+def _sample_data():
+    return {
+        "primary_id": PRIMARY_ID,
+        "profiles": [
+            {
+                "id": PRIMARY_ID,
+                "apps": [],
+                "conf": VALID_WG,
+                "type": "wireguard",
+            },
+            {
+                "id": SECONDARY_ID,
+                "apps": ["dispatcharr"],
+                "conf": VALID_WG,
+                "type": "wireguard",
+            },
+        ],
+    }
+
+
+def test_app_ports_and_traefik_hosts():
+    assert vpn_routing.APP_PORTS["sonarr"] == 8989
+    assert vpn_routing.APP_PORTS["radarr"] == 7878
+    assert vpn_routing.APP_PORTS["dispatcharr"] == 9191
+    assert vpn_routing.APP_PORTS["ecm"] == 6100
+    assert vpn_routing.APP_PORTS["teamarr"] == 9195
+    assert vpn_routing.APP_TRAEFIK_HOST["dispatcharr"] == "tv"
+    assert vpn_routing.APP_TRAEFIK_HOST["ecm"] == "channels"
+    assert vpn_routing.APP_TRAEFIK_HOST["teamarr"] == "sports"
+    assert vpn_routing.APP_TRAEFIK_HOST["sonarr"] == "sonarr"
+
+
+def test_render_override_secondary_and_network_mode():
+    data = _sample_data()
+    text = vpn_routing.render_override(
+        data,
+        enabled_apps={"dispatcharr", "sonarr", "gluetun"},
+        stack_root="/srv/kine",
+        kine_domain="example.com",
+        kine_local_domain="kine.local",
+    )
+    assert "gluetun_11111111:" in text
+    assert "network_mode: service:gluetun_11111111" in text
+    assert "dispatcharr" in text
+    assert (
+        "service:gluetun\n" in text
+        or 'service:gluetun"' in text
+        or "service:gluetun" in text
+    )
+    assert "sonarr:" in text
+    assert text.index("sonarr:") < text.index("network_mode:") or "sonarr" in text
+
+    assert "kine-gluetun-11111111" in text
+    assert "traefik.http.routers.dispatcharr" in text
+    assert "traefik.http.routers.sonarr" in text
+
+    sec = text.split("gluetun_11111111:", 1)[1].split("\n  sonarr:", 1)[0]
+    assert "traefik.http.routers.dispatcharr" in sec
+    assert "traefik.http.routers.sonarr" not in sec
+
+    prim = text.split("gluetun:", 1)[1].split("\n  gluetun_11111111:", 1)[0]
+    assert "traefik.http.routers.sonarr" in prim
+    assert "traefik.http.routers.dispatcharr" not in prim
+
+
+def test_secondary_embeds_wireguard_from_parse_conf():
+    data = _sample_data()
+    text = vpn_routing.render_override(
+        data,
+        enabled_apps={"dispatcharr", "gluetun"},
+        stack_root="/srv/kine",
+        kine_domain="example.com",
+        kine_local_domain="kine.local",
+    )
+    doc = yaml.safe_load(text)
+    env = doc["services"]["gluetun_11111111"]["environment"]
+    assert env["VPN_SERVICE_PROVIDER"] == "custom"
+    assert env["VPN_TYPE"] == "wireguard"
+    assert env["WIREGUARD_PRIVATE_KEY"] == (
+        "YJqK8nV3mP0sL2wQ9eR5tY7uI1oP3aS4dF6gH8jK0lM="
+    )
+    assert env["WIREGUARD_ADDRESSES"] == "10.2.0.2/32"
+    assert env["WIREGUARD_PUBLIC_KEY"] == (
+        "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx="
+    )
+    assert env["WIREGUARD_ENDPOINT_IP"] == "1.2.3.4"
+    assert env["WIREGUARD_ENDPOINT_PORT"] == "51820"
+    # Must not be primary .env placeholders
+    assert "${WIREGUARD_PRIVATE_KEY" not in text
+
+
+def test_app_overrides_depend_on_correct_tunnel():
+    data = _sample_data()
+    text = vpn_routing.render_override(
+        data,
+        enabled_apps={"dispatcharr", "sonarr", "gluetun"},
+        stack_root="/srv/kine",
+        kine_domain="example.com",
+        kine_local_domain="kine.local",
+    )
+    doc = yaml.safe_load(text)
+    assert doc["services"]["sonarr"]["network_mode"] == "service:gluetun"
+    assert doc["services"]["sonarr"]["depends_on"] == {
+        "gluetun": {"condition": "service_healthy"},
+    }
+    assert doc["services"]["dispatcharr"]["network_mode"] == (
+        "service:gluetun_11111111"
+    )
+    assert doc["services"]["dispatcharr"]["depends_on"] == {
+        "gluetun_11111111": {"condition": "service_healthy"},
+    }
+
+
+def test_write_override(tmp_path):
+    path = vpn_routing.write_override(tmp_path, "services: {}\n")
+    assert path == tmp_path / vpn_routing.ROUTING_REL
+    assert path.read_text() == "services: {}\n"
+
+
+def test_routing_stub_exists():
+    stub = ROOT / "compose" / "vpn-routing.override.yml"
+    assert stub.is_file()
+    assert yaml.safe_load(stub.read_text()) == {"services": {}}
