@@ -12,15 +12,29 @@ import ast
 import pathlib
 import re
 import subprocess
+import sys
 
 import pytest
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "helm" / "backend"))
+from app import vpn_routing  # noqa: E402
+
 CATALOGUE = yaml.safe_load((ROOT / "catalogue.yml").read_text())["apps"]
 FRAGMENTS = sorted((ROOT / "compose").glob("*.yml"))
 HELM_MAIN = ROOT / "helm" / "backend" / "app" / "main.py"
 VPN_LEAKTEST = ROOT / "scripts" / "vpn-leaktest.sh"
+
+
+def _generated_primary_tunnel_labels() -> list[str]:
+    """Traefik labels Helm used to write onto primary gluetun (for stack tests)."""
+    routed = [app for app in vpn_routing.APP_PORTS if app in vpn_routing.APP_TRAEFIK_HOST]
+    return vpn_routing._traefik_router_label_lines(
+        routed,
+        kine_domain="${KINE_DOMAIN}",
+        kine_local_domain="${KINE_LOCAL_DOMAIN}",
+    )
 
 
 def fragments():
@@ -31,6 +45,15 @@ def fragments():
         data = yaml.safe_load(f.read_text()) or {}
         for name, svc in (data.get("services") or {}).items():
             out[name] = (f.name, svc)
+    # Static vpn.gluetun.yml no longer carries app routers; merge what the
+    # generator places on primary when all forced apps are leftovers.
+    if "gluetun" in out:
+        fname, svc = out["gluetun"]
+        labels = svc.get("labels") or []
+        if not any("traefik.http.routers." in str(l) for l in labels):
+            merged = dict(svc)
+            merged["labels"] = _generated_primary_tunnel_labels()
+            out["gluetun"] = (fname, merged)
     return out
 
 
@@ -146,7 +169,8 @@ cat "$1"
 
 def test_leaktest_probes_from_inside_gluetun():
     script = VPN_LEAKTEST.read_text()
-    assert "docker exec kine-gluetun wget" in script
+    assert 'docker exec "$container" wget' in script or "docker exec kine-gluetun wget" in script
+    assert "kine-gluetun" in script
     assert "--network container:kine-gluetun" not in script
 
 
@@ -154,11 +178,22 @@ def test_updating_gluetun_recreates_tunnelled_apps():
     """Recreating gluetun alone orphans every network_mode: service:gluetun
     container on the old namespace — Seerr then cannot reach Radarr/Sonarr."""
     script = (ROOT / "scripts" / "updates.sh").read_text()
-    assert 'svc" == "gluetun"' in script
+    assert 'svc" == "gluetun"' in script or "gluetun_*" in script or "gluetun-*" in script
     assert "force-recreate" in script
     assert "service:gluetun" in script
     assert "tunnel_heal" in script or "heal-tunnel" in script
     assert "Healing tunnel orphans" in script
+
+
+def test_compose_includes_vpn_routing_override():
+    text = (ROOT / "docker-compose.yml").read_text()
+    assert "compose/vpn-routing.override.yml" in text
+
+
+def test_static_gluetun_has_no_vpn_routing_app_traefik_routers():
+    text = (ROOT / "compose" / "vpn.gluetun.yml").read_text()
+    assert "traefik.http.routers.sonarr" not in text
+    assert "vpn-routing.override" in text or "generated" in text.lower()
 
 
 def test_top_level_includes_every_fragment():

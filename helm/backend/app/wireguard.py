@@ -110,11 +110,23 @@ def parse_conf(text: str) -> dict[str, str]:
     return out
 
 
-def write_gluetun_conf(text: str, stack_root: str) -> None:
-    """Persist the pasted config as ``wg0.conf`` under ``${STACK_ROOT}/config/gluetun``."""
-    root = pathlib.Path(stack_root) / "config" / "gluetun" / "wireguard"
+def write_gluetun_conf_at(text: str, conf_dir: pathlib.Path) -> None:
+    """Persist ``wg0.conf`` under ``conf_dir/wireguard/``."""
+    root = pathlib.Path(conf_dir) / "wireguard"
     root.mkdir(parents=True, exist_ok=True)
     (root / "wg0.conf").write_text(text.strip() + "\n")
+
+
+def write_gluetun_conf(text: str, stack_root: str) -> None:
+    """Persist the pasted config as ``wg0.conf`` under ``${STACK_ROOT}/config/gluetun``."""
+    write_gluetun_conf_at(text, pathlib.Path(stack_root) / "config" / "gluetun")
+
+
+def write_secondary_conf(stack_root: str, short_id: str, text: str) -> None:
+    """Persist secondary tunnel conf under ``config/gluetun-<shortId>/wireguard/``."""
+    write_gluetun_conf_at(
+        text, pathlib.Path(stack_root) / "config" / f"gluetun-{short_id}"
+    )
 
 
 def remove_gluetun_conf(stack_root: str) -> None:

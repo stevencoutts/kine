@@ -11,10 +11,16 @@ ports are free on the host.
 
 # Port map inside the tunnel
 
-Every tier 2 application shares gluetun's network namespace, which
-means they share one port space. Two apps wanting the same port is not
-a configuration clash to resolve later; it is a container that will not
-start. Anything added to tier 2 must claim a free port here first.
+Every tier 2 application shares its tunnel container's network namespace,
+which means they share one port space per tunnel. Two apps wanting the
+same port on the same tunnel is not a configuration clash to resolve
+later; it is a container that will not start. Anything added to tier 2
+must claim a free port here first.
+
+With multiple VPN profiles, each running tunnel has its own namespace.
+The primary profile uses `gluetun`; other profiles with assigned apps
+get `gluetun-<shortId>` (first 8 hex chars of the profile UUID).
+Unassigned forced-tunnel apps stay on the primary tunnel.
 
 | Port | Application | Reached from outside as |
 |---|---|---|
@@ -30,10 +36,16 @@ start. Anything added to tier 2 must claim a free port here first.
 | 9195 | Teamarr | `gluetun:9195` |
 | 9696 | Prowlarr | `gluetun:9696` |
 
-Inside the namespace, apps address each other as `127.0.0.1:<port>`.
-From `kine_internal` (Traefik, Helm, the provisioner, Emby) they are
-`gluetun:<port>`, because gluetun is the container that actually holds
-those sockets.
+Inside a namespace, apps address each other as `127.0.0.1:<port>`.
+From `kine_internal` (Traefik, Helm, the provisioner, Emby) reach a
+tunnelled app as `<tunnel_service>:<port>` — `gluetun:<port>` for apps
+on the primary tunnel, or `gluetun-<shortId>:<port>` when assigned to
+another profile. Helm resolves the owning tunnel from
+`config/helm/vpn-profiles.json`.
+
+Traefik router/service labels follow the owning tunnel: each app's HTTPS
+hostname targets the Gluetun service that currently hosts that app
+(primary or secondary), not a fixed `gluetun` service.
 
 Untunnelled, on their own service names as usual:
 
@@ -43,6 +55,7 @@ Untunnelled, on their own service names as usual:
 | Tdarr | `tdarr:8265` (UI), `tdarr:8266` (server) |
 | Seerr | `seerr:5055` |
 
-Seerr reaches tunnelled Sonarr/Radarr as `gluetun:8989` and
-`gluetun:7878`. Emby reaches Dispatcharr HDHomeRun as
-`gluetun:9191/hdhr`.
+Seerr reaches tunnelled Sonarr/Radarr at each app's assigned tunnel
+host (for example `gluetun:8989` / `gluetun:7878` when both are on the
+primary). Emby reaches Dispatcharr HDHomeRun at
+`<tunnel_service(dispatcharr)>:9191/hdhr`.

@@ -164,6 +164,6 @@ def test_refresh_epg_posts_import(monkeypatch):
     dispatcharr_sources.refresh_epg(9)
     assert seen == {
         "method": "POST",
-        "url": f"{dispatcharr_sources.DISPATCHARR_BASE}/api/epg/import/",
+        "url": f"{dispatcharr_sources.dispatcharr_base()}/api/epg/import/",
         "json": {"id": 9},
     }

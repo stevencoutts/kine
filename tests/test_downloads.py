@@ -151,6 +151,33 @@ def test_parse_nzbget_status_rate():
     assert row["paused"] is False
 
 
+def test_internal_uses_secondary_tunnel(monkeypatch):
+    from app import catalogue, downloads, tunnel_hosts
+
+    monkeypatch.setattr(
+        catalogue,
+        "load",
+        lambda: {
+            "transmission": {
+                "internal": "http://gluetun:9091",
+                "tunnelled": "forced",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        tunnel_hosts,
+        "load_profiles",
+        lambda: {
+            "primary_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "profiles": [
+                {"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "apps": []},
+                {"id": "11111111-2222-3333-4444-555555555555", "apps": ["transmission"]},
+            ],
+        },
+    )
+    assert downloads._internal("transmission") == "http://gluetun-11111111:9091"
+
+
 def test_nzbget_snapshot_fetches_rpc_in_parallel(monkeypatch):
     """listgroups + status must overlap; sequential calls routinely exceed the old 6s timeout."""
     import asyncio

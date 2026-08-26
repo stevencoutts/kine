@@ -6,18 +6,25 @@ from typing import Any, Callable
 
 import httpx
 
+import tunnel_hosts
 from recipes import envfiles
 
-# Emby and provision sit on kine_internal; Dispatcharr shares gluetun's namespace.
-DISPATCHARR_HDHR = "http://gluetun:9191/hdhr"
-DISPATCHARR_BASE = "http://gluetun:9191"
+# Emby and provision sit on kine_internal; Dispatcharr shares its tunnel namespace.
 EMBY_BASE = "http://emby:8096"
+
+
+def dispatcharr_base() -> str:
+    return tunnel_hosts.internal_base_for_app("dispatcharr", 9191)
+
+
+def dispatcharr_hdhr() -> str:
+    return f"{dispatcharr_base()}/hdhr"
 
 
 def tuner_host_payload() -> dict:
     return {
         "Type": "hdhomerun",
-        "Url": DISPATCHARR_HDHR,
+        "Url": dispatcharr_hdhr(),
         "FriendlyName": "Dispatcharr",
         "ImportFavoritesOnly": False,
     }
@@ -28,7 +35,7 @@ def _norm_url(url: str) -> str:
 
 
 def tuner_already_linked(hosts: list) -> bool:
-    want = _norm_url(DISPATCHARR_HDHR)
+    want = _norm_url(dispatcharr_hdhr())
     for host in hosts:
         if not isinstance(host, dict):
             continue

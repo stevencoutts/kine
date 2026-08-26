@@ -242,6 +242,33 @@ def test_collection_records_its_own_duration(monkeypatch):
     assert {s.labels["app"] for s in durations} >= {"good", "total"}
 
 
+def test_base_uses_secondary_tunnel(monkeypatch):
+    from app import tunnel_hosts
+
+    monkeypatch.setattr(
+        metrics.catalogue,
+        "load",
+        lambda: {
+            "sonarr": {
+                "internal": "http://gluetun:8989",
+                "tunnelled": "forced",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        tunnel_hosts,
+        "load_profiles",
+        lambda: {
+            "primary_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "profiles": [
+                {"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "apps": []},
+                {"id": "11111111-2222-3333-4444-555555555555", "apps": ["sonarr"]},
+            ],
+        },
+    )
+    assert metrics._base("sonarr") == "http://gluetun-11111111:8989"
+
+
 def test_update_samples_come_from_the_cache_not_a_live_check(monkeypatch):
     """A live digest check queries every registry and outlasts the
     collection interval, so the collector must only read the cache.

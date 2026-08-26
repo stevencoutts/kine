@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 import httpx
 from croniter import croniter
 
-from . import compose, config, dispatcharr_token, metrics, provision_lock, updates_info
+from . import compose, config, dispatcharr_token, metrics, provision_lock, tunnel_hosts, updates_info
 
 STATE = pathlib.Path("/stack/helm-jobs.json")
 SEERR_SETTINGS = pathlib.Path("/stack/config/seerr/settings.json")
@@ -249,7 +249,7 @@ async def _dispatcharr_needs_wire() -> bool:
             hosts = resp.json() if resp.content else []
             if not isinstance(hosts, list):
                 return True
-            want = "http://gluetun:9191/hdhr"
+            want = f"{tunnel_hosts.internal_base_for_app('dispatcharr', 9191)}/hdhr"
             for host in hosts:
                 if isinstance(host, dict) and str(host.get("Url") or "").rstrip("/") == want:
                     return False

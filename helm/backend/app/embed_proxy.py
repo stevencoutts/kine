@@ -19,7 +19,7 @@ import websockets
 from fastapi import Depends, HTTPException, Request, WebSocket
 from fastapi.responses import Response
 
-from . import auth, catalogue, config
+from . import auth, catalogue, config, tunnel_hosts
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -62,7 +62,7 @@ def upstream_base(app_id: str) -> str:
         raise HTTPException(404, f"{app_id} cannot be embedded")
     if app_id not in config.profiles():
         raise HTTPException(409, f"{app_id} is disabled")
-    return str(meta["internal"]).rstrip("/")
+    return tunnel_hosts.runtime_internal(app_id, meta)
 
 
 def _filter_request_headers(headers: Iterable[tuple[str, str]]) -> dict[str, str]:

@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import acme_env, appkeys, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, profile_reconcile, prowlarr_newznab, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, updates_info, vpn_profiles, watching
+from . import acme_env, appkeys, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, profile_reconcile, prowlarr_newznab, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, tunnel_hosts, updates_info, vpn_profiles, vpn_routing, watching
 import sys
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
@@ -24,6 +24,7 @@ from .wireguard import empty_vpn_env as _empty_vpn_env
 from .wireguard import parse_conf as _parse_wireguard_conf
 from .wireguard import remove_gluetun_conf as _remove_gluetun_conf
 from .wireguard import write_gluetun_conf as _write_gluetun_conf
+from .wireguard import write_secondary_conf as _write_secondary_conf
 
 _REPO = pathlib.Path(os.environ.get("KINE_REPO", "/repo"))
 FRONTEND = _REPO / "helm" / "frontend"
@@ -150,7 +151,7 @@ def _apply_prowlarr_newznab(rows: list[dict] | None = None) -> dict:
         sys.path.insert(0, provision)
     from arrclient import ArrClient, http_error_detail
 
-    client = ArrClient("http://gluetun:9696", key, api="v1", timeout=120.0)
+    client = ArrClient(tunnel_hosts.internal_base_for_app("prowlarr", 9696), key, api="v1", timeout=120.0)
     if not client.wait(timeout=30):
         return {"ok": False, "indexers": len(rows), "error": "prowlarr unreachable"}
     logs: list[str] = []
@@ -219,16 +220,23 @@ def _tunnelled_profiles(profiles: set[str] | None = None) -> list[str]:
 
 
 async def _start_app(app_id: str, profiles: list[str]) -> tuple[int, str]:
-    """Start an app; tunnelled apps recreate the whole gluetun group.
-
-    ``compose up -d <tunnelled>`` can restart gluetun (depends_on health),
-    which orphans every other ``network_mode: service:gluetun`` container.
-    Bring the whole group up together so they share the new namespace.
-    """
-    tunnelled = _tunnelled_profiles(set(profiles))
+    """Start an app; tunnelled apps recreate their owning tunnel group."""
+    env = config.read()
+    active = set(profiles)
+    tunnelled = _tunnelled_profiles(active)
     if app_id == "gluetun" or app_id in tunnelled:
+        if env.get("VPN_ENABLED") == "true":
+            stack = _vpn_stack_root()
+            store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+            await asyncio.to_thread(_vpn_ensure_routing_fs, store, env)
+            svc = (
+                "gluetun"
+                if app_id == "gluetun"
+                else vpn_profiles.tunnel_service(store, app_id)
+            )
+            code, out, _ = await _vpn_recreate_services(store, env, [svc])
+            return code, out
         group = ["gluetun", *tunnelled]
-        # Preserve order, drop duplicates (gluetun first).
         seen: set[str] = set()
         ordered = [s for s in group if not (s in seen or seen.add(s))]
         return await compose.run(
@@ -255,7 +263,16 @@ async def _recreate_media_volume_apps() -> None:
     } & profiles
     media_tunnelled = [a for a in wanted if a in tunnelled]
     standalone = [a for a in wanted if a not in tunnelled]
-    if media_tunnelled and "gluetun" in profiles:
+    if media_tunnelled and env.get("VPN_ENABLED") == "true" and "gluetun" in profiles:
+        stack = _vpn_stack_root()
+        store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+        await asyncio.to_thread(_vpn_ensure_routing_fs, store, env)
+        tunnels = {
+            vpn_profiles.tunnel_service(store, app)
+            for app in media_tunnelled
+        }
+        await _vpn_recreate_services(store, env, sorted(tunnels))
+    elif media_tunnelled and "gluetun" in profiles:
         all_tunnelled = [
             a.strip()
             for a in env.get("VPN_TUNNELLED_APPS", "").split(",")
@@ -283,13 +300,14 @@ async def _apply_domain_routing() -> None:
         if app in profiles:
             routed.append(app)
     await compose.run("up", "-d", "--force-recreate", *routed, timeout=300)
-    if "gluetun" not in profiles:
+    if "gluetun" not in profiles or env.get("VPN_ENABLED") != "true":
         return
-    tunnelled = [a for a in env.get("VPN_TUNNELLED_APPS", "").split(",") if a in profiles]
-    if tunnelled:
-        await compose.run(
-            "up", "-d", "--force-recreate", "gluetun", *tunnelled, timeout=300
-        )
+    stack = _vpn_stack_root()
+    store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+    await asyncio.to_thread(_vpn_ensure_routing_fs, store, env)
+    await _vpn_recreate_services(
+        store, env, vpn_routing.active_tunnel_services(store),
+    )
 
 
 async def reconcile_disabled_running() -> list[str]:
@@ -319,6 +337,20 @@ async def _startup() -> None:
     scheduler.start(app)
     # Fire-and-forget: do not delay healthchecks on a slow compose ps.
     asyncio.create_task(reconcile_disabled_running())
+    asyncio.create_task(_vpn_boot_ensure())
+
+
+async def _vpn_boot_ensure() -> None:
+    """Regenerate routing override and recreate tunnels when VPN is enabled."""
+    env = config.read()
+    if env.get("VPN_ENABLED") != "true":
+        return
+    stack = _vpn_stack_root()
+    try:
+        store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+        await apply_vpn_routing(store, recreate=True)
+    except Exception as exc:
+        print(f"vpn boot ensure failed: {exc}", flush=True)
 
 
 @app.on_event("shutdown")
@@ -1001,50 +1033,266 @@ def _vpn_stack_root() -> str:
     return env.get("STACK_ROOT") or os.environ.get("KINE_ROOT", "/stack")
 
 
-def _vpn_tunnel_group(env: dict | None = None) -> list[str]:
-    """Tunnel services to restart/recreate — only apps the user has enabled."""
-    _ = env  # callers pass freshly-read env; profiles come from config
-    return ["gluetun", "vpn-portsync", *_tunnelled_profiles()]
+def _vpn_enabled_tunnel_apps(env: dict | None = None) -> set[str]:
+    """Catalogue tunnel apps listed in VPN_TUNNELLED_APPS (for override labels)."""
+    e = env if env is not None else config.read()
+    return {
+        a.strip()
+        for a in e.get("VPN_TUNNELLED_APPS", "").split(",")
+        if a.strip() and a.strip() in vpn_routing.APP_PORTS
+    }
 
 
-async def _vpn_recreate_tunnel(env: dict) -> tuple[int, str, list[str]]:
-    group = _vpn_tunnel_group(env)
-    code, out = await compose.run("up", "-d", "--force-recreate", *group, timeout=300)
-    return code, out, group
+def _vpn_ensure_routing_fs(data: dict, env: dict | None = None) -> None:
+    """Regenerate wg0 confs + vpn-routing.generated.yml (no compose recreate)."""
+    e = env if env is not None else config.read()
+    vpn_routing.ensure_generated_stub(_REPO)
+    vpn_routing.apply_filesystem(
+        _vpn_stack_root(),
+        _REPO,
+        data,
+        _vpn_enabled_tunnel_apps(e),
+        kine_domain=e.get("KINE_DOMAIN") or "",
+        kine_local_domain=e.get("KINE_LOCAL_DOMAIN") or "127.0.0.1.nip.io",
+        vpn_enabled=e.get("VPN_ENABLED") == "true",
+    )
 
 
-def _vpn_profile_public(profile: dict) -> dict:
+def _vpn_peers_enabled(env: dict) -> set[str]:
+    enabled = _vpn_enabled_tunnel_apps(env)
+    active = set(_tunnelled_profiles())
+    return enabled & active if active else enabled
+
+
+async def _vpn_stop_services(services: list[str]) -> tuple[int, str]:
+    if not services:
+        return 0, ""
+    code, out = await compose.run("stop", *services, timeout=300)
+    rm_code, rm_out = await compose.run("rm", "-f", *services, timeout=300)
+    return rm_code or code, "\n".join(part for part in (out, rm_out) if part)
+
+
+async def _vpn_recreate_services(
+    store: dict,
+    env: dict,
+    services: list[str],
+) -> tuple[int, str, list[str]]:
+    """Force-recreate each named tunnel group (tunnel + peers)."""
+    peers_enabled = _vpn_peers_enabled(env)
+    logs: list[str] = []
+    recreated: list[str] = []
+    last_code = 0
+    for svc in services:
+        group = vpn_routing.recreate_group(store, svc, peers_enabled)
+        code, out = await compose.run(
+            "up", "-d", "--force-recreate", *group, timeout=300,
+        )
+        if code != 0:
+            last_code = code
+        logs.append(out)
+        recreated.extend(group)
+    return last_code, "\n".join(logs), recreated
+
+
+async def apply_vpn_routing(
+    data: dict | None = None,
+    *,
+    recreate: bool = True,
+    stale_services: set[str] | None = None,
+) -> tuple[int, str, list[str]]:
+    """Write confs + override; optionally recreate each tunnel group.
+
+    Task 6 routes (set_apps / set_primary / rematerialize) should call this.
+    GET /api/vpn uses filesystem ensure only (recreate=False via helper).
+    """
+    env = config.read()
+    vpn_on = env.get("VPN_ENABLED") == "true"
+    stack = _vpn_stack_root()
+    store = data
+    if store is None:
+        store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+    await asyncio.to_thread(_vpn_ensure_routing_fs, store, env)
+    if not recreate:
+        return 0, "", []
+
+    if not vpn_on:
+        peers_enabled = _vpn_peers_enabled(env)
+        stop_group: list[str] = []
+        for svc in vpn_routing.active_tunnel_services(store):
+            stop_group.extend(vpn_routing.recreate_group(store, svc, peers_enabled))
+        if stale_services:
+            for svc in stale_services:
+                stop_group.extend(vpn_routing.recreate_group(store, svc, peers_enabled))
+        seen: set[str] = set()
+        ordered = [s for s in stop_group if not (s in seen or seen.add(s))]
+        code, out = await _vpn_stop_services(ordered)
+        return code, out, ordered
+
+    peers_enabled = _vpn_peers_enabled(env)
+    stale = set(vpn_routing.stale_secondary_services(store))
+    if stale_services:
+        stale |= stale_services
+    if stale:
+        stop_group: list[str] = []
+        for svc in sorted(stale):
+            stop_group.extend(vpn_routing.recreate_group(store, svc, peers_enabled))
+        seen: set[str] = set()
+        ordered = [s for s in stop_group if not (s in seen or seen.add(s))]
+        code, out = await _vpn_stop_services(ordered)
+    else:
+        code, out = 0, ""
+
+    rec_code, rec_out, recreated = await _vpn_recreate_services(
+        store, env, vpn_routing.active_tunnel_services(store),
+    )
+    return rec_code or code, "\n".join(part for part in (out, rec_out) if part), recreated
+
+
+def _vpn_profile_public(profile: dict, *, primary_id: str | None = None) -> dict:
     return {
         "id": profile.get("id"),
         "name": profile.get("name") or "Unnamed",
         "type": profile.get("type") or "wireguard",
         "updated_at": profile.get("updated_at"),
+        "primary": profile.get("id") == primary_id if primary_id is not None else False,
+        "apps": list(profile.get("apps") or []),
         "conf": vpn_profiles.redact_conf(profile.get("conf") or ""),
     }
+
+
+def _vpn_forced_assignable() -> set[str]:
+    """Catalogue tunnelled:forced apps that are currently enabled."""
+    cat = catalogue.load()
+    enabled = set(config.profiles())
+    return {
+        app
+        for app, meta in cat.items()
+        if isinstance(meta, dict)
+        and meta.get("tunnelled") == "forced"
+        and app in enabled
+    }
+
+
+def _vpn_assignable_apps() -> list[dict[str, str]]:
+    cat = catalogue.load()
+    return [
+        {"id": app, "name": (cat.get(app) or {}).get("name") or app}
+        for app in sorted(_vpn_forced_assignable())
+    ]
+
+
+def _vpn_running_services(store: dict) -> list[str]:
+    """Compose service names for primary + secondaries that own apps."""
+    services = ["gluetun"]
+    services.extend(svc for _, svc in vpn_routing.running_secondaries(store))
+    return services
+
+
+async def _vpn_probe_tunnel(service: str) -> dict:
+    """Best-effort control-server probe for one Gluetun service."""
+    code, out = await compose.run(
+        "exec", "-T", service,
+        "wget", "-qO-",
+        "http://127.0.0.1:8000/v1/openvpn/portforwarded",
+        timeout=30,
+    )
+    ip_code, ip_out = await compose.run(
+        "exec", "-T", service,
+        "wget", "-qO-",
+        "http://127.0.0.1:8000/v1/publicip/ip",
+        timeout=30,
+    )
+    public_ip = _parse_public_ip(ip_out) if ip_code == 0 else None
+    forwarded_port = _parse_forwarded_port(out) if code == 0 else None
+    return {
+        "service": service,
+        "public_ip": public_ip,
+        "forwarded_port": forwarded_port,
+        "enabled": public_ip is not None or forwarded_port is not None or code == 0 or ip_code == 0,
+    }
+
+
+async def _vpn_resolve_tunnel(request: Request, tunnel: str | None = None) -> str:
+    if tunnel and tunnel.strip():
+        return tunnel.strip()
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    if isinstance(body, dict):
+        for key in ("service", "tunnel"):
+            val = body.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    return "gluetun"
+
+
+async def _vpn_restart_group(service: str, store: dict | None = None) -> tuple[int, str, list[str]]:
+    env = config.read()
+    stack = _vpn_stack_root()
+    data = store
+    if data is None:
+        data = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+    group = vpn_routing.recreate_group(data, service, _vpn_peers_enabled(env))
+    code, out = await compose.run("restart", *group, timeout=300)
+    return code, out, group
 
 
 @app.get("/api/vpn")
 async def vpn_status(user: str = Depends(require_user)):
     env = config.read()
     stack = _vpn_stack_root()
-    code, out = await compose.run("exec", "-T", "gluetun",
-                                  "wget", "-qO-",
-                                  "http://127.0.0.1:8000/v1/openvpn/portforwarded",
-                                  timeout=30)
-    ip_code, ip_out = await compose.run("exec", "-T", "gluetun",
-                                        "wget", "-qO-",
-                                        "http://127.0.0.1:8000/v1/publicip/ip",
-                                        timeout=30)
     store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+    # Ensure Traefik labels exist after Task 4 stripped static gluetun routers.
+    await asyncio.to_thread(_vpn_ensure_routing_fs, store, env)
+
+    vpn_on = env.get("VPN_ENABLED") == "true"
+    tunnels: list[dict] = []
+    if vpn_on:
+        for service in _vpn_running_services(store):
+            tunnels.append(await _vpn_probe_tunnel(service))
+    else:
+        tunnels.append({
+            "service": "gluetun",
+            "public_ip": None,
+            "forwarded_port": None,
+            "enabled": False,
+        })
+
+    by_service = {t["service"]: t for t in tunnels}
+    profiles = vpn_profiles.summary(store)
+    for row in profiles:
+        if row.get("primary"):
+            svc = "gluetun"
+        elif row.get("apps"):
+            svc = vpn_profiles.secondary_tunnel_service(row["id"])
+        else:
+            row["tunnel"] = None
+            continue
+        row["tunnel"] = by_service.get(svc) or {
+            "service": svc,
+            "public_ip": None,
+            "forwarded_port": None,
+            "enabled": False,
+        }
+
+    primary_tunnel = by_service.get("gluetun") or {}
     return {
-        "enabled": env.get("VPN_ENABLED") == "true",
+        "enabled": vpn_on,
         "provider": env.get("VPN_SERVICE_PROVIDER"),
         "connection_type": _connection_label(env.get("VPN_TYPE", "")),
         "countries": env.get("VPN_SERVER_COUNTRIES"),
         "tunnelled": [a for a in env.get("VPN_TUNNELLED_APPS", "").split(",") if a],
-        "forwarded_port": _parse_forwarded_port(out) if code == 0 else None,
-        "public_ip": _parse_public_ip(ip_out) if ip_code == 0 else None,
-        "profiles": vpn_profiles.summary(store),
+        "forwarded_port": primary_tunnel.get("forwarded_port"),
+        "public_ip": primary_tunnel.get("public_ip"),
+        "profiles": profiles,
+        "assignable_apps": _vpn_assignable_apps(),
+        "tunnels": tunnels,
+        "tunnels_running": sum(1 for t in tunnels if t.get("enabled")),
+        "note": (
+            "Per-tunnel public_ip/forwarded_port come from each Gluetun "
+            "control server when reachable; otherwise enabled reflects probe failure."
+        ),
     }
 
 
@@ -1077,7 +1325,8 @@ async def vpn_profile_get(profile_id: str, user: str = Depends(require_user)):
             "name": profile.get("name") or "Unnamed",
             "type": profile.get("type") or "wireguard",
             "updated_at": profile.get("updated_at"),
-            "active": profile.get("id") == store.get("active_id"),
+            "primary": profile.get("id") == store.get("primary_id"),
+            "apps": list(profile.get("apps") or []),
             "conf": profile.get("conf") or "",
         },
     }
@@ -1097,7 +1346,11 @@ async def vpn_profile_add(request: Request, user: str = Depends(require_user)):
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"ok": True, "profile": _vpn_profile_public(profile)}
+    store = await asyncio.to_thread(vpn_profiles.load, stack)
+    return {
+        "ok": True,
+        "profile": _vpn_profile_public(profile, primary_id=store.get("primary_id")),
+    }
 
 
 @app.put("/api/vpn/profiles/{profile_id}")
@@ -1117,69 +1370,135 @@ async def vpn_profile_update(profile_id: str, request: Request, user: str = Depe
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"ok": True, "profile": _vpn_profile_public(profile)}
+    store = await asyncio.to_thread(vpn_profiles.load, stack)
+    return {
+        "ok": True,
+        "profile": _vpn_profile_public(profile, primary_id=store.get("primary_id")),
+    }
 
 
 @app.delete("/api/vpn/profiles/{profile_id}")
 async def vpn_profile_delete(profile_id: str, user: str = Depends(require_user)):
     stack = _vpn_stack_root()
+    store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+    stale: set[str] = set()
+    if profile_id != store.get("primary_id"):
+        stale.add(vpn_profiles.secondary_tunnel_service(profile_id))
+        stale.add(f"gluetun_{vpn_profiles.short_id(profile_id)}")
     try:
         await asyncio.to_thread(vpn_profiles.delete_profile, stack, profile_id)
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"ok": True}
+    store = await asyncio.to_thread(vpn_profiles.load, stack)
+    code, out, group = await apply_vpn_routing(store, stale_services=stale)
+    return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
 
 
-@app.post("/api/vpn/profiles/{profile_id}/activate")
-async def vpn_profile_activate(profile_id: str, user: str = Depends(require_user)):
+@app.post("/api/vpn/profiles/{profile_id}/primary")
+async def vpn_profile_set_primary(profile_id: str, user: str = Depends(require_user)):
     stack = _vpn_stack_root()
     try:
-        conf_text, patch = await asyncio.to_thread(
-            vpn_profiles.prepare_activate, stack, profile_id
+        store, fields = await asyncio.to_thread(
+            vpn_profiles.set_primary, stack, profile_id,
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    if fields:
+        config.write(fields)
+    code, out, group = await apply_vpn_routing(store)
+    return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
+
+
+@app.put("/api/vpn/profiles/{profile_id}/apps")
+async def vpn_profile_set_apps(
+    profile_id: str, request: Request, user: str = Depends(require_user),
+):
+    body = await request.json()
+    apps = body.get("apps") if isinstance(body, dict) else None
+    if not isinstance(apps, list):
+        raise HTTPException(400, "body must include apps: list[str]")
+    stack = _vpn_stack_root()
+    forced = _vpn_forced_assignable()
+    try:
+        store = await asyncio.to_thread(
+            vpn_profiles.set_profile_apps, stack, profile_id, apps, forced=forced,
         )
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    code, out, group = await apply_vpn_routing(store)
+    return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
 
-    await asyncio.to_thread(_write_gluetun_conf, conf_text, stack)
-    config.write({"VPN_ENABLED": "true", **patch})
-    env2 = config.read()
-    code, out, group = await _vpn_recreate_tunnel(env2)
+
+@app.post("/api/vpn/profiles/{profile_id}/activate")
+async def vpn_profile_activate(profile_id: str, user: str = Depends(require_user)):
+    """Rematerialize a profile's WireGuard conf into its tunnel slot, then apply routing."""
+    stack = _vpn_stack_root()
+    store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+    profile = next((p for p in store["profiles"] if p.get("id") == profile_id), None)
+    if not profile:
+        raise HTTPException(404, "profile not found")
+    if (profile.get("type") or "wireguard") != "wireguard":
+        raise HTTPException(400, "OpenVPN profiles cannot be rematerialized yet")
+    conf = (profile.get("conf") or "").strip()
+    if not conf:
+        raise HTTPException(400, "profile has empty config")
+    try:
+        fields = _parse_wireguard_conf(conf)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not fields or "WIREGUARD_PRIVATE_KEY" not in fields:
+        raise HTTPException(400, "invalid WireGuard config")
+
+    # Rematerializing always leaves VPN_ENABLED on so the tunnel group can start.
+    if profile_id == store.get("primary_id"):
+        await asyncio.to_thread(_write_gluetun_conf, conf + "\n", stack)
+        config.write({"VPN_ENABLED": "true", **fields})
+    else:
+        config.write({"VPN_ENABLED": "true"})
+        await asyncio.to_thread(
+            _write_secondary_conf, stack, vpn_profiles.short_id(profile_id), conf + "\n",
+        )
+
+    code, out, group = await apply_vpn_routing(store)
     return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
 
 
 @app.post("/api/vpn/disable")
 async def vpn_disable(user: str = Depends(require_user)):
     stack = _vpn_stack_root()
-
-    def _clear_active():
-        store = vpn_profiles.migrate_from_wg0(stack)
-        store["active_id"] = None
-        vpn_profiles.save(stack, store)
-
-    await asyncio.to_thread(_clear_active)
+    # Keep primary_id for the next enable; only clear materialization.
+    store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
     await asyncio.to_thread(_remove_gluetun_conf, stack)
     config.write({"VPN_ENABLED": "false", **_empty_vpn_env()})
-    env2 = config.read()
-    code, out, group = await _vpn_recreate_tunnel(env2)
+    code, out, group = await apply_vpn_routing(store)
     return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
 
 
 @app.post("/api/vpn/restart")
-async def vpn_restart(user: str = Depends(require_user)):
-    env = config.read()
-    group = _vpn_tunnel_group(env)
-    code, out = await compose.run("restart", *group, timeout=300)
+async def vpn_restart(
+    request: Request,
+    tunnel: str | None = None,
+    user: str = Depends(require_user),
+):
+    service = await _vpn_resolve_tunnel(request, tunnel)
+    code, out, group = await _vpn_restart_group(service)
     return {"ok": code == 0, "restarted": group, "log": out[-2000:]}
 
 
 @app.post("/api/vpn/leaktest")
-async def vpn_leaktest(user: str = Depends(require_user)):
+async def vpn_leaktest(
+    request: Request,
+    tunnel: str | None = None,
+    user: str = Depends(require_user),
+):
     """The difference between believing the tunnel works and knowing."""
-    code, out = await compose.script("vpn-leaktest.sh", timeout=120)
+    service = await _vpn_resolve_tunnel(request, tunnel)
+    container = vpn_routing.container_name_for_tunnel_service(service)
+    code, out = await compose.script("vpn-leaktest.sh", container, timeout=120)
     return {"result": {0: "ok", 1: "leaking"}.get(code, "inconclusive"), "detail": out}
 
 

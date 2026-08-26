@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import httpx
 
-from . import config
+from . import config, tunnel_hosts
 
-ECM_BASE = "http://gluetun:6100"
+
+def ecm_base() -> str:
+    return tunnel_hosts.internal_base_for_app("ecm", 6100)
 
 
 def enabled() -> bool:
@@ -18,7 +20,7 @@ def setup_required(*, timeout: float = 8.0) -> bool:
         return False
     try:
         with httpx.Client(timeout=timeout) as client:
-            resp = client.get(f"{ECM_BASE}/api/auth/setup-required")
+            resp = client.get(f"{ecm_base()}/api/auth/setup-required")
             if resp.status_code != 200:
                 return False
             data = resp.json() if resp.content else {}
@@ -57,7 +59,7 @@ def ensure_admin(
 
     try:
         with httpx.Client(timeout=timeout) as client:
-            check = client.get(f"{ECM_BASE}/api/auth/setup-required")
+            check = client.get(f"{ecm_base()}/api/auth/setup-required")
             if check.status_code != 200:
                 return {
                     "ok": False,
@@ -68,7 +70,7 @@ def ensure_admin(
                 return {"ok": True, "status": "skipped", "reason": "already configured"}
 
             resp = client.post(
-                f"{ECM_BASE}/api/auth/setup",
+                f"{ecm_base()}/api/auth/setup",
                 json={"username": user, "email": mail, "password": password},
             )
             if resp.status_code in {200, 201}:

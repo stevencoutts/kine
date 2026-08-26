@@ -3,7 +3,10 @@
 # Each application lives in its own fragment under compose/ and declares
 # a Compose profile equal to its own name. Enabling an app therefore
 # means adding one word to COMPOSE_PROFILES in .env. Nothing is
-# templated or generated: the repo plus .env is the whole truth.
+# templated or generated: the repo plus .env is the whole truth, except
+# compose/vpn-routing.override.yml — tracked stub; Helm writes tunnel routing
+# (Traefik labels, secondaries, network_mode) to vpn-routing.generated.yml
+# (gitignored). See helm/backend/app/vpn_routing.py.
 
 name: kine
 
@@ -14,6 +17,7 @@ include:
   - compose/core.provision.yml
   - compose/core.mdns.yml
   - compose/vpn.gluetun.yml
+  - compose/vpn-routing.override.yml
   - compose/media.emby.yml
   - compose/media.tdarr.yml
   - compose/acq.sonarr.yml

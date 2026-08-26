@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import httpx
 
-from . import appkeys, catalogue, config
+from . import appkeys, catalogue, config, tunnel_hosts
 
 STACK = pathlib.Path(os.environ.get("KINE_ROOT", "/stack"))
 MEDIA_NFS_KEYS = frozenset({"NFS_MEDIA", "NFS_TV", "NFS_MOVIES"})
@@ -43,6 +43,10 @@ def _arr_key(app: str) -> str | None:
 
 def _bazarr_key() -> str | None:
     return appkeys.bazarr_key(STACK)
+
+
+def _runtime_internal(app: str, entry: dict) -> str:
+    return tunnel_hosts.runtime_internal(app, entry)
 
 
 def _arr_url(base: str, api: str, path: str) -> str:
@@ -510,7 +514,7 @@ def after_nfs_mount(changed_keys: set[str] | None = None) -> dict:
     if "sonarr" in enabled and "sonarr" in cat:
         key = _arr_key("sonarr")
         if key:
-            base = cat["sonarr"]["internal"]
+            base = _runtime_internal("sonarr", cat["sonarr"])
             api = cat["sonarr"].get("api", "v3")
             import_ok, import_msg = _import_arr_library("sonarr", base, api, key)
             rescan_ok, rescan_msg = _post_arr_command(base, api, key, "RescanSeries")
@@ -525,7 +529,7 @@ def after_nfs_mount(changed_keys: set[str] | None = None) -> dict:
     if "radarr" in enabled and "radarr" in cat:
         key = _arr_key("radarr")
         if key:
-            base = cat["radarr"]["internal"]
+            base = _runtime_internal("radarr", cat["radarr"])
             api = cat["radarr"].get("api", "v3")
             import_ok, import_msg = _import_arr_library("radarr", base, api, key)
             rescan_ok, rescan_msg = _post_arr_command(base, api, key, "RescanMovie")
@@ -544,7 +548,7 @@ def after_nfs_mount(changed_keys: set[str] | None = None) -> dict:
     if "bazarr" in enabled and "bazarr" in cat:
         key = _bazarr_key()
         if key:
-            ok, message = _sync_bazarr(cat["bazarr"]["internal"], key)
+            ok, message = _sync_bazarr(_runtime_internal("bazarr", cat["bazarr"]), key)
             results.append({"app": "bazarr", "ok": ok, "message": message})
 
     ok = not results or any(item["ok"] for item in results)

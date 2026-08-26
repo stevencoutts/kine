@@ -12,7 +12,7 @@ from typing import NamedTuple
 
 import httpx
 
-from . import appkeys, catalogue, config, watching
+from . import appkeys, catalogue, config, tunnel_hosts, watching
 
 
 class Sample(NamedTuple):
@@ -241,7 +241,8 @@ async def _get_json(url: str, headers: dict, params: dict | None = None) -> dict
 
 
 def _base(app: str) -> str:
-    return (catalogue.load().get(app, {}).get("internal") or "").rstrip("/")
+    entry = catalogue.load().get(app, {})
+    return tunnel_hosts.runtime_internal(app, entry)
 
 
 async def _collect_arr(app: str) -> list[Sample]:

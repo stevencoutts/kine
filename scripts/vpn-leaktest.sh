@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Proves the tunnel is doing its job, rather than assuming it is.
 # The GUI runs this and shows both addresses side by side.
+# Optional arg: container name (default kine-gluetun) for multi-tunnel.
 set -Eeuo pipefail
+container="${1:-kine-gluetun}"
 host_ip=$(docker run --rm --network kine_internal curlimages/curl:latest \
           -fsS https://api.ipify.org 2>/dev/null || echo "unavailable")
-vpn_ip=$(docker exec kine-gluetun wget -qO- https://api.ipify.org \
+vpn_ip=$(docker exec "$container" wget -qO- https://api.ipify.org \
          2>/dev/null || echo "unavailable")
 
 echo "untunnelled exit : ${host_ip}"
