@@ -1,9 +1,10 @@
 """Heal apps still pinned to a dead Gluetun network namespace.
 
-Every tunnelled service uses ``network_mode: service:gluetun``. Docker
-binds that to the Gluetun *container ID* at create time. Recreating
-Gluetun without recreating those peers leaves them healthy-looking but
-unreachable (Traefik 502). This module finds and recreates orphans.
+Every tunnelled service uses ``network_mode: service:gluetun`` (or
+``service:gluetun_<shortId>`` for secondary tunnels). Docker binds that
+to the Gluetun *container ID* at create time. Recreating Gluetun without
+recreating those peers leaves them healthy-looking but unreachable
+(Traefik 502). This module finds and recreates orphans per tunnel.
 """
 from __future__ import annotations
 
@@ -23,19 +24,38 @@ def container_id(network_mode: str | None) -> str | None:
     return mode.split(":", 1)[1] or None
 
 
+def service_container_name(service: str) -> str:
+    """Map compose Gluetun service name to its container_name."""
+    if service == "gluetun":
+        return "kine-gluetun"
+    if service.startswith("gluetun_"):
+        return f"kine-gluetun-{service.removeprefix('gluetun_')}"
+    return f"kine-{service}"
+
+
+def container_to_service(container_name: str) -> str | None:
+    """Map a running kine-gluetun* container to its compose service name."""
+    if container_name == "kine-gluetun":
+        return "gluetun"
+    prefix = "kine-gluetun-"
+    if container_name.startswith(prefix):
+        return f"gluetun_{container_name.removeprefix(prefix)}"
+    return None
+
+
 def orphan_services(
     *,
-    gluetun_id: str | None,
+    expected_id: str | None,
     network_modes: dict[str, str],
-    tunnelled: set[str],
+    peers: set[str],
 ) -> list[str]:
-    """Return enabled tunnelled services pinned to a non-current Gluetun."""
-    if not gluetun_id:
+    """Return peers pinned to a non-current Gluetun container for one tunnel."""
+    if not expected_id:
         return []
     orphans: list[str] = []
-    for name in sorted(tunnelled):
+    for name in sorted(peers):
         pinned = container_id(network_modes.get(name))
-        if pinned and pinned != gluetun_id:
+        if pinned and pinned != expected_id:
             orphans.append(name)
     return orphans
 
@@ -78,29 +98,35 @@ def inspect_network_mode(name: str, *, runner: RunFn | None = None) -> str:
     return (result.stdout or "").strip()
 
 
-def tunnelled_services(*, runner: RunFn | None = None) -> set[str]:
-    """Compose services that join Gluetun's network namespace (enabled profiles only)."""
-    import os
-
+def discover_gluetun_services(*, runner: RunFn | None = None) -> list[str]:
+    """Compose service names for running kine-gluetun* containers."""
     result = _run(
-        ["docker", "compose", "config", "--format", "json"],
+        ["docker", "ps", "--filter", "name=kine-gluetun", "--format", "{{.Names}}"],
         runner=runner,
     )
     if result.returncode != 0:
-        return set()
-    try:
-        cfg = json.loads(result.stdout or "{}")
-    except json.JSONDecodeError:
-        return set()
-    # Prefer compose's resolved set, but never trust a named service that is
-    # outside COMPOSE_PROFILES — `compose up <svc>` bypasses profiles.
-    active = {p.strip() for p in os.environ.get("COMPOSE_PROFILES", "").split(",") if p.strip()}
-    # compose_env drops .env keys from the process env so Compose reads the
-    # file; load profiles from that file when the process env is empty.
+        return []
+    services: list[str] = []
+    for line in (result.stdout or "").splitlines():
+        name = line.strip()
+        if not name:
+            continue
+        svc = container_to_service(name)
+        if svc:
+            services.append(svc)
+    return sorted(set(services))
+
+
+def _active_compose_profiles() -> set[str]:
+    import os
+
+    active = {
+        p.strip()
+        for p in os.environ.get("COMPOSE_PROFILES", "").split(",")
+        if p.strip()
+    }
     if not active:
         try:
-            from .compose import REPO
-
             env_path = REPO / ".env"
             if env_path.is_file():
                 for line in env_path.read_text().splitlines():
@@ -113,36 +139,90 @@ def tunnelled_services(*, runner: RunFn | None = None) -> set[str]:
                         break
         except OSError:
             pass
-    out: set[str] = set()
+    return active
+
+
+def _service_enabled(meta: dict, active: set[str]) -> bool:
+    svc_profiles = {p for p in (meta.get("profiles") or []) if p}
+    if svc_profiles and active and not (svc_profiles & active):
+        return False
+    return True
+
+
+def tunnel_peers_by_service(*, runner: RunFn | None = None) -> dict[str, set[str]]:
+    """Map each Gluetun compose service to enabled tunnelled peer names."""
+    result = _run(
+        ["docker", "compose", "config", "--format", "json"],
+        runner=runner,
+    )
+    if result.returncode != 0:
+        return {}
+    try:
+        cfg = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return {}
+    active = _active_compose_profiles()
+    out: dict[str, set[str]] = {}
     for name, meta in (cfg.get("services") or {}).items():
-        if (meta or {}).get("network_mode") != "service:gluetun":
+        meta = meta or {}
+        mode = (meta.get("network_mode") or "").strip()
+        if not mode.startswith("service:gluetun"):
             continue
-        svc_profiles = {p for p in ((meta or {}).get("profiles") or []) if p}
-        if svc_profiles and active and not (svc_profiles & active):
+        if not _service_enabled(meta, active):
             continue
-        out.add(name)
+        tunnel = mode.split(":", 1)[1]
+        out.setdefault(tunnel, set()).add(name)
     return out
 
 
+def find_orphans_for_tunnels(
+    tunnels: dict[str, set[str]],
+    *,
+    runner: RunFn | None = None,
+) -> list[str]:
+    """Return orphan peers across the given tunnel → peer map."""
+    orphans: list[str] = []
+    for service, peers in sorted(tunnels.items()):
+        if not peers:
+            continue
+        expected_id = inspect_id(service_container_name(service), runner=runner)
+        if not expected_id:
+            continue
+        modes = {
+            name: inspect_network_mode(f"kine-{name}", runner=runner)
+            for name in peers
+        }
+        orphans.extend(
+            orphan_services(
+                expected_id=expected_id,
+                network_modes=modes,
+                peers=peers,
+            )
+        )
+    return orphans
+
+
 def find_orphans(*, runner: RunFn | None = None) -> list[str]:
-    gluetun_id = inspect_id("kine-gluetun", runner=runner)
-    if not gluetun_id:
+    """Discover running Gluetun tunnels and return all orphan peers."""
+    running = set(discover_gluetun_services(runner=runner))
+    if not running:
         return []
-    tunnelled = tunnelled_services(runner=runner)
-    modes = {
-        name: inspect_network_mode(f"kine-{name}", runner=runner)
-        for name in tunnelled
+    by_service = tunnel_peers_by_service(runner=runner)
+    tunnels = {
+        svc: peers
+        for svc, peers in by_service.items()
+        if svc in running
     }
-    return orphan_services(
-        gluetun_id=gluetun_id,
-        network_modes=modes,
-        tunnelled=tunnelled,
-    )
+    return find_orphans_for_tunnels(tunnels, runner=runner)
 
 
-def heal_orphans(*, runner: RunFn | None = None) -> dict:
-    """Force-recreate any tunnelled peers still on a dead Gluetun ID."""
-    orphans = find_orphans(runner=runner)
+def heal_all(
+    tunnels: dict[str, set[str]],
+    *,
+    runner: RunFn | None = None,
+) -> dict:
+    """Force-recreate orphan peers for each running Gluetun tunnel."""
+    orphans = find_orphans_for_tunnels(tunnels, runner=runner)
     if not orphans:
         return {"ok": True, "healed": [], "log": "no tunnel orphans"}
     result = _run(
@@ -155,6 +235,20 @@ def heal_orphans(*, runner: RunFn | None = None) -> dict:
         "healed": orphans,
         "log": log or f"recreated {', '.join(orphans)}",
     }
+
+
+def heal_orphans(*, runner: RunFn | None = None) -> dict:
+    """Force-recreate any tunnelled peers still on a dead Gluetun ID."""
+    running = set(discover_gluetun_services(runner=runner))
+    if not running:
+        return {"ok": True, "healed": [], "log": "no tunnel orphans"}
+    by_service = tunnel_peers_by_service(runner=runner)
+    tunnels = {
+        svc: peers
+        for svc, peers in by_service.items()
+        if svc in running
+    }
+    return heal_all(tunnels, runner=runner)
 
 
 def main() -> int:
