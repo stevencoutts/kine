@@ -161,6 +161,17 @@ def test_updating_gluetun_recreates_tunnelled_apps():
     assert "Healing tunnel orphans" in script
 
 
+def test_compose_includes_vpn_routing_override():
+    text = (ROOT / "docker-compose.yml").read_text()
+    assert "compose/vpn-routing.override.yml" in text
+
+
+def test_static_gluetun_has_no_vpn_routing_app_traefik_routers():
+    text = (ROOT / "compose" / "vpn.gluetun.yml").read_text()
+    assert "traefik.http.routers.sonarr" not in text
+    assert "vpn-routing.override" in text or "generated" in text.lower()
+
+
 def test_top_level_includes_every_fragment():
     top = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
     included = {pathlib.Path(p).name for p in top["include"]}
