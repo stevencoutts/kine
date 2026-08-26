@@ -49,6 +49,25 @@ def test_short_id():
     assert vpn_profiles.short_id("11111111-2222-3333-4444-555555555555") == "11111111"
 
 
+def test_short_id_non_uuid_fallback():
+    assert vpn_profiles.short_id("profileabc123") == "profilea"
+    assert vpn_profiles.short_id("ab") == "ab000000"
+
+
+def test_migrate_schema_normalizes_malformed_apps():
+    raw = {
+        "primary_id": "1",
+        "profiles": [{
+            "id": "1",
+            "name": "Default",
+            "apps": "dispatcharr",
+        }],
+    }
+    data = vpn_profiles.migrate_schema(raw)
+    assert data["profiles"][0]["apps"] == []
+    assert raw["profiles"][0]["apps"] == "dispatcharr"
+
+
 def test_migrate_imports_wg0_as_default(tmp_path):
     wg = tmp_path / "config" / "gluetun" / "wireguard"
     wg.mkdir(parents=True)

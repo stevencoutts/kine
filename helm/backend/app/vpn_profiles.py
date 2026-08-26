@@ -26,15 +26,28 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.I,
+)
+
+
 def short_id(profile_id: str) -> str:
-    stripped = profile_id.replace("-", "").lower()
-    hex_chars = "".join(c for c in stripped if c in "0123456789abcdef")
-    if len(hex_chars) >= 8:
-        return hex_chars[:8]
-    sanitized = "".join(c for c in profile_id.lower() if c.isalnum())
+    if _UUID_RE.match(profile_id):
+        return profile_id.replace("-", "").lower()[:8]
+    sanitized = "".join(
+        c for c in profile_id.lower()
+        if ("a" <= c <= "z") or ("0" <= c <= "9")
+    )
     if len(sanitized) >= 8:
         return sanitized[:8]
     return sanitized.ljust(8, "0")[:8]
+
+
+def _normalize_apps(apps: Any) -> list[str]:
+    if not isinstance(apps, list):
+        return []
+    return [a for a in apps if isinstance(a, str)]
 
 
 def migrate_schema(data: dict[str, Any]) -> dict[str, Any]:
@@ -42,17 +55,19 @@ def migrate_schema(data: dict[str, Any]) -> dict[str, Any]:
     if not out.get("primary_id") and out.get("active_id"):
         out["primary_id"] = out["active_id"]
     out.pop("active_id", None)
-    profiles = out.get("profiles")
-    if not isinstance(profiles, list):
-        profiles = []
-    for profile in profiles:
-        if isinstance(profile, dict) and "apps" not in profile:
-            profile["apps"] = []
+    profiles_in = out.get("profiles")
+    if not isinstance(profiles_in, list):
+        profiles_in = []
+    profiles: list[dict[str, Any]] = []
+    for profile in profiles_in:
+        if not isinstance(profile, dict):
+            continue
+        p = dict(profile)
+        p["apps"] = _normalize_apps(p.get("apps"))
+        profiles.append(p)
     out["profiles"] = profiles
     if not out.get("primary_id") and profiles:
-        first = profiles[0]
-        if isinstance(first, dict):
-            out["primary_id"] = first.get("id")
+        out["primary_id"] = profiles[0].get("id")
     return out
 
 
