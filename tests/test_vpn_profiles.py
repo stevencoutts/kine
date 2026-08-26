@@ -166,7 +166,7 @@ def test_vpn_ui_has_profile_cards():
     frontend = (ROOT / "helm" / "frontend" / "index.html").read_text()
     assert "vpn-card" in frontend
     assert "vpn-profiles" in frontend
-    assert "data-vpn-activate" in frontend
+    assert "data-vpn-rematerialize" in frontend or "data-vpn-activate" in frontend
     assert "promptVpnProfile" in frontend
     assert "/vpn/profiles" in frontend
 
@@ -200,15 +200,22 @@ def test_set_profile_apps_rejects_live_tv_split(tmp_path):
         )
 
 
-def test_vpn_ui_collapses_detail_into_active_profile():
-    """Live tunnel state belongs on the active profile card, not a second widget."""
+def test_vpn_ui_has_apps_checklist_and_primary():
+    fe = (ROOT / "helm/frontend/index.html").read_text()
+    assert "data-vpn-primary" in fe or "/primary" in fe
+    assert "data-vpn-apps" in fe or "/apps" in fe
+    assert "vpn-app-check" in fe or "forcedTunnelApps" in fe
+
+
+def test_vpn_ui_collapses_detail_into_running_tunnel_cards():
+    """Live tunnel state belongs on cards with a running tunnel, not a second widget."""
     frontend = (ROOT / "helm" / "frontend" / "index.html").read_text()
     vpn = frontend.split("render.vpn = async () => {", 1)[1].split("\nconst fmtBytes", 1)[0]
-    assert 'id="leak"' in vpn
+    assert "data-vpn-leak" in vpn or "tunnel.service" in vpn
     assert "Public IP" in vpn
     # Old standalone hero used connection type as the card title with a status dot.
     assert 'vpn-card-title"><span class="dot' not in vpn
     assert "<h2>VPN</h2>" not in vpn
-    # Detail / tunnel actions are rendered for the active profile only.
-    assert "p.active" in vpn
+    assert "p.primary" in vpn
     assert "vpn-active-detail" in vpn
+    assert "tunnels_running" in vpn
