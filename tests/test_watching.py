@@ -163,6 +163,99 @@ def test_parse_plex_empty_and_single_item():
     assert parse_plex_sessions(single)[0]["title"] == "Heat"
 
 
+def test_parse_plex_prefers_media_bitrate_over_session_bandwidth():
+    payload = {
+        "MediaContainer": {
+            "Metadata": [{
+                "type": "movie",
+                "title": "Heat",
+                "User": {"title": "a"},
+                "Player": {"title": "TV", "state": "playing", "local": False},
+                "Session": {"bandwidth": 12000, "location": "wan"},
+                "Media": [{"bitrate": 4500, "videoResolution": "1080", "Part": [{"file": "/m.mkv"}]}],
+            }]
+        }
+    }
+    assert parse_plex_sessions(payload)[0]["bitrate_bps"] == 4_500_000
+
+
+def test_parse_plex_uses_measured_session_bandwidth_when_media_bitrate_missing():
+    payload = {
+        "MediaContainer": {
+            "Metadata": [{
+                "type": "episode",
+                "title": "Part Twelve",
+                "grandparentTitle": "Your Honor",
+                "parentIndex": 2,
+                "index": 2,
+                "User": {"title": "a"},
+                "Player": {"title": "TV", "state": "playing", "local": False},
+                "Session": {"bandwidth": 1879, "location": "wan"},
+                "Media": [{
+                    "videoResolution": "480",
+                    "videoCodec": "h264",
+                    "Part": [{"file": "/tv/x.mkv", "Stream": [
+                        {"streamType": 1, "bitrate": None, "decision": "transcode"},
+                    ]}],
+                }],
+            }]
+        }
+    }
+    row = parse_plex_sessions(payload)[0]
+    assert row["bitrate_bps"] == 1_879_000
+
+
+def test_parse_plex_uses_video_stream_bitrate_before_session():
+    payload = {
+        "MediaContainer": {
+            "Metadata": [{
+                "type": "movie",
+                "title": "Heat",
+                "User": {"title": "a"},
+                "Player": {"title": "TV", "state": "playing"},
+                "Session": {"bandwidth": 40000, "location": "lan"},
+                "Media": [{
+                    "videoResolution": "1080",
+                    "Part": [{"file": "/m.mkv", "Stream": [
+                        {"streamType": 1, "bitrate": 7200},
+                        {"streamType": 2, "bitrate": 192},
+                    ]}],
+                }],
+            }]
+        }
+    }
+    assert parse_plex_sessions(payload)[0]["bitrate_bps"] == 7_200_000
+
+
+def test_parse_plex_estimates_bitrate_when_lan_session_bandwidth_is_a_cap():
+    """LAN Session.bandwidth is often a client max (40 Mbps), not measured rate."""
+    payload = {
+        "MediaContainer": {
+            "Metadata": [{
+                "type": "episode",
+                "title": "Episode 238",
+                "grandparentTitle": "QI XL",
+                "parentIndex": 2026,
+                "index": 238,
+                "User": {"title": "a"},
+                "Player": {"title": "Apple TV", "state": "playing", "local": True},
+                "Session": {"bandwidth": 40000, "location": "lan"},
+                "Media": [{
+                    "videoResolution": "720",
+                    "width": 1280,
+                    "height": 720,
+                    "container": "mpegts",
+                    "videoCodec": "h264",
+                    "Part": [{"Stream": [{"streamType": 1, "bitrate": None}]}],
+                }],
+            }]
+        }
+    }
+    row = parse_plex_sessions(payload)[0]
+    assert row["bitrate_bps"] == 5_000_000  # 720p estimate
+    assert "5 Mbps" in (row.get("quality") or "")
+
+
 def test_parse_emby_skips_idle_and_enriches():
     rows = parse_emby_sessions(EMBY_SAMPLE)
     assert len(rows) == 2

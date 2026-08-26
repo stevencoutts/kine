@@ -141,6 +141,104 @@ def _format_fields(
     }
 
 
+# Common Plex client quality caps (kbps). On LAN, Session.bandwidth is often one
+# of these allotments rather than a measured delivery rate.
+_PLEX_BANDWIDTH_CAPS_KBPS = frozenset({
+    64, 96, 128, 192, 256, 320, 384, 448, 512, 720, 768,
+    1000, 1500, 2000, 3000, 4000, 6000, 8000, 10000, 12000, 15000,
+    20000, 25000, 30000, 40000, 60000, 100000, 200000, 300000, 400000,
+})
+
+
+def _kbps_to_bps(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        kbps = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    if kbps <= 0:
+        return None
+    return kbps * 1000
+
+
+def _bitrate_label(bps: int | None) -> str | None:
+    if not bps:
+        return None
+    return f"{round(bps / 1_000_000)} Mbps"
+
+
+def _plex_looks_like_bandwidth_cap(kbps: int) -> bool:
+    return kbps in _PLEX_BANDWIDTH_CAPS_KBPS
+
+
+def _estimate_bitrate_bps_from_resolution(media: dict) -> int | None:
+    """Rough delivery estimate when Plex omits file/session bitrate (live/LAN)."""
+    height = None
+    raw_h = media.get("height")
+    if raw_h is not None:
+        try:
+            height = int(float(raw_h))
+        except (TypeError, ValueError):
+            height = None
+    if height is None:
+        res = str(media.get("videoResolution") or "").strip().lower()
+        digits = "".join(ch for ch in res if ch.isdigit())
+        if digits:
+            try:
+                height = int(digits)
+            except ValueError:
+                height = None
+        elif "4k" in res or "uhd" in res:
+            height = 2160
+    if height is None or height <= 0:
+        return None
+    if height >= 2160:
+        return 20_000_000
+    if height >= 1080:
+        return 8_000_000
+    if height >= 720:
+        return 5_000_000
+    return 2_000_000
+
+
+def _plex_video_stream_bitrate_bps(parts: list) -> int | None:
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        for stream in _as_list(part.get("Stream")):
+            if not isinstance(stream, dict):
+                continue
+            if stream.get("streamType") == 1:
+                bps = _kbps_to_bps(stream.get("bitrate"))
+                if bps:
+                    return bps
+    return None
+
+
+def _plex_resolve_bitrate_bps(item: dict, media: dict, parts: list) -> int | None:
+    """Prefer file bitrate, then measured Session.bandwidth, else resolution estimate."""
+    bps = _kbps_to_bps(media.get("bitrate"))
+    if bps:
+        return bps
+    bps = _plex_video_stream_bitrate_bps(parts)
+    if bps:
+        return bps
+
+    session = item.get("Session") if isinstance(item.get("Session"), dict) else {}
+    session_kbps = None
+    raw = session.get("bandwidth")
+    if raw is not None and raw != "":
+        try:
+            session_kbps = int(float(raw))
+        except (TypeError, ValueError):
+            session_kbps = None
+    if session_kbps and session_kbps > 0 and not _plex_looks_like_bandwidth_cap(session_kbps):
+        return session_kbps * 1000
+
+    return _estimate_bitrate_bps_from_resolution(media)
+
+
 def _plex_media_bits(item: dict) -> dict[str, Any]:
     """Return source/stream plus structured format fields."""
     empty = {
@@ -164,16 +262,8 @@ def _plex_media_bits(item: dict) -> dict[str, Any]:
         resolution = f"{media['height']}p"
     video_codec = str(media["videoCodec"]).upper() if media.get("videoCodec") else None
     audio_codec = str(media["audioCodec"]).upper() if media.get("audioCodec") else None
-    bitrate_label = None
-    bitrate_bps = None
-    bitrate = media.get("bitrate")
-    if bitrate:
-        try:
-            # Plex Media.bitrate is kbps.
-            bitrate_bps = int(float(bitrate) * 1000)
-            bitrate_label = f"{round(bitrate_bps / 1_000_000)} Mbps"
-        except (TypeError, ValueError):
-            pass
+    bitrate_bps = _plex_resolve_bitrate_bps(item, media, parts)
+    bitrate_label = _bitrate_label(bitrate_bps)
     if item.get("TranscodeSession"):
         stream = "transcode"
     elif any(
@@ -476,6 +566,7 @@ def parse_emby_sessions(payload: list | dict) -> list[dict]:
             "audio_codec": media["audio_codec"],
             "formats": media["formats"],
             "stream": media["stream"],
+            "bitrate_bps": media.get("bitrate_bps"),
             "art_url": _emby_art_url(now, kind),
         })
     return rows
