@@ -10,6 +10,16 @@ from . import vpn_profiles, wireguard
 
 ROUTING_REL = pathlib.Path("compose/vpn-routing.override.yml")
 
+
+def container_name_for_tunnel_service(service: str) -> str:
+    """Map a Gluetun compose service name to its ``container_name``."""
+    if service == "gluetun":
+        return "kine-gluetun"
+    if service.startswith("gluetun_"):
+        return f"kine-gluetun-{service.removeprefix('gluetun_')}"
+    return f"kine-{service}"
+
+
 # Ports shared inside a tunnel namespace (docs/port-map.md).
 APP_PORTS: dict[str, int] = {
     "ecm": 6100,

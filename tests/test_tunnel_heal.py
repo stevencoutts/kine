@@ -5,7 +5,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "helm" / "backend"))
 
-from app import tunnel_heal  # noqa: E402
+from app import tunnel_heal, vpn_routing  # noqa: E402
 
 
 def test_container_id_from_network_mode():
@@ -73,9 +73,29 @@ def test_container_to_service():
     assert tunnel_heal.container_to_service("kine-sonarr") is None
 
 
-def test_service_container_name():
-    assert tunnel_heal.service_container_name("gluetun") == "kine-gluetun"
-    assert tunnel_heal.service_container_name("gluetun_11111111") == "kine-gluetun-11111111"
+def test_container_name_for_tunnel_service():
+    assert vpn_routing.container_name_for_tunnel_service("gluetun") == "kine-gluetun"
+    assert (
+        vpn_routing.container_name_for_tunnel_service("gluetun_11111111")
+        == "kine-gluetun-11111111"
+    )
+
+
+def test_discover_gluetun_services():
+    def runner(cmd: list[str]):
+        from types import SimpleNamespace
+
+        assert cmd[:3] == ["docker", "ps", "--filter"]
+        return SimpleNamespace(
+            returncode=0,
+            stdout="kine-gluetun\nkine-gluetun-11111111\nkine-gluetun\n",
+            stderr="",
+        )
+
+    assert tunnel_heal.discover_gluetun_services(runner=runner) == [
+        "gluetun",
+        "gluetun_11111111",
+    ]
 
 
 def test_heal_all_multi_tunnel():

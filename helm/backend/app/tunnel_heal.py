@@ -13,6 +13,7 @@ import subprocess
 from typing import Callable
 
 from .compose import REPO, compose_env
+from .vpn_routing import container_name_for_tunnel_service
 
 RunFn = Callable[..., subprocess.CompletedProcess]
 
@@ -22,15 +23,6 @@ def container_id(network_mode: str | None) -> str | None:
     if not mode.startswith("container:"):
         return None
     return mode.split(":", 1)[1] or None
-
-
-def service_container_name(service: str) -> str:
-    """Map compose Gluetun service name to its container_name."""
-    if service == "gluetun":
-        return "kine-gluetun"
-    if service.startswith("gluetun_"):
-        return f"kine-gluetun-{service.removeprefix('gluetun_')}"
-    return f"kine-{service}"
 
 
 def container_to_service(container_name: str) -> str | None:
@@ -185,7 +177,10 @@ def find_orphans_for_tunnels(
     for service, peers in sorted(tunnels.items()):
         if not peers:
             continue
-        expected_id = inspect_id(service_container_name(service), runner=runner)
+        expected_id = inspect_id(
+            container_name_for_tunnel_service(service),
+            runner=runner,
+        )
         if not expected_id:
             continue
         modes = {

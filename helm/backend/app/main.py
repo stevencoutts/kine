@@ -1115,14 +1115,6 @@ def _vpn_assignable_apps() -> list[dict[str, str]]:
     ]
 
 
-def _vpn_container_name(service: str) -> str:
-    if service == "gluetun":
-        return "kine-gluetun"
-    if service.startswith("gluetun_"):
-        return f"kine-gluetun-{service.removeprefix('gluetun_')}"
-    return f"kine-{service}"
-
-
 def _vpn_running_services(store: dict) -> list[str]:
     """Compose service names for primary + secondaries that own apps."""
     services = ["gluetun"]
@@ -1437,7 +1429,7 @@ async def vpn_leaktest(
 ):
     """The difference between believing the tunnel works and knowing."""
     service = await _vpn_resolve_tunnel(request, tunnel)
-    container = _vpn_container_name(service)
+    container = vpn_routing.container_name_for_tunnel_service(service)
     code, out = await compose.script("vpn-leaktest.sh", container, timeout=120)
     return {"result": {0: "ok", 1: "leaking"}.get(code, "inconclusive"), "detail": out}
 
