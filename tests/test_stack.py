@@ -157,6 +157,8 @@ def test_updating_gluetun_recreates_tunnelled_apps():
     assert 'svc" == "gluetun"' in script
     assert "force-recreate" in script
     assert "service:gluetun" in script
+    assert "tunnel_heal" in script or "heal-tunnel" in script
+    assert "Healing tunnel orphans" in script
 
 
 def test_top_level_includes_every_fragment():

@@ -24,6 +24,11 @@ def test_status_page_has_backup_restore_ui():
 
 def test_header_has_logout_button():
     assert 'data-logout>Log Out</button>' in FRONTEND
+    assert 'data-nav-toggle' in FRONTEND
+    assert 'nav-open' in FRONTEND
+    assert '@media (max-width:720px)' in FRONTEND
+    assert 'border-radius:999px' in FRONTEND
+    assert 'nav button.nav-logout' in FRONTEND
     assert "/api/auth/logout" in FRONTEND
     assert '@app.post("/api/auth/logout")' in BACKEND
 
@@ -188,6 +193,11 @@ def test_settings_media_servers_section():
     assert "PLEX_TOKEN" in FRONTEND
     assert "EMBY_HOST" in FRONTEND
     assert "EMBY_API_KEY" in FRONTEND
+    assert "PLEX_TV_MAP_FROM" in FRONTEND
+    assert "PLEX_TV_MAP_TO" in FRONTEND
+    assert "PLEX_MOVIES_MAP_FROM" in FRONTEND
+    assert "EMBY_TV_MAP_FROM" in FRONTEND
+    assert "EMBY_MOVIES_MAP_TO" in FRONTEND
     assert "save-media-servers" in FRONTEND
     assert "EMBY_DEFAULT_HOST" in FRONTEND
     assert "port 443 with SSL" in FRONTEND
@@ -195,6 +205,8 @@ def test_settings_media_servers_section():
     assert "mediaPortFor" in FRONTEND
     assert "PLEX_HOST" in BACKEND
     assert "EMBY_API_KEY" in BACKEND
+    assert "PLEX_TV_MAP_FROM" in BACKEND
+    assert "EMBY_MOVIES_MAP_TO" in BACKEND
     assert "_MEDIA_SERVER_KEYS" in BACKEND
     assert "EMBY_DEFAULT_HOST" in BACKEND
     assert "DISPATCHARR_TOKEN" in FRONTEND

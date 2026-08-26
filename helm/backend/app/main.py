@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import acme_env, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, teamarr_setup, updates_info, vpn_profiles, watching
+from . import acme_env, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, updates_info, vpn_profiles, watching
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -80,7 +80,11 @@ _NFS_KEYS = ("NFS_SERVER", "NFS_MEDIA", "NFS_TV", "NFS_MOVIES", "NFS_DOWNLOADS",
 _NFS_EXPORT_KEYS = _NFS_KEYS[1:]
 _MEDIA_SERVER_KEYS = (
     "PLEX_HOST", "PLEX_PORT", "PLEX_TOKEN", "PLEX_USE_SSL",
+    "PLEX_TV_MAP_FROM", "PLEX_TV_MAP_TO",
+    "PLEX_MOVIES_MAP_FROM", "PLEX_MOVIES_MAP_TO",
     "EMBY_HOST", "EMBY_PORT", "EMBY_API_KEY", "EMBY_USE_SSL",
+    "EMBY_TV_MAP_FROM", "EMBY_TV_MAP_TO",
+    "EMBY_MOVIES_MAP_FROM", "EMBY_MOVIES_MAP_TO",
 )
 _LIVE_TV_KEYS = ("DISPATCHARR_TOKEN",)
 _SUBTITLE_KEYS = ("OPENSUBTITLES_USERNAME", "OPENSUBTITLES_PASSWORD")
@@ -899,6 +903,11 @@ async def apply_update(app_id: str, user: str = Depends(require_user)):
         # Clear the badge from the overnight cache immediately so the page
         # does not still say "update" until the next full registry check.
         scheduler.mark_container_current(app_id)
+        # updates.sh also heals; run again here so a partial script log
+        # still cannot leave Sonarr/Radarr on a dead Gluetun namespace.
+        heal = await asyncio.to_thread(tunnel_heal.heal_orphans)
+        if heal.get("healed"):
+            out = (out or "") + f"\n[tunnel-heal] recreated {', '.join(heal['healed'])}"
     return {"ok": code == 0, "rolled_back": code != 0, "log": out}
 
 

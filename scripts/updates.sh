@@ -125,6 +125,12 @@ PY
     fi
   fi
 
+  # Any path that recreates gluetun (or leaves peers behind) can orphan
+  # tunnelled apps. Heal after every apply, not only when gluetun is the
+  # target — Update All and host CLI updates hit this footgun often.
+  echo "3c/4 Healing tunnel orphans (if any)..."
+  PYTHONPATH=helm/backend python3 -m app.tunnel_heal || true
+
   echo "4/4 Waiting up to 90s for ${svc} to come back healthy..."
   for _ in $(seq 1 18); do
     state=$(docker inspect --format '{{.State.Health.Status}}' "kine-${svc}" 2>/dev/null || echo "none")

@@ -31,16 +31,56 @@ header{display:flex;align-items:center;gap:.85rem;padding:1rem 1.5rem;
 .brand-mark{width:28px;height:28px;flex:none;display:block}
 header h1{font-size:1.05rem;margin:0;letter-spacing:.04em;font-weight:600;
   color:var(--accent-strong)}
-nav{display:flex;gap:.25rem;margin-left:auto}
-nav button{background:color-mix(in srgb, var(--panel) 50%, transparent);
-  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
-  border:1px solid color-mix(in srgb, var(--line) 60%, transparent);
-  color:var(--muted);padding:.5rem 1rem;border-radius:999px;cursor:pointer;font-size:.9rem}
-nav button.active{background:color-mix(in srgb, var(--accent) 85%, transparent);
-  color:#fff;border-color:color-mix(in srgb, var(--accent) 70%, transparent);
-  box-shadow:0 2px 12px color-mix(in srgb, var(--accent) 25%, transparent)}
-nav button.nav-logout{margin-left:.35rem;opacity:.85}
-nav button.nav-logout:hover{color:var(--text);border-color:var(--line);opacity:1}
+nav{display:flex;align-items:center;gap:.15rem;margin-left:auto;padding:.28rem;
+  background:color-mix(in srgb, var(--panel) 48%, transparent);
+  backdrop-filter:blur(18px) saturate(1.2);-webkit-backdrop-filter:blur(18px) saturate(1.2);
+  border:1px solid color-mix(in srgb, #fff 12%, var(--line));
+  border-radius:999px;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset,
+    0 6px 22px color-mix(in srgb, #000 7%, transparent)}
+nav button{appearance:none;font:inherit;cursor:pointer;
+  background:transparent;border:1px solid transparent;
+  color:var(--muted);padding:.42rem .9rem;border-radius:999px;
+  font-size:.86rem;font-weight:550;letter-spacing:.01em;
+  transition:background .15s,color .15s,box-shadow .15s,border-color .15s}
+nav button:hover{color:var(--text);
+  background:color-mix(in srgb, var(--panel-2) 55%, transparent)}
+nav button.active{background:color-mix(in srgb, var(--accent) 88%, transparent);
+  color:#fff;border-color:color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow:0 2px 10px color-mix(in srgb, var(--accent) 22%, transparent)}
+nav button.nav-logout{margin-left:.2rem;padding-left:1rem;
+  border-left:1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius:0 999px 999px 0;opacity:.9}
+nav button.nav-logout:hover{color:var(--text);
+  background:color-mix(in srgb, var(--panel-2) 45%, transparent);opacity:1}
+.nav-toggle{display:none;margin-left:auto;flex:none;align-items:center;justify-content:center;
+  width:2.6rem;height:2.6rem;padding:0;border-radius:14px;cursor:pointer;
+  color:var(--text);background:color-mix(in srgb, var(--panel) 55%, transparent);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  border:1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  box-shadow:0 4px 16px color-mix(in srgb, #000 6%, transparent)}
+.nav-toggle svg{width:1.15rem;height:1.15rem;display:block}
+.nav-toggle[aria-expanded="true"]{border-color:color-mix(in srgb, var(--accent) 55%, transparent);
+  background:color-mix(in srgb, var(--accent) 14%, transparent)}
+@media (max-width:720px){
+  header{position:sticky;top:0;z-index:30;padding:.75rem 1rem;gap:.65rem;
+    flex-wrap:wrap;align-items:center}
+  .nav-toggle{display:inline-flex}
+  nav{display:none;flex-basis:100%;order:3;flex-direction:column;align-items:stretch;
+    gap:.4rem;margin:0;padding:.45rem;border-radius:16px}
+  header.nav-open nav{display:flex}
+  nav button{width:100%;justify-content:flex-start;text-align:left;
+    border-radius:12px;padding:.85rem 1rem;font-size:.95rem;min-height:2.75rem;
+    border:1px solid color-mix(in srgb, var(--line) 45%, transparent);
+    background:color-mix(in srgb, var(--panel) 40%, transparent)}
+  nav button.active{border-color:color-mix(in srgb, var(--accent) 50%, transparent)}
+  nav button.nav-logout{margin-left:0;margin-top:.1rem;padding-left:1rem;
+    border-left:1px solid color-mix(in srgb, var(--line) 45%, transparent);
+    border-radius:12px;border-style:dashed;opacity:1;color:var(--muted)}
+  main{padding:1rem;padding-bottom:4.5rem}
+  footer#vpnbar{padding:.55rem 1rem;font-size:.75rem}
+}
 main{padding:1.5rem;padding-bottom:4rem;max-width:1100px;margin:0 auto}
 footer#vpnbar{position:fixed;left:0;right:0;bottom:0;z-index:10;
   display:flex;align-items:center;gap:.5rem;padding:.6rem 1.5rem;
@@ -1017,7 +1057,14 @@ render.shell = (body) => {
         <img class="brand-mark" src="/assets/favicon.svg" alt="" width="28" height="28">
         <h1>Kine</h1>
       </div>
-      <nav>
+      <button type="button" class="nav-toggle" data-nav-toggle
+        aria-expanded="false" aria-controls="kine-nav" aria-label="Open menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16"/>
+        </svg>
+      </button>
+      <nav id="kine-nav">
         ${['apps','stats','updates','vpn','status','settings'].map(t =>
           `<button class="${state.tab===t?'active':''}" data-tab="${t}">${TAB_LABELS[t]}</button>`
         ).join('')}
@@ -1026,11 +1073,27 @@ render.shell = (body) => {
     </header>
     <main>${body}</main>
     <footer id="vpnbar"><span class="dot off"></span>checking VPN&hellip;</footer>`;
+  const header = document.querySelector('header');
+  const toggle = document.querySelector('[data-nav-toggle]');
+  const setNavOpen = (open) => {
+    if (!header || !toggle) return;
+    header.classList.toggle('nav-open', open);
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  };
+  if (toggle) {
+    toggle.onclick = () => setNavOpen(!header.classList.contains('nav-open'));
+  }
   document.querySelectorAll('nav button[data-tab]').forEach(b =>
-    b.onclick = () => { state.tab = b.dataset.tab; render[state.tab](); });
+    b.onclick = () => {
+      setNavOpen(false);
+      state.tab = b.dataset.tab;
+      render[state.tab]();
+    });
   const logoutBtn = document.querySelector('nav button[data-logout]');
   if (logoutBtn) {
     logoutBtn.onclick = async () => {
+      setNavOpen(false);
       try {
         await fetch('/api/auth/logout', {method:'POST', credentials:'same-origin'});
       } catch (_) { /* still clear the UI */ }
@@ -2524,7 +2587,9 @@ render.settings = async () => {
         When configured, Sonarr and Radarr notify these servers after imports
         so libraries refresh. Leave a server blank to disable its connection.
         Domain-hosted servers (e.g. <code>emby.${esc(s.KINE_DOMAIN||'example.com')}</code>)
-        are served by Traefik on <strong>port 443 with SSL</strong> — not 8096/32400.</p>
+        are served by Traefik on <strong>port 443 with SSL</strong> — not 8096/32400.
+        If the media server mounts the same files at a different path, set the
+        TV/Movies map fields (both sides) so partial library updates hit the right folders.</p>
       <h3 style="margin:0 0 .35rem;font-size:.85rem">Plex</h3>
       <label>Host</label><input id="PLEX_HOST" value="${esc(s.PLEX_HOST)}" placeholder="10.100.100.20">
       <div class="row" style="gap:1rem;align-items:end">
@@ -2537,6 +2602,18 @@ render.settings = async () => {
         </label>
       </div>
       <label>Token</label><input id="PLEX_TOKEN" value="${esc(s.PLEX_TOKEN)}" autocomplete="off">
+      <div class="row" style="gap:1rem">
+        <div style="flex:1"><label>TV map from (*arr)</label>
+          <input id="PLEX_TV_MAP_FROM" value="${esc(s.PLEX_TV_MAP_FROM)}" placeholder="/data/media/tv"></div>
+        <div style="flex:1"><label>TV map to (Plex)</label>
+          <input id="PLEX_TV_MAP_TO" value="${esc(s.PLEX_TV_MAP_TO)}" placeholder="/media/TV"></div>
+      </div>
+      <div class="row" style="gap:1rem">
+        <div style="flex:1"><label>Movies map from (*arr)</label>
+          <input id="PLEX_MOVIES_MAP_FROM" value="${esc(s.PLEX_MOVIES_MAP_FROM)}" placeholder="/data/media/movies"></div>
+        <div style="flex:1"><label>Movies map to (Plex)</label>
+          <input id="PLEX_MOVIES_MAP_TO" value="${esc(s.PLEX_MOVIES_MAP_TO)}" placeholder="/media/Movies"></div>
+      </div>
       <h3 style="margin:1.25rem 0 .35rem;font-size:.85rem">Emby</h3>
       <label>Host</label><input id="EMBY_HOST" value="${esc(embyHost)}" placeholder="${esc(s.EMBY_DEFAULT_HOST||'emby.example.com')}">
       <div class="row" style="gap:1rem;align-items:end">
@@ -2549,6 +2626,18 @@ render.settings = async () => {
         </label>
       </div>
       <label>API Key</label><input id="EMBY_API_KEY" value="${esc(s.EMBY_API_KEY)}" autocomplete="off">
+      <div class="row" style="gap:1rem">
+        <div style="flex:1"><label>TV map from (*arr)</label>
+          <input id="EMBY_TV_MAP_FROM" value="${esc(s.EMBY_TV_MAP_FROM)}" placeholder="/data/media/tv/Series"></div>
+        <div style="flex:1"><label>TV map to (Emby)</label>
+          <input id="EMBY_TV_MAP_TO" value="${esc(s.EMBY_TV_MAP_TO)}" placeholder="/mnt/share1"></div>
+      </div>
+      <div class="row" style="gap:1rem">
+        <div style="flex:1"><label>Movies map from (*arr)</label>
+          <input id="EMBY_MOVIES_MAP_FROM" value="${esc(s.EMBY_MOVIES_MAP_FROM)}" placeholder="/data/media/movies"></div>
+        <div style="flex:1"><label>Movies map to (Emby)</label>
+          <input id="EMBY_MOVIES_MAP_TO" value="${esc(s.EMBY_MOVIES_MAP_TO)}" placeholder="/mnt/share2"></div>
+      </div>
       <div class="row" style="margin-top:1rem">
         <button class="act primary" id="save-media-servers" type="button">Save Media Servers</button>
       </div>
@@ -2686,10 +2775,18 @@ render.settings = async () => {
       PLEX_PORT: mediaPortFor(plexUseSsl, $('#PLEX_PORT').value, 443, 32400),
       PLEX_TOKEN: $('#PLEX_TOKEN').value.trim(),
       PLEX_USE_SSL: plexUseSsl ? 'true' : 'false',
+      PLEX_TV_MAP_FROM: $('#PLEX_TV_MAP_FROM').value.trim(),
+      PLEX_TV_MAP_TO: $('#PLEX_TV_MAP_TO').value.trim(),
+      PLEX_MOVIES_MAP_FROM: $('#PLEX_MOVIES_MAP_FROM').value.trim(),
+      PLEX_MOVIES_MAP_TO: $('#PLEX_MOVIES_MAP_TO').value.trim(),
       EMBY_HOST: $('#EMBY_HOST').value.trim(),
       EMBY_PORT: mediaPortFor(embyUseSsl, $('#EMBY_PORT').value, 443, 8096),
       EMBY_API_KEY: $('#EMBY_API_KEY').value.trim(),
       EMBY_USE_SSL: embyUseSsl ? 'true' : 'false',
+      EMBY_TV_MAP_FROM: $('#EMBY_TV_MAP_FROM').value.trim(),
+      EMBY_TV_MAP_TO: $('#EMBY_TV_MAP_TO').value.trim(),
+      EMBY_MOVIES_MAP_FROM: $('#EMBY_MOVIES_MAP_FROM').value.trim(),
+      EMBY_MOVIES_MAP_TO: $('#EMBY_MOVIES_MAP_TO').value.trim(),
     };
     try {
       const r = await api('/settings', {method:'POST', body: JSON.stringify(body)});

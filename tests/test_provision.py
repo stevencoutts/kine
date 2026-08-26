@@ -464,6 +464,7 @@ def test_plex_and_emby_notification_payloads():
     assert plex["onDownload"] is True
     assert plex["onUpgrade"] is True
     assert plex["onRename"] is True
+    assert plex["onImportComplete"] is True
     assert plex["updateLibrary"] is True
     fields = {f["name"]: f["value"] for f in plex["fields"]}
     assert fields == {"host": "10.0.0.5", "port": 32400, "useSsl": False, "authToken": "tok"}
@@ -473,10 +474,58 @@ def test_plex_and_emby_notification_payloads():
     assert emby["name"] == "Emby"
     assert emby["implementation"] == "MediaBrowser"
     assert emby["updateLibrary"] is True
+    assert emby["onImportComplete"] is True
     efields = {f["name"]: f["value"] for f in emby["fields"]}
     assert efields["host"] == "emby"
     assert efields["apiKey"] == "key"
     assert efields["port"] == 8096
+
+
+def test_notification_path_maps_from_env(monkeypatch):
+    """Remote Plex/Emby mounts differ from *arr /data paths; mapFrom/mapTo required."""
+    from recipes.arr import emby_notification, plex_notification
+
+    monkeypatch.setenv("PLEX_TV_MAP_FROM", "/data/media/tv")
+    monkeypatch.setenv("PLEX_TV_MAP_TO", "/media/TV")
+    monkeypatch.setenv("PLEX_MOVIES_MAP_FROM", "/data/media/movies")
+    monkeypatch.setenv("PLEX_MOVIES_MAP_TO", "/media/Movies")
+    monkeypatch.setenv("EMBY_TV_MAP_FROM", "/data/media/tv/Series")
+    monkeypatch.setenv("EMBY_TV_MAP_TO", "/mnt/share1")
+    monkeypatch.setenv("EMBY_MOVIES_MAP_FROM", "/data/media/movies")
+    monkeypatch.setenv("EMBY_MOVIES_MAP_TO", "/mnt/share2")
+
+    plex_tv = plex_notification("sonarr", "10.0.0.5", 32400, "tok")
+    plex_tv_fields = {f["name"]: f["value"] for f in plex_tv["fields"]}
+    assert plex_tv_fields["mapFrom"] == "/data/media/tv"
+    assert plex_tv_fields["mapTo"] == "/media/TV"
+
+    plex_movies = plex_notification("radarr", "10.0.0.5", 32400, "tok")
+    plex_movies_fields = {f["name"]: f["value"] for f in plex_movies["fields"]}
+    assert plex_movies_fields["mapFrom"] == "/data/media/movies"
+    assert plex_movies_fields["mapTo"] == "/media/Movies"
+
+    emby_tv = emby_notification("sonarr", "emby.example.com", 443, "key", use_ssl=True)
+    emby_tv_fields = {f["name"]: f["value"] for f in emby_tv["fields"]}
+    assert emby_tv_fields["mapFrom"] == "/data/media/tv/Series"
+    assert emby_tv_fields["mapTo"] == "/mnt/share1"
+
+    emby_movies = emby_notification("radarr", "emby.example.com", 443, "key", use_ssl=True)
+    emby_movies_fields = {f["name"]: f["value"] for f in emby_movies["fields"]}
+    assert emby_movies_fields["mapFrom"] == "/data/media/movies"
+    assert emby_movies_fields["mapTo"] == "/mnt/share2"
+
+
+def test_notification_omits_path_maps_when_unset(monkeypatch):
+    from recipes.arr import plex_notification
+
+    for key in (
+        "PLEX_TV_MAP_FROM", "PLEX_TV_MAP_TO",
+        "PLEX_MOVIES_MAP_FROM", "PLEX_MOVIES_MAP_TO",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    fields = {f["name"]: f["value"] for f in plex_notification("sonarr", "h", 32400, "t")["fields"]}
+    assert "mapFrom" not in fields
+    assert "mapTo" not in fields
 
 
 def test_emby_config_uses_443_for_domain_ssl(monkeypatch):
@@ -642,7 +691,11 @@ def test_arr_wiring_removes_media_server_notifications_when_cleared(monkeypatch)
     monkeypatch.setattr(arr, "resolve_key", lambda app: "k")
     for key in (
         "PLEX_HOST", "PLEX_TOKEN", "PLEX_PORT", "PLEX_USE_SSL",
+        "PLEX_TV_MAP_FROM", "PLEX_TV_MAP_TO",
+        "PLEX_MOVIES_MAP_FROM", "PLEX_MOVIES_MAP_TO",
         "EMBY_HOST", "EMBY_API_KEY", "EMBY_PORT", "EMBY_USE_SSL",
+        "EMBY_TV_MAP_FROM", "EMBY_TV_MAP_TO",
+        "EMBY_MOVIES_MAP_FROM", "EMBY_MOVIES_MAP_TO",
     ):
         monkeypatch.delenv(key, raising=False)
     logs = []
@@ -733,8 +786,10 @@ def test_provision_compose_passes_media_server_env():
     text = (ROOT / "compose" / "core.provision.yml").read_text()
     assert "PLEX_HOST" in text
     assert "PLEX_TOKEN" in text
+    assert "PLEX_TV_MAP_FROM" in text
     assert "EMBY_HOST" in text
     assert "EMBY_API_KEY" in text
+    assert "EMBY_MOVIES_MAP_TO" in text
 
 
 def test_provision_wire_includes_bazarr():
@@ -747,8 +802,10 @@ def test_env_example_documents_media_servers():
     text = (ROOT / ".env.example").read_text()
     assert "PLEX_HOST=" in text
     assert "PLEX_TOKEN=" in text
+    assert "PLEX_TV_MAP_FROM=" in text
     assert "EMBY_HOST=" in text
     assert "EMBY_API_KEY=" in text
+    assert "EMBY_TV_MAP_TO=" in text
 
 
 def test_prowlarr_public_indexers_match_jackett_defaults():

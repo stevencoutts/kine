@@ -95,6 +95,8 @@ def _app_events(app: str) -> dict:
         "onGrab": False,
         "onDownload": True,
         "onUpgrade": True,
+        # Release-level trigger (Sonarr 4 / Radarr 5+); harmless if ignored.
+        "onImportComplete": True,
         "onRename": True,
         "onHealthIssue": False,
         "onApplicationUpdate": False,
@@ -117,6 +119,20 @@ def _app_events(app: str) -> dict:
     return events
 
 
+def _path_map_fields(server: str, app: str) -> list[dict]:
+    """Optional mapFrom/mapTo when remote library mounts differ from *arr paths."""
+    kind = "TV" if app == "sonarr" else "MOVIES"
+    prefix = f"{server.upper()}_{kind}_MAP"
+    map_from = os.environ.get(f"{prefix}_FROM", "").strip()
+    map_to = os.environ.get(f"{prefix}_TO", "").strip()
+    if not map_from or not map_to:
+        return []
+    return [
+        {"name": "mapFrom", "value": map_from},
+        {"name": "mapTo", "value": map_to},
+    ]
+
+
 def plex_notification(
     app: str, host: str, port: int, token: str, *, use_ssl: bool = False
 ) -> dict:
@@ -130,6 +146,7 @@ def plex_notification(
             {"name": "port", "value": port},
             {"name": "useSsl", "value": use_ssl},
             {"name": "authToken", "value": token},
+            *_path_map_fields("plex", app),
         ],
     }
 
@@ -148,6 +165,7 @@ def emby_notification(
             {"name": "useSsl", "value": use_ssl},
             {"name": "apiKey", "value": api_key},
             {"name": "notify", "value": False},
+            *_path_map_fields("emby", app),
         ],
     }
 
