@@ -26,8 +26,38 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def short_id(profile_id: str) -> str:
+    stripped = profile_id.replace("-", "").lower()
+    hex_chars = "".join(c for c in stripped if c in "0123456789abcdef")
+    if len(hex_chars) >= 8:
+        return hex_chars[:8]
+    sanitized = "".join(c for c in profile_id.lower() if c.isalnum())
+    if len(sanitized) >= 8:
+        return sanitized[:8]
+    return sanitized.ljust(8, "0")[:8]
+
+
+def migrate_schema(data: dict[str, Any]) -> dict[str, Any]:
+    out = dict(data)
+    if not out.get("primary_id") and out.get("active_id"):
+        out["primary_id"] = out["active_id"]
+    out.pop("active_id", None)
+    profiles = out.get("profiles")
+    if not isinstance(profiles, list):
+        profiles = []
+    for profile in profiles:
+        if isinstance(profile, dict) and "apps" not in profile:
+            profile["apps"] = []
+    out["profiles"] = profiles
+    if not out.get("primary_id") and profiles:
+        first = profiles[0]
+        if isinstance(first, dict):
+            out["primary_id"] = first.get("id")
+    return out
+
+
 def empty() -> dict[str, Any]:
-    return {"active_id": None, "profiles": []}
+    return {"primary_id": None, "profiles": []}
 
 
 def load(stack_root: str) -> dict[str, Any]:
@@ -43,10 +73,12 @@ def load(stack_root: str) -> dict[str, Any]:
     profiles = data.get("profiles")
     if not isinstance(profiles, list):
         profiles = []
-    return {
+    raw = {
+        "primary_id": data.get("primary_id"),
         "active_id": data.get("active_id"),
         "profiles": [p for p in profiles if isinstance(p, dict) and p.get("id")],
     }
+    return migrate_schema(raw)
 
 
 def save(stack_root: str, data: dict[str, Any]) -> None:
@@ -67,7 +99,7 @@ def redact_conf(conf: str) -> str:
 
 
 def summary(data: dict[str, Any]) -> list[dict[str, Any]]:
-    active = data.get("active_id")
+    primary = data.get("primary_id")
     rows = []
     for p in data.get("profiles") or []:
         rows.append({
@@ -75,9 +107,22 @@ def summary(data: dict[str, Any]) -> list[dict[str, Any]]:
             "name": p.get("name") or "Unnamed",
             "type": p.get("type") or "wireguard",
             "updated_at": p.get("updated_at"),
-            "active": p.get("id") == active,
+            "primary": p.get("id") == primary,
+            "apps": list(p.get("apps") or []),
         })
     return rows
+
+
+def tunnel_service(data: dict[str, Any], app_id: str) -> str:
+    primary_id = data.get("primary_id")
+    for profile in data.get("profiles") or []:
+        apps = profile.get("apps") or []
+        if app_id in apps:
+            pid = profile.get("id")
+            if pid == primary_id:
+                return "gluetun"
+            return f"gluetun_{short_id(pid)}"
+    return "gluetun"
 
 
 def migrate_from_wg0(stack_root: str) -> dict[str, Any]:
@@ -91,16 +136,17 @@ def migrate_from_wg0(stack_root: str) -> dict[str, Any]:
         return data
     conf = conf_path.read_text()
     profile_id = str(uuid.uuid4())
-    data = {
-        "active_id": profile_id,
+    data = migrate_schema({
+        "primary_id": profile_id,
         "profiles": [{
             "id": profile_id,
             "name": "Default",
             "type": "wireguard",
             "conf": conf if conf.endswith("\n") else conf + "\n",
             "updated_at": _now(),
+            "apps": [],
         }],
-    }
+    })
     save(stack_root, data)
     return data
 
@@ -126,10 +172,11 @@ def add_profile(
         "type": "wireguard",
         "conf": cleaned + "\n",
         "updated_at": _now(),
+        "apps": [],
     }
     data["profiles"].append(profile)
-    if not data.get("active_id"):
-        data["active_id"] = profile["id"]
+    if not data.get("primary_id"):
+        data["primary_id"] = profile["id"]
     save(stack_root, data)
     return profile
 
@@ -163,7 +210,7 @@ def update_profile(
 
 def delete_profile(stack_root: str, profile_id: str) -> None:
     data = migrate_from_wg0(stack_root)
-    if data.get("active_id") == profile_id:
+    if data.get("primary_id") == profile_id:
         raise ValueError("cannot delete the active profile; activate another first")
     before = len(data["profiles"])
     data["profiles"] = [p for p in data["profiles"] if p.get("id") != profile_id]
@@ -186,6 +233,6 @@ def prepare_activate(stack_root: str, profile_id: str) -> tuple[str, dict[str, s
     fields = wireguard.parse_conf(conf)
     if not fields or "WIREGUARD_PRIVATE_KEY" not in fields:
         raise ValueError("invalid WireGuard config")
-    data["active_id"] = profile_id
+    data["primary_id"] = profile_id
     save(stack_root, data)
     return conf + "\n", fields

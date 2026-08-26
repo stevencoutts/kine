@@ -16,15 +16,50 @@ Endpoint = 1.2.3.4:51820
 """
 
 
+def test_migrate_schema_active_id_to_primary():
+    raw = {
+        "active_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "profiles": [{
+            "id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "name": "Default",
+            "type": "wireguard",
+            "conf": "x",
+            "updated_at": "t",
+        }],
+    }
+    data = vpn_profiles.migrate_schema(raw)
+    assert data["primary_id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    assert "active_id" not in data
+    assert data["profiles"][0]["apps"] == []
+
+
+def test_tunnel_service_leftovers_use_primary():
+    data = {
+        "primary_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "profiles": [
+            {"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "apps": []},
+            {"id": "11111111-2222-3333-4444-555555555555", "apps": ["dispatcharr"]},
+        ],
+    }
+    assert vpn_profiles.tunnel_service(data, "sonarr") == "gluetun"
+    assert vpn_profiles.tunnel_service(data, "dispatcharr") == "gluetun_11111111"
+
+
+def test_short_id():
+    assert vpn_profiles.short_id("11111111-2222-3333-4444-555555555555") == "11111111"
+
+
 def test_migrate_imports_wg0_as_default(tmp_path):
     wg = tmp_path / "config" / "gluetun" / "wireguard"
     wg.mkdir(parents=True)
     (wg / "wg0.conf").write_text(VALID_CONF)
     data = vpn_profiles.migrate_from_wg0(str(tmp_path))
-    assert data["active_id"]
+    assert data["primary_id"]
+    assert "active_id" not in data
     assert len(data["profiles"]) == 1
     assert data["profiles"][0]["name"] == "Default"
     assert data["profiles"][0]["type"] == "wireguard"
+    assert data["profiles"][0]["apps"] == []
     assert "PrivateKey =" in data["profiles"][0]["conf"]
     data2 = vpn_profiles.migrate_from_wg0(str(tmp_path))
     assert len(data2["profiles"]) == 1
@@ -40,15 +75,16 @@ def test_redact_conf_strips_private_key():
 
 def test_summary_omits_conf(tmp_path):
     data = {
-        "active_id": "1",
+        "primary_id": "1",
         "profiles": [{
             "id": "1", "name": "Default", "type": "wireguard",
-            "conf": "x", "updated_at": "t",
+            "conf": "x", "updated_at": "t", "apps": ["sonarr"],
         }],
     }
     rows = vpn_profiles.summary(data)
     assert rows[0]["name"] == "Default"
-    assert rows[0]["active"] is True
+    assert rows[0]["primary"] is True
+    assert rows[0]["apps"] == ["sonarr"]
     assert "conf" not in rows[0]
 
 
