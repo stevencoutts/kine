@@ -491,6 +491,7 @@ def test_tls_setup_acme_dns_writes_resolver_args(tmp_path):
     args = (stack / "config" / "traefik" / "acme-args.txt").read_text()
     assert "certificatesresolvers.kineresolver.acme.email=ops@example.test" in args
     assert "dnschallenge.provider=cloudns" in args
+    assert "dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53" in args
     tls = (stack / "config" / "traefik" / "dynamic" / "tls.yml").read_text()
     assert "kineresolver" in tls
     assert "*.example.test" in tls

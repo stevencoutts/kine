@@ -23,6 +23,8 @@ class Sample(NamedTuple):
 
 METRIC_TYPES = {
     "kine_streams_active": "gauge",
+    "kine_stream_sessions": "gauge",
+    "kine_stream_bandwidth_bytes": "gauge",
     "kine_app_up": "gauge",
     "kine_update_pending": "gauge",
     "kine_library_items": "gauge",
@@ -32,6 +34,7 @@ METRIC_TYPES = {
     "kine_subtitles_wanted": "gauge",
     "kine_indexers_enabled": "gauge",
     "kine_download_rate_bytes": "gauge",
+    "kine_download_bytes_total": "counter",
     "kine_torrents": "gauge",
     "kine_collect_duration_seconds": "gauge",
     "kine_indexer_queries_total": "counter",
@@ -41,6 +44,8 @@ METRIC_TYPES = {
 
 METRIC_HELP = {
     "kine_streams_active": "Sessions currently open on a media server",
+    "kine_stream_sessions": "Open sessions per media server (always reported, including zero)",
+    "kine_stream_bandwidth_bytes": "Aggregate stream bitrate in bytes per second",
     "kine_app_up": "1 when the app answered its API, 0 when it did not",
     "kine_update_pending": "1 when a newer image digest is available",
     "kine_library_items": "Items known to the PVR",
@@ -50,6 +55,7 @@ METRIC_HELP = {
     "kine_subtitles_wanted": "Episodes or films missing wanted subtitles",
     "kine_indexers_enabled": "Indexers currently enabled",
     "kine_download_rate_bytes": "Current transfer rate in bytes per second",
+    "kine_download_bytes_total": "Lifetime bytes transferred by the download client",
     "kine_torrents": "Torrents by state",
     "kine_collect_duration_seconds": "Time the last collection of an app took",
     "kine_indexer_queries_total": "Indexer queries since the indexer was added",
@@ -123,11 +129,16 @@ def parse_prowlarr(indexers: list, stats: dict) -> list[Sample]:
 def parse_transmission(session_stats: dict) -> list[Sample]:
     args = session_stats.get("arguments") or {}
     client = {"client": "transmission"}
+    cumulative = args.get("cumulative-stats") or {}
     return [
         Sample("kine_download_rate_bytes", {**client, "direction": "down"},
                _num(args.get("downloadSpeed"))),
         Sample("kine_download_rate_bytes", {**client, "direction": "up"},
                _num(args.get("uploadSpeed"))),
+        Sample("kine_download_bytes_total", {**client, "direction": "down"},
+               _num(cumulative.get("downloadedBytes"))),
+        Sample("kine_download_bytes_total", {**client, "direction": "up"},
+               _num(cumulative.get("uploadedBytes"))),
         Sample("kine_torrents", {**client, "state": "active"},
                _num(args.get("activeTorrentCount"))),
         Sample("kine_torrents", {**client, "state": "paused"},
@@ -137,19 +148,46 @@ def parse_transmission(session_stats: dict) -> list[Sample]:
     ]
 
 
+def parse_nzbget(status: dict) -> list[Sample]:
+    """NZBGet status() payload (DownloadRate is bytes/sec)."""
+    client = {"client": "nzbget"}
+    rate = _num(status.get("download_rate", status.get("DownloadRate")))
+    return [
+        Sample("kine_download_rate_bytes", {**client, "direction": "down"}, rate),
+        Sample("kine_download_rate_bytes", {**client, "direction": "up"}, 0),
+    ]
+
+
 def parse_streams(snapshot: dict) -> list[Sample]:
     counts: dict[tuple[str, str, str], int] = {}
+    # Always publish plex/emby so Grafana never gaps when a server is idle.
+    sessions_by_server: dict[str, int] = {"plex": 0, "emby": 0}
+    bandwidth_by_server: dict[str, float] = {"plex": 0.0, "emby": 0.0}
     for session in snapshot.get("sessions") or []:
+        server = session.get("server") or "unknown"
         key = (
-            session.get("server") or "unknown",
+            server,
             session.get("state") or "playing",
             session.get("user") or "unknown",
         )
         counts[key] = counts.get(key, 0) + 1
-    return [
+        sessions_by_server[server] = sessions_by_server.get(server, 0) + 1
+        bandwidth_by_server[server] = bandwidth_by_server.get(server, 0.0) + (
+            _num(session.get("bitrate_bps")) / 8.0
+        )
+    out = [
         Sample("kine_streams_active", {"server": s, "state": st, "user": u}, n)
         for (s, st, u), n in sorted(counts.items())
     ]
+    out.extend(
+        Sample("kine_stream_sessions", {"server": server}, count)
+        for server, count in sorted(sessions_by_server.items())
+    )
+    out.extend(
+        Sample("kine_stream_bandwidth_bytes", {"server": server}, rate)
+        for server, rate in sorted(bandwidth_by_server.items())
+    )
+    return out
 
 
 def parse_updates(payload: dict) -> list[Sample]:
@@ -270,6 +308,25 @@ async def _collect_transmission(_app: str) -> list[Sample]:
         return parse_transmission(response.json())
 
 
+async def _collect_nzbget(_app: str) -> list[Sample]:
+    base = _base("nzbget")
+    if not base:
+        return []
+    payload = {"jsonrpc": "2.0", "method": "status", "params": [], "id": 1}
+    async with httpx.AsyncClient(timeout=12.0) as client:
+        response = await client.post(
+            f"{base}/jsonrpc",
+            json=payload,
+            auth=("nzbget", "nzbget"),
+        )
+        response.raise_for_status()
+        data = response.json() if response.content else {}
+    if isinstance(data, dict) and data.get("error"):
+        raise RuntimeError(str(data["error"]))
+    result = data.get("result") if isinstance(data, dict) else {}
+    return parse_nzbget(result if isinstance(result, dict) else {})
+
+
 async def _collect_streams(_label: str) -> list[Sample]:
     return parse_streams(await watching.snapshot())
 
@@ -305,6 +362,7 @@ COLLECTORS = {
     "prowlarr": _collect_prowlarr,
     "bazarr": _collect_bazarr,
     "transmission": _collect_transmission,
+    "nzbget": _collect_nzbget,
 }
 
 # Run regardless of which apps are enabled.

@@ -82,6 +82,7 @@ EMBY_SAMPLE = [
                 {"Type": "Video", "Codec": "h264"},
                 {"Type": "Audio", "Codec": "ac3"},
             ],
+            "MediaSources": [{"Bitrate": 4_000_000, "Path": "/tv/Friends/S01E01.mkv"}],
         },
         "PlayState": {"PositionTicks": 3_300_000_000, "IsPaused": False, "PlayMethod": "DirectPlay"},
     },
@@ -139,9 +140,11 @@ def test_parse_plex_sessions_episode_and_movie():
     assert rows[0]["audio_codec"] == "AAC"
     assert rows[0]["formats"] == ["1080p", "HEVC", "AAC", "8 Mbps"]
     assert rows[0]["stream"] == "direct"
+    assert rows[0]["bitrate_bps"] == 8_500_000
     assert rows[0]["art_url"] == art_proxy_path("plex", "/library/metadata/100/thumb/2")
     assert rows[1]["title"] == "Dune (2021)"
     assert rows[1]["state"] == "paused"
+    assert rows[1].get("bitrate_bps") in (None, 0)
     assert rows[1]["art_url"] == art_proxy_path("plex", "/library/metadata/300/thumb/3")
 
 
@@ -176,7 +179,8 @@ def test_parse_emby_skips_idle_and_enriches():
     assert rows[0]["resolution"] == "1080p"
     assert rows[0]["video_codec"] == "H264"
     assert rows[0]["audio_codec"] == "AC3"
-    assert rows[0]["formats"] == ["1080p", "H264", "AC3"]
+    assert rows[0]["formats"] == ["1080p", "H264", "AC3", "4 Mbps"]
+    assert rows[0]["bitrate_bps"] == 4_000_000
     assert rows[0]["art_url"].startswith("/api/watching/art/emby?")
     assert "item_id=series-1" in rows[0]["art_url"]
     assert "tag=series-tag" in rows[0]["art_url"]

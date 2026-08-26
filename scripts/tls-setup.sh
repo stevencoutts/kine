@@ -76,6 +76,9 @@ EOF
     # DNS-01 rather than HTTP-01 on purpose: this appliance should not
     # need an inbound hole in the firewall to renew a certificate.
     # delayBeforeCheck gives ClouDNS time to publish the TXT record.
+    # resolvers: lego finds the zone via SOA lookups; Docker's embedded
+    # DNS (127.0.0.11 → LAN resolver) often returns incomplete SOA and
+    # lego walks up to "com", then ClouDNS reports "zone com not found".
     cat > "${TRAEFIK_CFG}/acme-args.txt" <<EOF
 --certificatesresolvers.kineresolver.acme.email=${KINE_ACME_EMAIL}
 --certificatesresolvers.kineresolver.acme.storage=/etc/traefik/acme.json
@@ -83,7 +86,7 @@ EOF
 --certificatesresolvers.kineresolver.acme.dnschallenge=true
 --certificatesresolvers.kineresolver.acme.dnschallenge.provider=${provider}
 --certificatesresolvers.kineresolver.acme.dnschallenge.delaybeforecheck=30
---entrypoints.websecure.http.tls.certresolver=kineresolver
+--certificatesresolvers.kineresolver.acme.dnschallenge.resolvers=1.1.1.1:53,8.8.8.8:53
 EOF
     touch "${TRAEFIK_CFG}/acme.json"
     chmod 600 "${TRAEFIK_CFG}/acme.json"

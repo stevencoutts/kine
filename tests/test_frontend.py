@@ -310,10 +310,9 @@ def test_updates_page_lists_apps_not_core_containers():
 def test_stats_embeds_solo_panels_from_the_overview_dashboard():
     assert "/d-solo/kine-overview" in FRONTEND
     assert "kiosk" in FRONTEND
-
-
-def test_apps_page_asks_for_sparkline_data():
-    assert "/stats/cards" in FRONTEND
+    assert "/stats/overview" in FRONTEND
+    assert "stats-hero" in FRONTEND
+    assert "stats-glass" in FRONTEND
 
 
 def test_metrics_tier_is_ordered_with_the_others():
@@ -322,4 +321,5 @@ def test_metrics_tier_is_ordered_with_the_others():
 
 def test_stats_endpoints_exist_in_the_backend():
     assert '"/api/stats/cards"' in BACKEND
+    assert '"/api/stats/overview"' in BACKEND
     assert '"/api/metrics"' in BACKEND

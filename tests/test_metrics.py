@@ -117,12 +117,27 @@ def test_parse_transmission_reads_rates_and_states():
             "activeTorrentCount": 4,
             "pausedTorrentCount": 2,
             "torrentCount": 6,
+            "cumulative-stats": {
+                "downloadedBytes": 9_000_000_000,
+                "uploadedBytes": 1_500_000_000,
+            },
         }
     })
     rates = {s.labels["direction"]: s.value for s in out if s.name == "kine_download_rate_bytes"}
+    totals = {s.labels["direction"]: s.value for s in out if s.name == "kine_download_bytes_total"}
     states = {s.labels["state"]: s.value for s in out if s.name == "kine_torrents"}
     assert rates == {"down": 1200, "up": 300}
+    assert totals == {"down": 9_000_000_000, "up": 1_500_000_000}
     assert states == {"active": 4, "paused": 2, "total": 6}
+
+
+def test_parse_transmission_tolerates_missing_cumulative_stats():
+    out = metrics.parse_transmission({"arguments": {"downloadSpeed": 1, "uploadSpeed": 0}})
+    totals = [s for s in out if s.name == "kine_download_bytes_total"]
+    assert totals == [
+        metrics.Sample("kine_download_bytes_total", {"client": "transmission", "direction": "down"}, 0),
+        metrics.Sample("kine_download_bytes_total", {"client": "transmission", "direction": "up"}, 0),
+    ]
 
 
 def test_parse_streams_groups_by_server_state_and_user():
@@ -132,13 +147,42 @@ def test_parse_streams_groups_by_server_state_and_user():
         {"server": "emby", "state": "paused", "user": "kate"},
     ]}
     out = metrics.parse_streams(snapshot)
-    by = {(s.labels["server"], s.labels["state"], s.labels["user"]): s.value for s in out}
+    by = {(s.labels["server"], s.labels["state"], s.labels["user"]): s.value
+          for s in out if s.name == "kine_streams_active"}
     assert by[("plex", "playing", "steve")] == 2
     assert by[("emby", "paused", "kate")] == 1
+    sessions = {s.labels["server"]: s.value for s in out if s.name == "kine_stream_sessions"}
+    assert sessions == {"emby": 1, "plex": 2}
 
 
-def test_parse_streams_reports_nothing_when_idle():
-    assert metrics.parse_streams({"sessions": []}) == []
+def test_parse_streams_keeps_zero_session_series_when_idle():
+    out = metrics.parse_streams({"sessions": []})
+    assert [s for s in out if s.name == "kine_streams_active"] == []
+    sessions = {s.labels["server"]: s.value for s in out if s.name == "kine_stream_sessions"}
+    assert sessions == {"emby": 0, "plex": 0}
+
+
+def test_parse_nzbget_reads_download_rate():
+    out = metrics.parse_nzbget({"DownloadRate": 5_000_000})
+    rates = {s.labels["direction"]: s.value for s in out if s.name == "kine_download_rate_bytes"}
+    assert rates == {"down": 5_000_000, "up": 0}
+    assert all(s.labels["client"] == "nzbget" for s in out)
+
+
+def test_parse_streams_sums_bandwidth_by_server():
+    out = metrics.parse_streams({"sessions": [
+        {"server": "plex", "state": "playing", "user": "steve", "bitrate_bps": 8_000_000},
+        {"server": "plex", "state": "playing", "user": "kate", "bitrate_bps": 2_000_000},
+        {"server": "emby", "state": "playing", "user": "dave", "bitrate_bps": 4_000_000},
+    ]})
+    bw = {s.labels["server"]: s.value for s in out if s.name == "kine_stream_bandwidth_bytes"}
+    assert bw == {"emby": 500_000.0, "plex": 1_250_000.0}
+
+
+def test_parse_streams_keeps_zero_bandwidth_when_idle():
+    out = metrics.parse_streams({"sessions": []})
+    bw = {s.labels["server"]: s.value for s in out if s.name == "kine_stream_bandwidth_bytes"}
+    assert bw == {"emby": 0.0, "plex": 0.0}
 
 
 def test_parse_updates_flags_pending_containers():

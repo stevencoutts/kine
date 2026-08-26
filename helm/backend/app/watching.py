@@ -146,6 +146,7 @@ def _plex_media_bits(item: dict) -> dict[str, Any]:
     empty = {
         "source": None,
         "stream": None,
+        "bitrate_bps": None,
         **_format_fields(),
     }
     medias = _as_list(item.get("Media"))
@@ -164,10 +165,13 @@ def _plex_media_bits(item: dict) -> dict[str, Any]:
     video_codec = str(media["videoCodec"]).upper() if media.get("videoCodec") else None
     audio_codec = str(media["audioCodec"]).upper() if media.get("audioCodec") else None
     bitrate_label = None
+    bitrate_bps = None
     bitrate = media.get("bitrate")
     if bitrate:
         try:
-            bitrate_label = f"{round(float(bitrate) / 1000)} Mbps"
+            # Plex Media.bitrate is kbps.
+            bitrate_bps = int(float(bitrate) * 1000)
+            bitrate_label = f"{round(bitrate_bps / 1_000_000)} Mbps"
         except (TypeError, ValueError):
             pass
     if item.get("TranscodeSession"):
@@ -183,6 +187,7 @@ def _plex_media_bits(item: dict) -> dict[str, Any]:
     return {
         "source": source,
         "stream": stream,
+        "bitrate_bps": bitrate_bps,
         **_format_fields(
             resolution=resolution,
             video_codec=video_codec,
@@ -278,6 +283,7 @@ def parse_plex_sessions(payload: dict) -> list[dict]:
             "audio_codec": media["audio_codec"],
             "formats": media["formats"],
             "stream": media["stream"],
+            "bitrate_bps": media.get("bitrate_bps"),
             "art_url": _plex_art_url(item, kind or "unknown"),
         })
     return rows
@@ -286,11 +292,34 @@ def parse_plex_sessions(payload: dict) -> list[dict]:
 def _emby_media_bits(now: dict, session: dict) -> dict[str, Any]:
     sources = _as_list(now.get("MediaSources"))
     source = None
+    bitrate_bps = None
     if sources and isinstance(sources[0], dict):
         src = sources[0]
         source = _basename(src.get("Path")) or (src.get("Path") or src.get("Name") or "").strip() or None
+        for key in ("Bitrate", "bitrate"):
+            if src.get(key):
+                try:
+                    bitrate_bps = int(float(src[key]))
+                    break
+                except (TypeError, ValueError):
+                    pass
     if not source:
         source = _basename(now.get("Path")) or (now.get("Path") or "").strip() or None
+    if bitrate_bps is None:
+        for key in ("Bitrate", "bitrate"):
+            if now.get(key):
+                try:
+                    bitrate_bps = int(float(now[key]))
+                    break
+                except (TypeError, ValueError):
+                    pass
+    transcode = session.get("TranscodingInfo") or {}
+    if isinstance(transcode, dict) and transcode.get("Bitrate"):
+        try:
+            # Transcode bitrate is the actual delivery rate when remuxing/transcoding.
+            bitrate_bps = int(float(transcode["Bitrate"]))
+        except (TypeError, ValueError):
+            pass
 
     resolution = None
     width = now.get("Width")
@@ -315,7 +344,10 @@ def _emby_media_bits(now: dict, session: dict) -> dict[str, Any]:
             audio_codec = str(stream["Codec"]).upper()
             break
 
-    transcode = session.get("TranscodingInfo") or {}
+    bitrate_label = None
+    if bitrate_bps:
+        bitrate_label = f"{round(bitrate_bps / 1_000_000)} Mbps"
+
     if isinstance(transcode, dict) and (transcode.get("IsVideoDirect") is False or transcode.get("VideoCodec")):
         stream = "transcode"
     else:
@@ -328,10 +360,12 @@ def _emby_media_bits(now: dict, session: dict) -> dict[str, Any]:
     return {
         "source": source,
         "stream": stream,
+        "bitrate_bps": bitrate_bps,
         **_format_fields(
             resolution=resolution,
             video_codec=video_codec,
             audio_codec=audio_codec,
+            bitrate_label=bitrate_label,
         ),
     }
 

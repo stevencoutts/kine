@@ -421,10 +421,21 @@
             "uid": "kine-prom"
           },
           "editorMode": "code",
-          "expr": "sum by(server) (kine_streams_active)",
+          "expr": "sum by(server) (kine_stream_sessions)",
           "range": true,
           "refId": "A",
           "legendFormat": "{{server}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "kine-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(kine_stream_sessions)",
+          "range": true,
+          "refId": "B",
+          "legendFormat": "total"
         }
       ],
       "fieldConfig": {
@@ -435,9 +446,9 @@
           },
           "custom": {
             "drawStyle": "line",
-            "lineInterpolation": "smooth",
+            "lineInterpolation": "stepAfter",
             "lineWidth": 2,
-            "fillOpacity": 35,
+            "fillOpacity": 18,
             "gradientMode": "opacity",
             "showPoints": "never",
             "pointSize": 5,
@@ -448,7 +459,7 @@
               "type": "linear"
             },
             "stacking": {
-              "mode": "normal",
+              "mode": "none",
               "group": "A"
             },
             "hideFrom": {
@@ -468,9 +479,35 @@
                 "value": null
               }
             ]
-          }
+          },
+          "min": 0,
+          "decimals": 0
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "total"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "legend": {
@@ -483,12 +520,13 @@
           "mode": "multi",
           "sort": "desc"
         }
-      }
+      },
+      "transparent": true
     },
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Download Rate",
+      "title": "Download Bandwidth",
       "datasource": {
         "type": "prometheus",
         "uid": "kine-prom"
@@ -522,7 +560,7 @@
             "drawStyle": "line",
             "lineInterpolation": "smooth",
             "lineWidth": 2,
-            "fillOpacity": 25,
+            "fillOpacity": 30,
             "gradientMode": "opacity",
             "showPoints": "never",
             "pointSize": 5,
@@ -553,7 +591,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "min": 0
         },
         "overrides": []
       },
@@ -568,7 +607,8 @@
           "mode": "multi",
           "sort": "desc"
         }
-      }
+      },
+      "transparent": true
     },
     {
       "id": 9,
@@ -634,7 +674,7 @@
     {
       "id": 10,
       "type": "gauge",
-      "title": "Filesystems",
+      "title": "NFS Media",
       "datasource": {
         "type": "prometheus",
         "uid": "kine-prom"
@@ -652,7 +692,7 @@
             "uid": "kine-prom"
           },
           "editorMode": "code",
-          "expr": "100 - (node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|squashfs|ramfs\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay|squashfs|ramfs\"} * 100)",
+          "expr": "100 * (1 - node_filesystem_avail_bytes{fstype=\"nfs\",mountpoint=~\"/srv/.+/media$\"} / node_filesystem_size_bytes{fstype=\"nfs\",mountpoint=~\"/srv/.+/media$\"})",
           "range": true,
           "refId": "A",
           "legendFormat": "{{mountpoint}}"
@@ -697,7 +737,8 @@
           "fields": "",
           "values": false
         }
-      }
+      },
+      "transparent": true
     },
     {
       "id": 11,
@@ -861,6 +902,105 @@
           "reducer": [
             "sum"
           ]
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Streaming Bandwidth",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "kine-prom"
+      },
+      "transparent": true,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 20
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "kine-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum by(server) (kine_stream_bandwidth_bytes)",
+          "range": true,
+          "refId": "A",
+          "legendFormat": "{{server}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "kine-prom"
+          },
+          "editorMode": "code",
+          "expr": "sum(kine_stream_bandwidth_bytes)",
+          "range": true,
+          "refId": "B",
+          "legendFormat": "total"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 28,
+            "gradientMode": "opacity",
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "total"
+            },
+            "properties": [
+              {
+                "id": "custom.lineWidth",
+                "value": 3
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "purple"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
         }
       }
     }

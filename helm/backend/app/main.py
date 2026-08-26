@@ -823,6 +823,12 @@ async def stats_cards(user: str = Depends(require_user)):
     return await promquery.card_series()
 
 
+@app.get("/api/stats/overview")
+async def stats_overview(user: str = Depends(require_user)):
+    """Hero numbers for the Stats glass cards. Empty-ish when metrics are off."""
+    return await promquery.overview()
+
+
 @app.get("/api/metrics")
 async def prometheus_metrics():
     """Scraped by Prometheus, which cannot log in.

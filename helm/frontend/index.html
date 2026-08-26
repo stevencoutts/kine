@@ -277,6 +277,60 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   background:color-mix(in srgb, var(--panel) 60%, transparent)}
 .panel-grid iframe.tall{grid-column:span 2;height:260px}
 @media (max-width:760px){.panel-grid iframe.tall{grid-column:span 1}}
+.stats-page{max-width:1180px;margin:0 auto}
+.stats-hero{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.85rem;margin-bottom:1rem}
+@media (max-width:1100px){.stats-hero{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.stats-hero{grid-template-columns:1fr}}
+.stats-glass{
+  position:relative;overflow:hidden;
+  background:
+    linear-gradient(145deg,
+      color-mix(in srgb, var(--panel) 58%, transparent),
+      color-mix(in srgb, var(--panel-2) 42%, transparent));
+  backdrop-filter:blur(28px) saturate(1.35);-webkit-backdrop-filter:blur(28px) saturate(1.35);
+  border:1px solid color-mix(in srgb, #fff 14%, var(--line));
+  border-radius:calc(var(--radius) + 2px);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset,
+    0 10px 36px color-mix(in srgb, #000 10%, transparent);
+  padding:1rem 1.05rem 1.05rem;
+  min-height:7.5rem;display:flex;flex-direction:column;gap:.35rem}
+.stats-glass::before{
+  content:"";position:absolute;inset:0 0 auto 0;height:42%;pointer-events:none;
+  background:linear-gradient(180deg, color-mix(in srgb, #fff 9%, transparent), transparent)}
+.stats-glass .stats-kicker{position:relative;margin:0;font-size:.68rem;font-weight:650;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.stats-glass .stats-value{position:relative;margin:0;font-size:2rem;font-weight:650;line-height:1.1;
+  letter-spacing:-.02em;color:var(--text)}
+.stats-glass .stats-sub{position:relative;margin:0;font-size:.8rem;color:var(--muted);line-height:1.35}
+.stats-glass .stats-meter{position:relative;margin-top:auto;height:6px;border-radius:999px;
+  background:color-mix(in srgb, var(--line) 65%, transparent);overflow:hidden}
+.stats-glass .stats-meter > i{display:block;height:100%;border-radius:999px;
+  background:linear-gradient(90deg, color-mix(in srgb, var(--ok) 75%, #7dd3a0), var(--ok));
+  width:0;transition:width .45s ease}
+.stats-glass.accent-stream{--stats-glow:color-mix(in srgb, #52b54b 35%, transparent)}
+.stats-glass.accent-down{--stats-glow:color-mix(in srgb, #3b82f6 35%, transparent)}
+.stats-glass.accent-disk{--stats-glow:color-mix(in srgb, #e5a00d 30%, transparent)}
+.stats-glass.accent-host{--stats-glow:color-mix(in srgb, var(--accent) 40%, transparent)}
+.stats-glass.accent-stream,.stats-glass.accent-down,.stats-glass.accent-disk,.stats-glass.accent-host{
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset,
+    0 10px 36px color-mix(in srgb, #000 10%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--stats-glow) 35%, transparent)}
+.stats-frame{
+  background:color-mix(in srgb, var(--panel) 48%, transparent);
+  backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
+  border:1px solid color-mix(in srgb, #fff 12%, var(--line));
+  border-radius:calc(var(--radius) + 2px);
+  box-shadow:0 8px 28px color-mix(in srgb, #000 8%, transparent);
+  overflow:hidden;padding:.55rem .55rem .35rem}
+.stats-frame h3{margin:0 .35rem .45rem;font-size:.72rem;font-weight:650;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.stats-frame iframe{width:100%;height:280px;border:0;border-radius:12px;
+  background:transparent;display:block}
+.stats-graphs{display:grid;grid-template-columns:1fr 1fr;gap:.85rem}
+@media (max-width:900px){.stats-graphs{grid-template-columns:1fr}}
+.stats-graphs .stats-frame.wide{grid-column:1 / -1}
 .embed-overlay{position:fixed;inset:0;z-index:40;display:none;
   flex-direction:column;background:var(--bg)}
 .embed-overlay.open{display:flex}
@@ -1648,22 +1702,82 @@ render.stats = async () => {
     return;
   }
   const base = grafana.url.replace(/\/$/, '');
-  const panel = (id, cls='') =>
-    `<iframe class="${cls}" loading="lazy" title="Kine panel ${id}" src="${base}` +
-    `/d-solo/kine-overview?panelId=${id}&theme=dark&kiosk&from=now-24h&to=now&refresh=30s"></iframe>`;
+  const theme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+  const panel = (id, height=280) =>
+    `<iframe loading="lazy" title="Kine panel ${id}" style="height:${height}px" src="${base}` +
+    `/d-solo/kine-overview?orgId=1&panelId=${id}&theme=${theme}&kiosk` +
+    `&from=now-24h&to=now&refresh=30s&__feature.dashboardSceneSolo"></iframe>`;
+
+  const serverLine = (by={}) => {
+    const order = ['plex', 'emby', ...Object.keys(by).filter(k => k !== 'plex' && k !== 'emby')];
+    const parts = order.filter(k => by[k]).map(k => `${k[0].toUpperCase()}${k.slice(1)} ${by[k]}`);
+    return parts.length ? parts.join(' · ') : 'Nobody watching';
+  };
+
+  const paintHero = (o={}) => {
+    const s = o.streamers || {};
+    const d = o.downloads || {};
+    const n = o.nfs_disk;
+    const h = o.host || {};
+    const diskPct = n ? Math.max(0, Math.min(100, Number(n.used_pct) || 0)) : 0;
+    const diskSub = n
+      ? `${fmtBytes(n.used_bytes)} used · ${fmtBytes(n.size_bytes)} total`
+      : 'NFS media mount not reported yet';
+    const diskMount = n?.mountpoint ? n.mountpoint.split('/').slice(-2).join('/') : 'media';
+    return `
+      <div class="stats-glass accent-stream">
+        <p class="stats-kicker">Streamers</p>
+        <p class="stats-value">${s.unique ?? 0}</p>
+        <p class="stats-sub">${serverLine(s.by_server)}${
+          s.sessions ? ` · ${s.sessions} session${s.sessions === 1 ? '' : 's'}` : ''
+        }</p>
+      </div>
+      <div class="stats-glass accent-down">
+        <p class="stats-kicker">Downloads</p>
+        <p class="stats-value">${formatRate(d.rate_down || 0)}</p>
+        <p class="stats-sub">↑ ${formatRate(d.rate_up || 0)} now · ↓ ${fmtBytes(d.total_down || 0)} / ↑ ${fmtBytes(d.total_up || 0)} lifetime</p>
+      </div>
+      <div class="stats-glass accent-disk">
+        <p class="stats-kicker">NFS · ${escHtml(diskMount)}</p>
+        <p class="stats-value">${n ? `${diskPct}%` : '—'}</p>
+        <p class="stats-sub">${escHtml(diskSub)}</p>
+        <div class="stats-meter" aria-hidden="true"><i style="width:${diskPct}%"></i></div>
+      </div>
+      <div class="stats-glass accent-host">
+        <p class="stats-kicker">Host</p>
+        <p class="stats-value">${h.cpu_pct != null ? `${h.cpu_pct}%` : '—'}</p>
+        <p class="stats-sub">CPU · Memory ${h.mem_pct != null ? `${h.mem_pct}%` : '—'}</p>
+        <div class="stats-meter" aria-hidden="true"><i style="width:${Math.max(0, Math.min(100, Number(h.mem_pct) || 0))}%"></i></div>
+      </div>`;
+  };
+
   render.shell(`
-    <div class="section">
-      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:.75rem">
+    <div class="section stats-page">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:.9rem">
         <h2 style="margin:0">Stats</h2>
         <a class="link" href="${base}/d/kine-overview" target="_blank"
            rel="noopener noreferrer">Open Grafana</a>
       </div>
-      <div class="panel-grid">
-        ${panel(1)}${panel(2)}${panel(3)}${panel(4)}
-        ${panel(7,'tall')}${panel(8,'tall')}
-        ${panel(9,'tall')}${panel(10,'tall')}
+      <div class="stats-hero" id="stats-hero">${paintHero()}</div>
+      <div class="stats-graphs">
+        <div class="stats-frame wide">${'<h3>Streams</h3>'}${panel(7)}</div>
+        <div class="stats-frame">${'<h3>Streaming bandwidth</h3>'}${panel(13)}</div>
+        <div class="stats-frame">${'<h3>Download bandwidth</h3>'}${panel(8)}</div>
+        <div class="stats-frame wide">${'<h3>NFS media capacity</h3>'}${panel(10, 220)}</div>
       </div>
     </div>`);
+
+  const refreshHero = async () => {
+    const hero = $('#stats-hero');
+    if (!hero) return;
+    try {
+      const overview = await api('/stats/overview');
+      hero.innerHTML = paintHero(overview);
+    } catch (_) { /* keep last paint */ }
+  };
+  refreshHero();
+  if (window.__statsHeroTimer) clearInterval(window.__statsHeroTimer);
+  window.__statsHeroTimer = setInterval(refreshHero, 15000);
 };
 
 render.updates = async (refresh=false) => {
@@ -2102,10 +2216,13 @@ render.vpn = async () => {
 
 const fmtBytes = (n) => {
   const x = Number(n) || 0;
-  if (x < 1024) return `${x} B`;
-  if (x < 1024 * 1024) return `${(x / 1024).toFixed(1)} KB`;
-  if (x < 1024 * 1024 * 1024) return `${(x / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(x / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  if (x < 1024) return `${Math.round(x)} B`;
+  const units = ['KB', 'MB', 'GB', 'TB', 'PB'];
+  let v = x / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  const digits = v >= 100 ? 0 : 1;
+  return `${v.toFixed(digits)} ${units[i]}`;
 };
 
 render.status = async () => {
