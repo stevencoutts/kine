@@ -399,18 +399,29 @@ details.settings-group[open] > summary.settings-group-title::before{transform:ro
 .watch-badge.vpn-active{background:color-mix(in srgb, var(--ok) 14%, transparent);color:var(--ok);
   border-color:color-mix(in srgb, var(--ok) 28%, transparent)}
 .vpn-tunnelled{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.55rem}
-.vpn-tunnelled span{font-size:.72rem;padding:.18rem .5rem;border-radius:999px;
+.vpn-tunnelled .vpn-app-chip{font-size:.72rem;padding:.18rem .5rem;border-radius:999px;
   background:color-mix(in srgb, var(--panel-2) 75%, transparent);
-  border:1px solid color-mix(in srgb, var(--line) 55%, transparent);color:var(--muted)}
+  border:1px solid color-mix(in srgb, var(--line) 55%, transparent);color:var(--muted);
+  cursor:pointer;font:inherit}
+.vpn-tunnelled .vpn-app-chip:hover,.vpn-tunnelled .vpn-app-chip:focus-visible{
+  border-color:color-mix(in srgb, var(--accent) 55%, var(--line));
+  color:var(--text);outline:none}
+.vpn-move-menu{position:absolute;z-index:40;min-width:11rem;padding:.35rem;
+  border-radius:10px;border:1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  background:color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow:0 10px 28px color-mix(in srgb, #000 18%, transparent);backdrop-filter:blur(10px)}
+.vpn-move-menu p{margin:0;padding:.25rem .45rem .35rem;font-size:.72rem;color:var(--muted);
+  text-transform:uppercase;letter-spacing:.02em;font-weight:600}
+.vpn-move-menu button{display:block;width:100%;text-align:left;border:0;background:transparent;
+  color:var(--text);font:inherit;font-size:.82rem;padding:.4rem .5rem;border-radius:7px;cursor:pointer}
+.vpn-move-menu button:hover,.vpn-move-menu button:focus-visible{
+  background:color-mix(in srgb, var(--accent) 16%, transparent);outline:none}
+.vpn-card-err{color:var(--bad);font-size:.8rem;margin:.55rem 0 0;min-height:0}
 .vpn-profiles-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;
   margin:0 0 .75rem}
 .vpn-profiles-head h2,.vpn-profiles-head h3{margin:0;font-size:1.05rem;font-weight:650}
 .vpn-active-detail{margin-top:.55rem}
-.vpn-apps{margin-top:.75rem;padding-top:.65rem;border-top:1px solid color-mix(in srgb, var(--line) 45%, transparent)}
-.vpn-apps-title{margin:0 0 .45rem;font-size:.78rem;color:var(--muted);font-weight:600;letter-spacing:.02em;text-transform:uppercase}
-.vpn-app-check{display:flex;align-items:center;gap:.45rem;font-size:.82rem;margin:.28rem 0;cursor:pointer}
-.vpn-app-check input[type=checkbox]{width:auto;margin:0;accent-color:var(--accent)}
-.vpn-apps-actions{margin-top:.55rem}
+.vpn-apps-hint{margin:.45rem 0 0;font-size:.75rem;color:var(--muted)}
 .vpn-modal label{display:block;margin:.65rem 0 .3rem;font-size:.8rem;color:var(--muted)}
 .vpn-modal input,.vpn-modal textarea{width:100%;box-sizing:border-box}
 .vpn-modal textarea{min-height:160px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -2331,17 +2342,35 @@ render.vpn = async () => {
     if (p.primary && v.enabled) return true;
     return !!(p.apps || []).length && p.tunnel.enabled;
   };
+  const LIVE_TV_AFFINITY = ['dispatcharr', 'ecm', 'teamarr'];
+  const appLabel = (id) => {
+    const hit = assignableApps.find(a => a.id === id);
+    return (hit && hit.name) || id;
+  };
+  const expandAffinity = (appId) => {
+    if (LIVE_TV_AFFINITY.includes(appId)) {
+      return LIVE_TV_AFFINITY.filter(id => assignableIds.includes(id));
+    }
+    return [appId];
+  };
+  const appChipsHtml = (p) => {
+    const apps = tunnelAppsFor(p);
+    if (!apps.length) {
+      return `<p style="color:var(--muted);font-size:.8rem;margin:.55rem 0 0">No apps on this tunnel. Click a chip on another profile to move one here.</p>`;
+    }
+    const chips = apps.map(id =>
+      `<button type="button" class="vpn-app-chip" data-vpn-move-app="${escAttr(id)}" data-vpn-from="${escAttr(p.id)}" title="Move ${escAttr(appLabel(id))}">${escHtml(appLabel(id))}</button>`
+    ).join('');
+    return `<div class="vpn-tunnelled">${chips}</div>
+      <p class="vpn-apps-hint">Click an app to move it to another VPN.</p>`;
+  };
   const tunnelDetailHtml = (p) => {
     const t = p.tunnel || {};
-    const apps = tunnelAppsFor(p);
     const meta = [
       `<span>Public IP <b>${escHtml(t.public_ip || 'unknown')}</b></span>`,
       `<span>Forwarded port <b>${escHtml(t.forwarded_port != null ? String(t.forwarded_port) : 'none')}</b></span>`,
     ].join('');
-    const chips = apps.length
-      ? `<div class="vpn-tunnelled">${apps.map(a => `<span>${escHtml(a)}</span>`).join('')}</div>`
-      : `<p style="color:var(--muted);font-size:.8rem;margin:.55rem 0 0">No apps assigned to this tunnel.</p>`;
-    return `<div class="vpn-active-detail"><div class="watch-meta">${meta}</div>${chips}</div>`;
+    return `<div class="vpn-active-detail"><div class="watch-meta">${meta}</div>${appChipsHtml(p)}</div>`;
   };
   const tunnelActionsHtml = (p) => {
     const svc = escAttr((p.tunnel || {}).service || 'gluetun');
@@ -2350,22 +2379,13 @@ render.vpn = async () => {
     <button type="button" class="act" data-vpn-restart="${svc}">Restart Tunnel Group</button>
     ${p.primary && v.enabled ? '<button type="button" class="act" data-vpn-disable>Disable VPN</button>' : ''}`;
   };
-  const appsChecklistHtml = (p) => {
-    if (!assignableApps.length) {
-      return `<div class="vpn-apps" data-vpn-apps="${escAttr(p.id)}">
-        <p class="vpn-apps-title">Apps</p>
-        <p style="color:var(--muted);font-size:.8rem;margin:0">No forced-tunnel apps are enabled.</p>
-      </div>`;
+  const secondaryAppsHtml = (p) => {
+    if (p.primary || showTunnelDetail(p)) return '';
+    const apps = p.apps || [];
+    if (!apps.length) {
+      return `<p class="vpn-apps-hint">No apps assigned. Click a chip on the primary tunnel to move apps here.</p>`;
     }
-    const checks = assignableApps.map(app => {
-      const checked = (p.apps || []).includes(app.id) ? ' checked' : '';
-      return `<label class="vpn-app-check"><input type="checkbox" class="vpn-app-check" value="${escAttr(app.id)}"${checked}>${escHtml(app.name || app.id)}</label>`;
-    }).join('');
-    return `<div class="vpn-apps" data-vpn-apps="${escAttr(p.id)}">
-      <p class="vpn-apps-title">Apps</p>
-      ${checks}
-      <div class="vpn-apps-actions"><button type="button" class="act" data-vpn-apps-save="${escAttr(p.id)}">Save Apps</button></div>
-    </div>`;
+    return appChipsHtml(p);
   };
   const concurrencyBanner = (v.tunnels_running || 0) > 3
     ? `<div class="banner" style="border:1px solid var(--warn);margin-bottom:.85rem">More than 3 VPN tunnels are running. This is allowed but may use extra resources.</div>`
@@ -2386,8 +2406,8 @@ render.vpn = async () => {
             <h3 class="vpn-card-title">${escHtml(p.name || 'Unnamed')}</h3>
             <div class="watch-badges">${badges}</div>
           </div>
-          ${tunnelLive ? tunnelDetailHtml(p) : ''}
-          ${appsChecklistHtml(p)}
+          ${tunnelLive ? tunnelDetailHtml(p) : secondaryAppsHtml(p)}
+          <p class="vpn-card-err" data-vpn-err="${escAttr(p.id)}" hidden></p>
           <div class="vpn-card-actions">
             ${tunnelLive ? tunnelActionsHtml(p) : ''}
             ${!p.primary ? `<button type="button" class="act" data-vpn-primary="${escAttr(p.id)}">Set as Primary</button>` : ''}
@@ -2488,22 +2508,82 @@ render.vpn = async () => {
       } catch (e) { setOut(e.message || String(e)); }
     };
   });
-  document.querySelectorAll('[data-vpn-apps-save]').forEach(btn => {
-    btn.onclick = async () => {
-      const id = btn.dataset.vpnAppsSave;
-      const box = document.querySelector(`[data-vpn-apps="${CSS.escape(id)}"]`);
-      const apps = box
-        ? [...box.querySelectorAll('input.vpn-app-check:checked')].map(el => el.value)
-        : [];
-      setOut('saving apps...');
-      try {
-        const r = await api(`/vpn/profiles/${encodeURIComponent(id)}/apps`, {
-          method: 'PUT',
-          body: JSON.stringify({apps}),
-        });
-        setOut(r.log || 'apps saved');
-        await render.vpn();
-      } catch (e) { setOut(e.message || String(e)); }
+  const closeVpnMoveMenu = () => {
+    document.querySelectorAll('.vpn-move-menu').forEach(el => el.remove());
+  };
+  const setCardErr = (profileId, msg) => {
+    const el = document.querySelector(`[data-vpn-err="${CSS.escape(profileId)}"]`);
+    if (!el) return;
+    if (msg) {
+      el.hidden = false;
+      el.textContent = msg;
+    } else {
+      el.hidden = true;
+      el.textContent = '';
+    }
+  };
+  const moveAppsToProfile = async (appId, fromId, targetId) => {
+    const moving = expandAffinity(appId);
+    const target = profiles.find(p => p.id === targetId);
+    if (!target) throw new Error('target profile not found');
+    const next = [...new Set([...(target.apps || []), ...moving])];
+    const note = moving.length > 1
+      ? ` (Live TV affinity: ${moving.join(', ')})`
+      : '';
+    setOut(`moving ${moving.map(appLabel).join(', ')} → ${target.name || targetId}${note}...`);
+    setCardErr(fromId, '');
+    setCardErr(targetId, '');
+    try {
+      const r = await api(`/vpn/profiles/${encodeURIComponent(targetId)}/apps`, {
+        method: 'PUT',
+        body: JSON.stringify({apps: next}),
+      });
+      setOut(r.log || `moved to ${target.name || targetId}${note}`);
+      await render.vpn();
+    } catch (e) {
+      const msg = e.message || String(e);
+      setCardErr(fromId, msg);
+      setOut(msg);
+    }
+  };
+  document.querySelectorAll('[data-vpn-move-app]').forEach(chip => {
+    chip.onclick = (ev) => {
+      ev.stopPropagation();
+      closeVpnMoveMenu();
+      const appId = chip.dataset.vpnMoveApp;
+      const fromId = chip.dataset.vpnFrom;
+      const destinations = profiles.filter(p => p.id !== fromId);
+      if (!destinations.length) {
+        setCardErr(fromId, 'Add another VPN profile to move apps.');
+        return;
+      }
+      const menu = document.createElement('div');
+      menu.className = 'vpn-move-menu';
+      menu.innerHTML = `<p>Move to</p>` + destinations.map(p =>
+        `<button type="button" data-vpn-move-to="${escAttr(p.id)}">${escHtml(p.name || p.id)}${p.primary ? ' (Primary)' : ''}</button>`
+      ).join('');
+      const card = chip.closest('.vpn-card') || document.body;
+      if (getComputedStyle(card).position === 'static') card.style.position = 'relative';
+      card.appendChild(menu);
+      const chipRect = chip.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      menu.style.left = `${Math.max(8, chipRect.left - cardRect.left)}px`;
+      menu.style.top = `${chipRect.bottom - cardRect.top + 6}px`;
+      menu.querySelectorAll('[data-vpn-move-to]').forEach(btn => {
+        btn.onclick = async (e) => {
+          e.stopPropagation();
+          closeVpnMoveMenu();
+          await moveAppsToProfile(appId, fromId, btn.dataset.vpnMoveTo);
+        };
+      });
+      setTimeout(() => {
+        const dismiss = (e) => {
+          if (e.target.closest('.vpn-move-menu')) return;
+          closeVpnMoveMenu();
+          document.removeEventListener('click', dismiss);
+        };
+        document.addEventListener('click', dismiss);
+      }, 0);
     };
   });
   document.querySelectorAll('[data-vpn-rematerialize]').forEach(btn => {

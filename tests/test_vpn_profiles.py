@@ -206,8 +206,8 @@ def test_set_profile_apps_rejects_live_tv_split(tmp_path):
 def test_vpn_ui_has_apps_checklist_and_primary():
     fe = (ROOT / "helm/frontend/index.html").read_text()
     assert "data-vpn-primary" in fe or "/primary" in fe
-    assert "data-vpn-apps" in fe or "/apps" in fe
-    assert "vpn-app-check" in fe or "forcedTunnelApps" in fe
+    assert "data-vpn-move-app" in fe or "/apps" in fe
+    assert "vpn-app-chip" in fe or "Move to" in fe
 
 
 def test_vpn_ui_collapses_detail_into_running_tunnel_cards():
