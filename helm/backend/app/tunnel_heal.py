@@ -79,7 +79,9 @@ def inspect_network_mode(name: str, *, runner: RunFn | None = None) -> str:
 
 
 def tunnelled_services(*, runner: RunFn | None = None) -> set[str]:
-    """Compose services that join Gluetun's network namespace."""
+    """Compose services that join Gluetun's network namespace (enabled profiles only)."""
+    import os
+
     result = _run(
         ["docker", "compose", "config", "--format", "json"],
         runner=runner,
@@ -90,10 +92,35 @@ def tunnelled_services(*, runner: RunFn | None = None) -> set[str]:
         cfg = json.loads(result.stdout or "{}")
     except json.JSONDecodeError:
         return set()
+    # Prefer compose's resolved set, but never trust a named service that is
+    # outside COMPOSE_PROFILES — `compose up <svc>` bypasses profiles.
+    active = {p.strip() for p in os.environ.get("COMPOSE_PROFILES", "").split(",") if p.strip()}
+    # compose_env drops .env keys from the process env so Compose reads the
+    # file; load profiles from that file when the process env is empty.
+    if not active:
+        try:
+            from .compose import REPO
+
+            env_path = REPO / ".env"
+            if env_path.is_file():
+                for line in env_path.read_text().splitlines():
+                    if line.startswith("COMPOSE_PROFILES="):
+                        active = {
+                            p.strip()
+                            for p in line.split("=", 1)[1].split(",")
+                            if p.strip()
+                        }
+                        break
+        except OSError:
+            pass
     out: set[str] = set()
     for name, meta in (cfg.get("services") or {}).items():
-        if (meta or {}).get("network_mode") == "service:gluetun":
-            out.add(name)
+        if (meta or {}).get("network_mode") != "service:gluetun":
+            continue
+        svc_profiles = {p for p in ((meta or {}).get("profiles") or []) if p}
+        if svc_profiles and active and not (svc_profiles & active):
+            continue
+        out.add(name)
     return out
 
 

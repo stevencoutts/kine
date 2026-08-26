@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import acme_env, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, updates_info, vpn_profiles, watching
+from . import acme_env, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, profile_reconcile, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, updates_info, vpn_profiles, watching
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -250,10 +250,33 @@ async def _apply_domain_routing() -> None:
         )
 
 
+async def reconcile_disabled_running() -> list[str]:
+    """Stop catalogue containers left up after their profile was removed.
+
+    Compose starts a *named* service even when its profile is off, so tunnel
+    group recreates and Update All can resurrect disabled apps. Sweep them.
+    """
+    cat = catalogue.load()
+    enabled = set(config.profiles())
+    code, out = await compose.run("ps", "--format", "json")
+    running = profile_reconcile.running_service_names(out if code == 0 else "")
+    stray = profile_reconcile.disabled_running_services(
+        catalogue_ids=cat.keys(),
+        enabled=enabled,
+        running=running,
+    )
+    for app_id in stray:
+        await compose.run("stop", app_id)
+        await compose.run("rm", "-f", app_id)
+    return stray
+
+
 @app.on_event("startup")
 async def _startup() -> None:
     config.normalize()
     scheduler.start(app)
+    # Fire-and-forget: do not delay healthchecks on a slow compose ps.
+    asyncio.create_task(reconcile_disabled_running())
 
 
 @app.on_event("shutdown")
@@ -445,6 +468,8 @@ def _tier_section_enabled(tier: str, enabled: set[str]) -> bool:
 
 @app.get("/api/apps")
 async def apps(request: Request, user: str = Depends(require_user)):
+    # Self-heal before reporting status so Disabled never shows a green dot.
+    await reconcile_disabled_running()
     cat = catalogue.load()
     enabled = set(config.profiles())
     env = config.read()
@@ -908,6 +933,9 @@ async def apply_update(app_id: str, user: str = Depends(require_user)):
         heal = await asyncio.to_thread(tunnel_heal.heal_orphans)
         if heal.get("healed"):
             out = (out or "") + f"\n[tunnel-heal] recreated {', '.join(heal['healed'])}"
+        stray = await reconcile_disabled_running()
+        if stray:
+            out = (out or "") + f"\n[profile-reconcile] stopped {', '.join(stray)}"
     return {"ok": code == 0, "rolled_back": code != 0, "log": out}
 
 
