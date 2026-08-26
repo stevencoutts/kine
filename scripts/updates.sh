@@ -104,14 +104,15 @@ apply() {
   # it alone leaves those containers pinned to the old namespace — Seerr
   # then reports "Unable to connect to Radarr, Sonarr". Pull the whole
   # group onto the new gateway the same way the VPN restart button does.
-  if [[ "$svc" == "gluetun" ]]; then
+  if [[ "$svc" == "gluetun" ]] || [[ "$svc" == gluetun_* ]]; then
     mapfile -t tunnelled < <(python3 - <<'PY'
 import json, os, subprocess
 cfg = json.loads(subprocess.check_output(
     ["docker", "compose", "config", "--format", "json"], text=True))
 profiles = {p for p in os.environ.get("COMPOSE_PROFILES", "").split(",") if p}
 for name, meta in sorted((cfg.get("services") or {}).items()):
-    if (meta or {}).get("network_mode") != "service:gluetun":
+    mode = (meta or {}).get("network_mode") or ""
+    if not mode.startswith("service:gluetun"):
         continue
     svc_profiles = set((meta or {}).get("profiles") or [])
     if svc_profiles and not (svc_profiles & profiles):

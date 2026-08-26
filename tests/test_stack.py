@@ -29,15 +29,12 @@ VPN_LEAKTEST = ROOT / "scripts" / "vpn-leaktest.sh"
 
 def _generated_primary_tunnel_labels() -> list[str]:
     """Traefik labels Helm writes onto primary gluetun (override stub is empty)."""
-    text = vpn_routing.render_override(
-        {"primary_id": None, "profiles": []},
-        enabled_apps=set(vpn_routing.APP_PORTS),
-        stack_root="${STACK_ROOT}",
+    routed = [app for app in vpn_routing.APP_PORTS if app in vpn_routing.APP_TRAEFIK_HOST]
+    return vpn_routing._traefik_labels(
+        routed,
         kine_domain="${KINE_DOMAIN}",
         kine_local_domain="${KINE_LOCAL_DOMAIN}",
     )
-    doc = yaml.safe_load(text)
-    return list(doc["services"]["gluetun"]["labels"])
 
 
 def fragments():
@@ -181,7 +178,7 @@ def test_updating_gluetun_recreates_tunnelled_apps():
     """Recreating gluetun alone orphans every network_mode: service:gluetun
     container on the old namespace — Seerr then cannot reach Radarr/Sonarr."""
     script = (ROOT / "scripts" / "updates.sh").read_text()
-    assert 'svc" == "gluetun"' in script
+    assert 'svc" == "gluetun"' in script or "gluetun_*" in script
     assert "force-recreate" in script
     assert "service:gluetun" in script
     assert "tunnel_heal" in script or "heal-tunnel" in script

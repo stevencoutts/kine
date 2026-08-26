@@ -8,7 +8,22 @@ import yaml
 
 from . import vpn_profiles, wireguard
 
-ROUTING_REL = pathlib.Path("compose/vpn-routing.override.yml")
+ROUTING_STUB_REL = pathlib.Path("compose/vpn-routing.override.yml")
+ROUTING_GENERATED_REL = pathlib.Path("compose/vpn-routing.generated.yml")
+# Back-compat alias for tests/docs that refer to the generated path.
+ROUTING_REL = ROUTING_GENERATED_REL
+
+
+class _ResetMapping(dict):
+    """Compose ``depends_on: !reset`` — replace static merge, do not union."""
+
+
+def _reset_mapping_representer(dumper: yaml.Dumper, data: _ResetMapping) -> yaml.Node:
+    return dumper.represent_mapping("!reset", dict(data))
+
+
+yaml.add_representer(_ResetMapping, _reset_mapping_representer)
+yaml.SafeDumper.add_representer(_ResetMapping, _reset_mapping_representer)
 
 
 def container_name_for_tunnel_service(service: str) -> str:
@@ -21,6 +36,7 @@ def container_name_for_tunnel_service(service: str) -> str:
 
 
 # Ports shared inside a tunnel namespace (docs/port-map.md).
+# Apps without Traefik routers still need a port entry for pinning.
 APP_PORTS: dict[str, int] = {
     "ecm": 6100,
     "bazarr": 6767,
@@ -32,6 +48,7 @@ APP_PORTS: dict[str, int] = {
     "dispatcharr": 9191,
     "teamarr": 9195,
     "prowlarr": 9696,
+    "unpackerr": 5656,
 }
 
 # Traefik Host() subdomain; shortcuts match vpn.gluetun.yml.
@@ -57,6 +74,8 @@ def _traefik_labels(
 ) -> list[str]:
     labels = ["traefik.enable=true"]
     for app in apps:
+        if app not in APP_TRAEFIK_HOST:
+            continue
         host = APP_TRAEFIK_HOST[app]
         port = APP_PORTS[app]
         labels.append(
@@ -136,6 +155,15 @@ def _enabled_tunnel_apps(enabled_apps: set[str]) -> list[str]:
     return [app for app in APP_PORTS if app in enabled_apps]
 
 
+def _app_network_override(tunnel: str) -> dict[str, Any]:
+    return {
+        "network_mode": f"service:{tunnel}",
+        "depends_on": _ResetMapping(
+            {tunnel: {"condition": "service_healthy"}},
+        ),
+    }
+
+
 def render_override(
     data: dict[str, Any],
     *,
@@ -143,8 +171,18 @@ def render_override(
     stack_root: str,
     kine_domain: str,
     kine_local_domain: str,
+    vpn_enabled: bool = True,
 ) -> str:
     """Build compose override YAML for secondary tunnels and app pinning."""
+    if not vpn_enabled:
+        doc = {"services": {}}
+        return yaml.safe_dump(
+            doc,
+            default_flow_style=False,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+
     services: dict[str, Any] = {}
     tunnel_apps: dict[str, list[str]] = {}
     for app in _enabled_tunnel_apps(enabled_apps):
@@ -190,12 +228,11 @@ def render_override(
 
     for app in _enabled_tunnel_apps(enabled_apps):
         tunnel = vpn_profiles.tunnel_service(data, app)
-        services[app] = {
-            "network_mode": f"service:{tunnel}",
-            "depends_on": {
-                tunnel: {"condition": "service_healthy"},
-            },
-        }
+        services[app] = _app_network_override(tunnel)
+
+    if "transmission" in enabled_apps:
+        tx_tunnel = vpn_profiles.tunnel_service(data, "transmission")
+        services["vpn-portsync"] = _app_network_override(tx_tunnel)
 
     doc = {"services": services}
     return yaml.safe_dump(
@@ -207,11 +244,20 @@ def render_override(
 
 
 def write_override(repo: pathlib.Path, text: str) -> pathlib.Path:
-    path = pathlib.Path(repo) / ROUTING_REL
+    path = pathlib.Path(repo) / ROUTING_GENERATED_REL
     path.parent.mkdir(parents=True, exist_ok=True)
     if not text.endswith("\n"):
         text = text + "\n"
     path.write_text(text)
+    return path
+
+
+def ensure_generated_stub(repo: pathlib.Path) -> pathlib.Path:
+    """Create an empty generated override if missing (fresh clone / first up)."""
+    path = pathlib.Path(repo) / ROUTING_GENERATED_REL
+    if not path.is_file():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("services: {}\n")
     return path
 
 
@@ -233,17 +279,54 @@ def running_secondaries(
     return out
 
 
+def stale_secondary_services(data: dict[str, Any]) -> list[str]:
+    """Secondary tunnel services that should be stopped (empty apps or promoted)."""
+    primary_id = data.get("primary_id")
+    current = {svc for _, svc in running_secondaries(data)}
+    stale: list[str] = []
+    for profile in data.get("profiles") or []:
+        if not isinstance(profile, dict) or not profile.get("id"):
+            continue
+        svc = f"gluetun_{vpn_profiles.short_id(profile['id'])}"
+        if profile.get("id") == primary_id or svc not in current:
+            stale.append(svc)
+    return stale
+
+
+def active_tunnel_services(data: dict[str, Any]) -> list[str]:
+    """Primary + running secondary compose service names."""
+    return ["gluetun", *[svc for _, svc in running_secondaries(data)]]
+
+
 def peers_for(
     data: dict[str, Any],
     service: str,
     enabled: set[str],
 ) -> list[str]:
     """Enabled tunnel apps whose ``network_mode`` targets ``service``."""
-    return [
+    peers = [
         app
         for app in _enabled_tunnel_apps(enabled)
         if vpn_profiles.tunnel_service(data, app) == service
     ]
+    if (
+        service == vpn_profiles.tunnel_service(data, "transmission")
+        and "transmission" in enabled
+    ):
+        peers.append("vpn-portsync")
+    return peers
+
+
+def recreate_group(
+    data: dict[str, Any],
+    service: str,
+    enabled: set[str],
+) -> list[str]:
+    """Compose services to recreate for one tunnel namespace."""
+    peers = peers_for(data, service, enabled)
+    group = [service, *peers]
+    seen: set[str] = set()
+    return [s for s in group if not (s in seen or seen.add(s))]
 
 
 def apply_filesystem(
@@ -254,32 +337,36 @@ def apply_filesystem(
     *,
     kine_domain: str,
     kine_local_domain: str,
+    vpn_enabled: bool = True,
 ) -> None:
     """Write primary/secondary wg0.conf files and regenerate the compose override.
 
     Does not run ``docker compose``; callers recreate tunnel groups separately.
+    When ``vpn_enabled`` is false, only writes an empty override (no wg0 rewrite).
     """
-    primary_id = data.get("primary_id")
-    by_id = {
-        p.get("id"): p
-        for p in (data.get("profiles") or [])
-        if isinstance(p, dict) and p.get("id")
-    }
-    if primary_id and primary_id in by_id:
-        conf = (by_id[primary_id].get("conf") or "").strip()
-        if conf:
-            wireguard.write_gluetun_conf(conf, stack_root)
+    ensure_generated_stub(repo)
+    if vpn_enabled:
+        primary_id = data.get("primary_id")
+        by_id = {
+            p.get("id"): p
+            for p in (data.get("profiles") or [])
+            if isinstance(p, dict) and p.get("id")
+        }
+        if primary_id and primary_id in by_id:
+            conf = (by_id[primary_id].get("conf") or "").strip()
+            if conf:
+                wireguard.write_gluetun_conf(conf, stack_root)
 
-    for profile, _svc in running_secondaries(data):
-        apps = [a for a in (profile.get("apps") or []) if a in enabled]
-        if not apps:
-            continue
-        conf = (profile.get("conf") or "").strip()
-        if not conf:
-            continue
-        wireguard.write_secondary_conf(
-            stack_root, vpn_profiles.short_id(profile["id"]), conf
-        )
+        for profile, _svc in running_secondaries(data):
+            apps = [a for a in (profile.get("apps") or []) if a in enabled]
+            if not apps:
+                continue
+            conf = (profile.get("conf") or "").strip()
+            if not conf:
+                continue
+            wireguard.write_secondary_conf(
+                stack_root, vpn_profiles.short_id(profile["id"]), conf
+            )
 
     text = render_override(
         data,
@@ -287,6 +374,7 @@ def apply_filesystem(
         stack_root="${STACK_ROOT}",
         kine_domain=kine_domain,
         kine_local_domain=kine_local_domain,
+        vpn_enabled=vpn_enabled,
     )
     write_override(repo, text)
 

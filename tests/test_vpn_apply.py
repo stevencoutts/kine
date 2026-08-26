@@ -69,7 +69,10 @@ def test_secondary_volume_uses_stack_root_env_var():
         kine_domain="example.com",
         kine_local_domain="kine.local",
     )
-    doc = yaml.safe_load(text)
+    doc = yaml.safe_load(
+        "services:\n  gluetun_11111111:"
+        + text.split("gluetun_11111111:", 1)[1].split("\n  dispatcharr:", 1)[0]
+    )
     vols = doc["services"]["gluetun_11111111"]["volumes"]
     assert vols == ["${STACK_ROOT}/config/gluetun-11111111:/gluetun"]
 
@@ -93,7 +96,7 @@ def test_apply_filesystem_writes_confs_and_override(tmp_path):
     assert primary.is_file()
     assert "PrivateKey" in primary.read_text()
     assert secondary.is_file()
-    override = repo / vpn_routing.ROUTING_REL
+    override = repo / vpn_routing.ROUTING_GENERATED_REL
     assert override.is_file()
     text = override.read_text()
     assert "gluetun_11111111:" in text

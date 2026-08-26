@@ -7,7 +7,7 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "helm" / "backend"))
 
-from app import vpn_routing  # noqa: E402
+from app import vpn_profiles, vpn_routing  # noqa: E402
 
 VALID_WG = """[Interface]
 PrivateKey = YJqK8nV3mP0sL2wQ9eR5tY7uI1oP3aS4dF6gH8jK0lM=
@@ -95,7 +95,8 @@ def test_secondary_embeds_wireguard_from_parse_conf():
         kine_domain="example.com",
         kine_local_domain="kine.local",
     )
-    doc = yaml.safe_load(text)
+    sec = "gluetun_11111111:" + text.split("gluetun_11111111:", 1)[1].split("\n  dispatcharr:", 1)[0]
+    doc = yaml.safe_load("services:\n  " + sec)
     env = doc["services"]["gluetun_11111111"]["environment"]
     assert env["VPN_SERVICE_PROVIDER"] == "custom"
     assert env["VPN_TYPE"] == "wireguard"
@@ -121,26 +122,62 @@ def test_app_overrides_depend_on_correct_tunnel():
         kine_domain="example.com",
         kine_local_domain="kine.local",
     )
-    doc = yaml.safe_load(text)
-    assert doc["services"]["sonarr"]["network_mode"] == "service:gluetun"
-    assert doc["services"]["sonarr"]["depends_on"] == {
-        "gluetun": {"condition": "service_healthy"},
-    }
-    assert doc["services"]["dispatcharr"]["network_mode"] == (
-        "service:gluetun_11111111"
+    assert "depends_on: !reset" in text
+    assert 'network_mode: service:gluetun' in text
+    assert 'network_mode: service:gluetun_11111111' in text
+    assert "sonarr:" in text
+    assert "dispatcharr:" in text
+    assert "gluetun:" in text
+    assert "gluetun_11111111:" in text
+
+
+def test_vpn_portsync_follows_transmission_tunnel():
+    data = _sample_data()
+    data["profiles"][0]["apps"] = ["sonarr", "transmission"]
+    data["profiles"][1]["apps"] = []
+    text = vpn_routing.render_override(
+        data,
+        enabled_apps={"sonarr", "transmission", "gluetun"},
+        stack_root="/srv/kine",
+        kine_domain="example.com",
+        kine_local_domain="kine.local",
     )
-    assert doc["services"]["dispatcharr"]["depends_on"] == {
-        "gluetun_11111111": {"condition": "service_healthy"},
-    }
+    assert "vpn-portsync:" in text
+    portsync = text.split("vpn-portsync:", 1)[1]
+    assert "network_mode: service:gluetun" in portsync
+
+
+def test_render_override_disabled_is_empty():
+    text = vpn_routing.render_override(
+        {"primary_id": None, "profiles": []},
+        enabled_apps=set(vpn_routing.APP_PORTS),
+        stack_root="/srv/kine",
+        kine_domain="example.com",
+        kine_local_domain="kine.local",
+        vpn_enabled=False,
+    )
+    assert yaml.safe_load(text) == {"services": {}}
+
+
+def test_stale_secondary_services():
+    data = _sample_data()
+    assert "gluetun_11111111" not in vpn_routing.stale_secondary_services(data)
+    data["profiles"][1]["apps"] = []
+    assert "gluetun_11111111" in vpn_routing.stale_secondary_services(data)
+    assert f"gluetun_{vpn_profiles.short_id(PRIMARY_ID)}" in vpn_routing.stale_secondary_services(
+        data,
+    )
 
 
 def test_write_override(tmp_path):
     path = vpn_routing.write_override(tmp_path, "services: {}\n")
-    assert path == tmp_path / vpn_routing.ROUTING_REL
+    assert path == tmp_path / vpn_routing.ROUTING_GENERATED_REL
     assert path.read_text() == "services: {}\n"
 
 
 def test_routing_stub_exists():
     stub = ROOT / "compose" / "vpn-routing.override.yml"
     assert stub.is_file()
-    assert yaml.safe_load(stub.read_text()) == {"services": {}}
+    doc = yaml.safe_load(stub.read_text())
+    assert doc.get("services") == {}
+    assert "vpn-routing.generated.yml" in stub.read_text()

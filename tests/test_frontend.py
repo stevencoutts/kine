@@ -110,6 +110,7 @@ def test_tier_enable_seeds_before_up():
 
 
 def test_app_enable_starts_only_requested_app():
+    assert "await _start_app(app_id, wanted)" in BACKEND
     assert 'compose.run("up", "-d", app_id)' in BACKEND
 
 
@@ -117,7 +118,7 @@ def test_app_enable_seeds_before_up():
     enable = BACKEND.split("@app.post(\"/api/apps/{app_id}/enable\")", 1)[1]
     enable = enable.split("@app.post(", 1)[0]
     assert 'compose.run("run", "--rm", "provision", "seed")' in enable
-    assert enable.index('provision", "seed"') < enable.index('up", "-d", app_id')
+    assert enable.index('provision", "seed"') < enable.index("_start_app(app_id, wanted)")
 
 
 def test_tier_errors_render_inline_without_blocking_alert():

@@ -207,11 +207,12 @@ run `mount-media.sh` on the host after changes.
 
 Helm stores WireGuard profiles in `config/helm/vpn-profiles.json`. The first
 VPN tab visit imports an existing `wg0.conf` as **Default** when needed.
-Each profile can be marked **Primary** and assigned a checklist of
-forced-tunnel apps; unassigned apps stay on the primary tunnel. Saving
-assignments regenerates `config/helm/vpn-routing.override.yml`, which
-adds secondary `gluetun_<shortId>` containers and moves each app to
-`network_mode: service:<tunnel>` (kill switch unchanged). Multiple
+Exactly one profile is **Primary** at a time; others can run as secondary
+tunnels with a checklist of forced-tunnel apps. Unassigned apps stay on the
+primary tunnel. Saving assignments regenerates
+`compose/vpn-routing.generated.yml` (gitignored; included via the tracked
+stub), which adds secondary `gluetun_<shortId>` containers and moves each app
+to `network_mode: service:<tunnel>` (kill switch unchanged). Multiple
 profiles can run concurrently with different egress IPs.
 
 Most of acquisition and Live TV use `network_mode: service:gluetun` by

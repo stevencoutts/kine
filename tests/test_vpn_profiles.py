@@ -128,15 +128,18 @@ def test_delete_active_refused(tmp_path):
         pass
 
 
-def test_vpn_tunnel_group_only_includes_enabled_profiles():
+def test_vpn_recreate_helpers_exist():
     main = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()
-    assert "def _vpn_tunnel_group" in main
-    assert "_tunnelled_profiles()" in main.split("def _vpn_tunnel_group", 1)[1].split("\n\n", 1)[0]
+    assert "def _vpn_recreate_services" in main
+    assert "vpn_routing.recreate_group" in main
+    assert "_vpn_peers_enabled" in main
 
 
-def test_kine_vpn_group_filters_by_compose_profiles():
+def test_kine_vpn_group_uses_profile_store():
     kine = (ROOT / "kine").read_text()
-    assert "COMPOSE_PROFILES=" in kine.split("vpn_group()", 1)[1].split("\n}\n", 1)[0]
+    assert "vpn_group()" in kine
+    assert "vpn_profiles.migrate_from_wg0" in kine
+    assert "vpn_routing.recreate_group" in kine
 
 
 def test_vpn_profile_routes_exist():

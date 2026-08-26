@@ -59,22 +59,39 @@ profiles_remove() {
 # a bigger event than it looks: expect roughly a minute of no *arr and
 # no downloads.
 vpn_group() {
-  local cur on=""
-  cur=$(grep '^COMPOSE_PROFILES=' .env | cut -d= -f2-)
-  echo -n "gluetun vpn-portsync"
-  local IFS=,
-  for app in ${VPN_TUNNELLED_APPS}; do
-    app="${app// /}"
-    [[ -z "$app" ]] && continue
-    [[ ",$cur," == *",$app,"* ]] || continue
-    echo -n " $app"
-  done
-  echo
+  PYTHONPATH=helm/backend python3 - <<'PY'
+import os
+from app import config, vpn_profiles, vpn_routing
+
+env = config.read()
+profiles = {p.strip() for p in env.get("COMPOSE_PROFILES", "").split(",") if p.strip()}
+if "gluetun" not in profiles or env.get("VPN_ENABLED") != "true":
+    raise SystemExit(0)
+stack = env.get("STACK_ROOT") or os.environ.get("KINE_ROOT", ".")
+store = vpn_profiles.migrate_from_wg0(stack)
+enabled = {
+    a.strip()
+    for a in env.get("VPN_TUNNELLED_APPS", "").split(",")
+    if a.strip() and a.strip() in vpn_routing.APP_PORTS and a.strip() in profiles
+}
+services: list[str] = []
+for svc in vpn_routing.active_tunnel_services(store):
+    services.extend(vpn_routing.recreate_group(store, svc, enabled))
+seen: set[str] = set()
+for name in services:
+    if name not in seen:
+        seen.add(name)
+        print(name, end=" ")
+print()
+PY
 }
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
-  up)        docker compose up -d ;;
+  up)
+    gen=compose/vpn-routing.generated.yml
+    [[ -f "$gen" ]] || echo 'services: {}' > "$gen"
+    docker compose up -d ;;
   down)      docker compose down ;;
   restart)
     if [[ "${1:-}" == "gluetun" ]]; then

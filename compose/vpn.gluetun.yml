@@ -7,8 +7,8 @@
 # Four consequences, all handled here:
 #
 #   1. Tunnelled apps carry no ports, no networks and no Traefik
-#      labels. App routers are generated into compose/vpn-routing.override.yml
-#      by helm/backend/app/vpn_routing.py (included from docker-compose.yml).
+#      labels. App routers are generated into compose/vpn-routing.generated.yml
+#      (included via vpn-routing.override.yml) by helm/backend/app/vpn_routing.py.
 #   2. Inside the namespace they share one loopback, so they address
 #      each other as 127.0.0.1. From outside, on kine_internal, they are
 #      reached as gluetun:<port>.

@@ -220,16 +220,23 @@ def _tunnelled_profiles(profiles: set[str] | None = None) -> list[str]:
 
 
 async def _start_app(app_id: str, profiles: list[str]) -> tuple[int, str]:
-    """Start an app; tunnelled apps recreate the whole gluetun group.
-
-    ``compose up -d <tunnelled>`` can restart gluetun (depends_on health),
-    which orphans every other ``network_mode: service:gluetun`` container.
-    Bring the whole group up together so they share the new namespace.
-    """
-    tunnelled = _tunnelled_profiles(set(profiles))
+    """Start an app; tunnelled apps recreate their owning tunnel group."""
+    env = config.read()
+    active = set(profiles)
+    tunnelled = _tunnelled_profiles(active)
     if app_id == "gluetun" or app_id in tunnelled:
+        if env.get("VPN_ENABLED") == "true":
+            stack = _vpn_stack_root()
+            store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+            await asyncio.to_thread(_vpn_ensure_routing_fs, store, env)
+            svc = (
+                "gluetun"
+                if app_id == "gluetun"
+                else vpn_profiles.tunnel_service(store, app_id)
+            )
+            code, out, _ = await _vpn_recreate_services(store, env, [svc])
+            return code, out
         group = ["gluetun", *tunnelled]
-        # Preserve order, drop duplicates (gluetun first).
         seen: set[str] = set()
         ordered = [s for s in group if not (s in seen or seen.add(s))]
         return await compose.run(
@@ -256,7 +263,16 @@ async def _recreate_media_volume_apps() -> None:
     } & profiles
     media_tunnelled = [a for a in wanted if a in tunnelled]
     standalone = [a for a in wanted if a not in tunnelled]
-    if media_tunnelled and "gluetun" in profiles:
+    if media_tunnelled and env.get("VPN_ENABLED") == "true" and "gluetun" in profiles:
+        stack = _vpn_stack_root()
+        store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+        await asyncio.to_thread(_vpn_ensure_routing_fs, store, env)
+        tunnels = {
+            vpn_profiles.tunnel_service(store, app)
+            for app in media_tunnelled
+        }
+        await _vpn_recreate_services(store, env, sorted(tunnels))
+    elif media_tunnelled and "gluetun" in profiles:
         all_tunnelled = [
             a.strip()
             for a in env.get("VPN_TUNNELLED_APPS", "").split(",")
@@ -284,13 +300,14 @@ async def _apply_domain_routing() -> None:
         if app in profiles:
             routed.append(app)
     await compose.run("up", "-d", "--force-recreate", *routed, timeout=300)
-    if "gluetun" not in profiles:
+    if "gluetun" not in profiles or env.get("VPN_ENABLED") != "true":
         return
-    tunnelled = [a for a in env.get("VPN_TUNNELLED_APPS", "").split(",") if a in profiles]
-    if tunnelled:
-        await compose.run(
-            "up", "-d", "--force-recreate", "gluetun", *tunnelled, timeout=300
-        )
+    stack = _vpn_stack_root()
+    store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+    await asyncio.to_thread(_vpn_ensure_routing_fs, store, env)
+    await _vpn_recreate_services(
+        store, env, vpn_routing.active_tunnel_services(store),
+    )
 
 
 async def reconcile_disabled_running() -> list[str]:
@@ -320,6 +337,20 @@ async def _startup() -> None:
     scheduler.start(app)
     # Fire-and-forget: do not delay healthchecks on a slow compose ps.
     asyncio.create_task(reconcile_disabled_running())
+    asyncio.create_task(_vpn_boot_ensure())
+
+
+async def _vpn_boot_ensure() -> None:
+    """Regenerate routing override and recreate tunnels when VPN is enabled."""
+    env = config.read()
+    if env.get("VPN_ENABLED") != "true":
+        return
+    stack = _vpn_stack_root()
+    try:
+        store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+        await apply_vpn_routing(store, recreate=True)
+    except Exception as exc:
+        print(f"vpn boot ensure failed: {exc}", flush=True)
 
 
 @app.on_event("shutdown")
@@ -1013,8 +1044,9 @@ def _vpn_enabled_tunnel_apps(env: dict | None = None) -> set[str]:
 
 
 def _vpn_ensure_routing_fs(data: dict, env: dict | None = None) -> None:
-    """Regenerate wg0 confs + compose/vpn-routing.override.yml (no compose recreate)."""
+    """Regenerate wg0 confs + vpn-routing.generated.yml (no compose recreate)."""
     e = env if env is not None else config.read()
+    vpn_routing.ensure_generated_stub(_REPO)
     vpn_routing.apply_filesystem(
         _vpn_stack_root(),
         _REPO,
@@ -1022,32 +1054,59 @@ def _vpn_ensure_routing_fs(data: dict, env: dict | None = None) -> None:
         _vpn_enabled_tunnel_apps(e),
         kine_domain=e.get("KINE_DOMAIN") or "",
         kine_local_domain=e.get("KINE_LOCAL_DOMAIN") or "127.0.0.1.nip.io",
+        vpn_enabled=e.get("VPN_ENABLED") == "true",
     )
 
 
-def _vpn_tunnel_group(env: dict | None = None) -> list[str]:
-    """Tunnel services to restart/recreate — only apps the user has enabled."""
-    _ = env  # callers pass freshly-read env; profiles come from config
-    return ["gluetun", "vpn-portsync", *_tunnelled_profiles()]
+def _vpn_peers_enabled(env: dict) -> set[str]:
+    enabled = _vpn_enabled_tunnel_apps(env)
+    active = set(_tunnelled_profiles())
+    return enabled & active if active else enabled
 
 
-async def _vpn_recreate_tunnel(env: dict) -> tuple[int, str, list[str]]:
-    group = _vpn_tunnel_group(env)
-    code, out = await compose.run("up", "-d", "--force-recreate", *group, timeout=300)
-    return code, out, group
+async def _vpn_stop_services(services: list[str]) -> tuple[int, str]:
+    if not services:
+        return 0, ""
+    code, out = await compose.run("stop", *services, timeout=300)
+    rm_code, rm_out = await compose.run("rm", "-f", *services, timeout=300)
+    return rm_code or code, "\n".join(part for part in (out, rm_out) if part)
+
+
+async def _vpn_recreate_services(
+    store: dict,
+    env: dict,
+    services: list[str],
+) -> tuple[int, str, list[str]]:
+    """Force-recreate each named tunnel group (tunnel + peers)."""
+    peers_enabled = _vpn_peers_enabled(env)
+    logs: list[str] = []
+    recreated: list[str] = []
+    last_code = 0
+    for svc in services:
+        group = vpn_routing.recreate_group(store, svc, peers_enabled)
+        code, out = await compose.run(
+            "up", "-d", "--force-recreate", *group, timeout=300,
+        )
+        if code != 0:
+            last_code = code
+        logs.append(out)
+        recreated.extend(group)
+    return last_code, "\n".join(logs), recreated
 
 
 async def apply_vpn_routing(
     data: dict | None = None,
     *,
     recreate: bool = True,
+    stale_services: set[str] | None = None,
 ) -> tuple[int, str, list[str]]:
-    """Write confs + override; optionally force-recreate each tunnel group.
+    """Write confs + override; optionally recreate each tunnel group.
 
     Task 6 routes (set_apps / set_primary / rematerialize) should call this.
     GET /api/vpn uses filesystem ensure only (recreate=False via helper).
     """
     env = config.read()
+    vpn_on = env.get("VPN_ENABLED") == "true"
     stack = _vpn_stack_root()
     store = data
     if store is None:
@@ -1056,30 +1115,37 @@ async def apply_vpn_routing(
     if not recreate:
         return 0, "", []
 
-    enabled = _vpn_enabled_tunnel_apps(env)
-    active = set(_tunnelled_profiles())
-    peers_enabled = enabled & active if active else enabled
-
-    services = ["gluetun"] + [svc for _, svc in vpn_routing.running_secondaries(store)]
-    logs: list[str] = []
-    recreated: list[str] = []
-    last_code = 0
-    for svc in services:
-        peers = vpn_routing.peers_for(store, svc, peers_enabled)
-        group = [svc]
-        if svc == "gluetun":
-            group.append("vpn-portsync")
-        group.extend(peers)
+    if not vpn_on:
+        peers_enabled = _vpn_peers_enabled(env)
+        stop_group: list[str] = []
+        for svc in vpn_routing.active_tunnel_services(store):
+            stop_group.extend(vpn_routing.recreate_group(store, svc, peers_enabled))
+        if stale_services:
+            for svc in stale_services:
+                stop_group.extend(vpn_routing.recreate_group(store, svc, peers_enabled))
         seen: set[str] = set()
-        ordered = [s for s in group if not (s in seen or seen.add(s))]
-        code, out = await compose.run(
-            "up", "-d", "--force-recreate", *ordered, timeout=300,
-        )
-        if code != 0:
-            last_code = code
-        logs.append(out)
-        recreated.extend(ordered)
-    return last_code, "\n".join(logs), recreated
+        ordered = [s for s in stop_group if not (s in seen or seen.add(s))]
+        code, out = await _vpn_stop_services(ordered)
+        return code, out, ordered
+
+    peers_enabled = _vpn_peers_enabled(env)
+    stale = set(vpn_routing.stale_secondary_services(store))
+    if stale_services:
+        stale |= stale_services
+    if stale:
+        stop_group: list[str] = []
+        for svc in sorted(stale):
+            stop_group.extend(vpn_routing.recreate_group(store, svc, peers_enabled))
+        seen: set[str] = set()
+        ordered = [s for s in stop_group if not (s in seen or seen.add(s))]
+        code, out = await _vpn_stop_services(ordered)
+    else:
+        code, out = 0, ""
+
+    rec_code, rec_out, recreated = await _vpn_recreate_services(
+        store, env, vpn_routing.active_tunnel_services(store),
+    )
+    return rec_code or code, "\n".join(part for part in (out, rec_out) if part), recreated
 
 
 def _vpn_profile_public(profile: dict, *, primary_id: str | None = None) -> dict:
@@ -1167,18 +1233,9 @@ async def _vpn_restart_group(service: str, store: dict | None = None) -> tuple[i
     data = store
     if data is None:
         data = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
-    enabled = _vpn_enabled_tunnel_apps(env)
-    active = set(_tunnelled_profiles())
-    peers_enabled = enabled & active if active else enabled
-    peers = vpn_routing.peers_for(data, service, peers_enabled)
-    group = [service]
-    if service == "gluetun":
-        group.append("vpn-portsync")
-    group.extend(peers)
-    seen: set[str] = set()
-    ordered = [s for s in group if not (s in seen or seen.add(s))]
-    code, out = await compose.run("restart", *ordered, timeout=300)
-    return code, out, ordered
+    group = vpn_routing.recreate_group(data, service, _vpn_peers_enabled(env))
+    code, out = await compose.run("restart", *group, timeout=300)
+    return code, out, group
 
 
 @app.get("/api/vpn")
@@ -1323,22 +1380,32 @@ async def vpn_profile_update(profile_id: str, request: Request, user: str = Depe
 @app.delete("/api/vpn/profiles/{profile_id}")
 async def vpn_profile_delete(profile_id: str, user: str = Depends(require_user)):
     stack = _vpn_stack_root()
+    store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+    stale: set[str] = set()
+    if profile_id != store.get("primary_id"):
+        stale.add(f"gluetun_{vpn_profiles.short_id(profile_id)}")
     try:
         await asyncio.to_thread(vpn_profiles.delete_profile, stack, profile_id)
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"ok": True}
+    store = await asyncio.to_thread(vpn_profiles.load, stack)
+    code, out, group = await apply_vpn_routing(store, stale_services=stale)
+    return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
 
 
 @app.post("/api/vpn/profiles/{profile_id}/primary")
 async def vpn_profile_set_primary(profile_id: str, user: str = Depends(require_user)):
     stack = _vpn_stack_root()
     try:
-        store = await asyncio.to_thread(vpn_profiles.set_primary, stack, profile_id)
+        store, fields = await asyncio.to_thread(
+            vpn_profiles.set_primary, stack, profile_id,
+        )
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
+    if fields:
+        config.write(fields)
     code, out, group = await apply_vpn_routing(store)
     return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
 

@@ -175,13 +175,22 @@ def _normalize_forced_apps(apps: list[str], forced: set[str]) -> list[str]:
     return out
 
 
-def set_primary(stack_root: str, profile_id: str) -> dict[str, Any]:
+def set_primary(stack_root: str, profile_id: str) -> tuple[dict[str, Any], dict[str, str]]:
+    """Mark a profile primary and rematerialize its WireGuard into wg0.conf."""
     data = migrate_from_wg0(stack_root)
-    if not any(p.get("id") == profile_id for p in data["profiles"]):
+    profile = next((p for p in data["profiles"] if p.get("id") == profile_id), None)
+    if profile is None:
         raise LookupError("profile not found")
     data["primary_id"] = profile_id
     save(stack_root, data)
-    return data
+    conf = (profile.get("conf") or "").strip()
+    env_fields: dict[str, str] = {}
+    if conf:
+        from . import wireguard
+
+        wireguard.write_gluetun_conf(conf, stack_root)
+        env_fields = wireguard.parse_conf(conf)
+    return data, env_fields
 
 
 def set_profile_apps(

@@ -1,1 +1,4 @@
+# Tracked stub — Helm writes secrets to vpn-routing.generated.yml (gitignored).
+include:
+  - vpn-routing.generated.yml
 services: {}
