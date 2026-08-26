@@ -101,8 +101,13 @@ def test_apply_filesystem_writes_confs_and_override(tmp_path):
     text = override.read_text()
     assert "gluetun-11111111:" in text
     assert "${STACK_ROOT}/config/gluetun-11111111:/gluetun" in text
-    assert "traefik.http.routers.sonarr" in text
-    assert "traefik.http.routers.dispatcharr" in text
+    dyn = stack / "config" / "traefik" / "dynamic" / "vpn-tunnels.yml"
+    assert dyn.is_file()
+    dyn_text = dyn.read_text()
+    assert "dispatcharr" in dyn_text
+    assert "sonarr" in dyn_text
+    assert "gluetun-11111111:9191" in dyn_text
+    assert "gluetun:8989" in dyn_text
 
 
 def test_write_secondary_conf(tmp_path):

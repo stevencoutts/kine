@@ -28,9 +28,9 @@ VPN_LEAKTEST = ROOT / "scripts" / "vpn-leaktest.sh"
 
 
 def _generated_primary_tunnel_labels() -> list[str]:
-    """Traefik labels Helm writes onto primary gluetun (override stub is empty)."""
+    """Traefik labels Helm used to write onto primary gluetun (for stack tests)."""
     routed = [app for app in vpn_routing.APP_PORTS if app in vpn_routing.APP_TRAEFIK_HOST]
-    return vpn_routing._traefik_labels(
+    return vpn_routing._traefik_router_label_lines(
         routed,
         kine_domain="${KINE_DOMAIN}",
         kine_local_domain="${KINE_LOCAL_DOMAIN}",

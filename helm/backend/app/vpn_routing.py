@@ -69,12 +69,13 @@ APP_TRAEFIK_HOST: dict[str, str] = {
 }
 
 
-def _traefik_labels(
+def _traefik_router_label_lines(
     apps: list[str],
     *,
     kine_domain: str,
     kine_local_domain: str,
 ) -> list[str]:
+    """Full Traefik router label lines (for tests / fragments merge)."""
     labels = ["traefik.enable=true"]
     for app in apps:
         if app not in APP_TRAEFIK_HOST:
@@ -90,6 +91,81 @@ def _traefik_labels(
             f"traefik.http.services.{app}.loadbalancer.server.port={port}"
         )
     return labels
+
+
+def _traefik_labels(
+    apps: list[str],
+    *,
+    kine_domain: str,
+    kine_local_domain: str,
+) -> list[str]:
+    # Router labels used to live on Gluetun containers. Traefik's Docker
+    # provider filters unhealthy/starting containers, and a flapping secondary
+    # VPN then drops tv./channels./sports. routes with a bare 404. Routes are
+    # written to the file provider instead (see write_traefik_dynamic).
+    _ = (apps, kine_domain, kine_local_domain)
+    return ["traefik.enable=true"]
+
+
+def traefik_dynamic_path(stack_root: str | pathlib.Path) -> pathlib.Path:
+    return pathlib.Path(stack_root) / "config" / "traefik" / "dynamic" / "vpn-tunnels.yml"
+
+
+def render_traefik_dynamic(
+    data: dict[str, Any],
+    *,
+    enabled_apps: set[str],
+    kine_domain: str,
+    kine_local_domain: str,
+    vpn_enabled: bool = True,
+) -> dict[str, Any]:
+    """Traefik file-provider config for tunnelled app Host() routers."""
+    routers: dict[str, Any] = {}
+    services: dict[str, Any] = {}
+    if vpn_enabled:
+        for app in _enabled_tunnel_apps(enabled_apps):
+            if app not in APP_TRAEFIK_HOST:
+                continue
+            host = APP_TRAEFIK_HOST[app]
+            port = APP_PORTS[app]
+            tunnel = vpn_profiles.tunnel_service(data, app)
+            routers[app] = {
+                "rule": (
+                    f"Host(`{host}.{kine_domain}`) || "
+                    f"Host(`{host}.{kine_local_domain}`)"
+                ),
+                "service": app,
+                "entryPoints": ["websecure"],
+                "tls": {},
+            }
+            services[app] = {
+                "loadBalancer": {
+                    "servers": [{"url": f"http://{tunnel}:{port}"}],
+                },
+            }
+    return {"http": {"routers": routers, "services": services}}
+
+
+def write_traefik_dynamic(
+    stack_root: str | pathlib.Path,
+    data: dict[str, Any],
+    *,
+    enabled_apps: set[str],
+    kine_domain: str,
+    kine_local_domain: str,
+    vpn_enabled: bool = True,
+) -> pathlib.Path:
+    path = traefik_dynamic_path(stack_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc = render_traefik_dynamic(
+        data,
+        enabled_apps=enabled_apps,
+        kine_domain=kine_domain,
+        kine_local_domain=kine_local_domain,
+        vpn_enabled=vpn_enabled,
+    )
+    path.write_text(yaml.safe_dump(doc, sort_keys=False))
+    return path
 
 
 def _secondary_environment(conf: str) -> dict[str, str]:
@@ -386,6 +462,14 @@ def apply_filesystem(
         vpn_enabled=vpn_enabled,
     )
     write_override(repo, text)
+    write_traefik_dynamic(
+        stack_root,
+        data,
+        enabled_apps=enabled,
+        kine_domain=kine_domain,
+        kine_local_domain=kine_local_domain,
+        vpn_enabled=vpn_enabled,
+    )
 
 
 # Alias used in plan / Task 4 notes.

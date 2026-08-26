@@ -74,16 +74,18 @@ def test_render_override_secondary_and_network_mode():
     assert text.index("sonarr:") < text.index("network_mode:") or "sonarr" in text
 
     assert "kine-gluetun-11111111" in text
-    assert "traefik.http.routers.dispatcharr" in text
-    assert "traefik.http.routers.sonarr" in text
+    assert "traefik.enable=true" in text
 
-    sec = text.split("gluetun-11111111:", 1)[1].split("\n  sonarr:", 1)[0]
-    assert "traefik.http.routers.dispatcharr" in sec
-    assert "traefik.http.routers.sonarr" not in sec
-
-    prim = text.split("gluetun:", 1)[1].split("\n  gluetun-11111111:", 1)[0]
-    assert "traefik.http.routers.sonarr" in prim
-    assert "traefik.http.routers.dispatcharr" not in prim
+    dyn = vpn_routing.render_traefik_dynamic(
+        data,
+        enabled_apps={"dispatcharr", "sonarr", "gluetun"},
+        kine_domain="example.com",
+        kine_local_domain="kine.local",
+    )
+    assert dyn["http"]["routers"]["dispatcharr"]["service"] == "dispatcharr"
+    assert "gluetun-11111111:9191" in dyn["http"]["services"]["dispatcharr"]["loadBalancer"]["servers"][0]["url"]
+    assert "gluetun:8989" in dyn["http"]["services"]["sonarr"]["loadBalancer"]["servers"][0]["url"]
+    assert "Host(`tv.example.com`)" in dyn["http"]["routers"]["dispatcharr"]["rule"]
 
 
 def test_secondary_embeds_wireguard_from_parse_conf():
