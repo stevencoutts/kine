@@ -12,6 +12,7 @@ import os
 
 import httpx
 
+import tunnel_hosts
 from arrclient import ArrClient
 from keys import resolve_key
 
@@ -288,7 +289,10 @@ def configure(app: str, enabled: set[str], log) -> None:
         # The provisioner sits on kine_internal, outside the tunnel, so it
         # reaches the tier 2 apps at gluetun's address: that container is
         # the one that actually holds their sockets.
-        {"sonarr": "http://gluetun:8989", "radarr": "http://gluetun:7878"}[app],
+        tunnel_hosts.internal_base_for_app(
+            app,
+            {"sonarr": 8989, "radarr": 7878}[app],
+        ),
         resolve_key(app),
     )
     if not client.wait():

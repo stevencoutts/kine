@@ -10,8 +10,11 @@ from typing import Any, Callable
 
 import httpx
 
+import tunnel_hosts
+
 STACK = Path("/stack")
-TEAMARR_BASE = "http://gluetun:9195"
+# Live-TV affinity keeps dispatcharr/ecm/teamarr in one gluetun namespace;
+# same-container callers reach Dispatcharr on loopback, not kine_internal DNS.
 DISPATCHARR_LOOPBACK = "http://127.0.0.1:9191"
 BLOCK_SIZE = 20
 BASE_START = 2000
@@ -455,14 +458,15 @@ def configure(
     dispatcharr_username: str = "",
     dispatcharr_password: str = "",
     art_base_url: str = "",
-    base_url: str = TEAMARR_BASE,
+    base_url: str | None = None,
     client: httpx.Client | None = None,
     wait_timeout: float = 120.0,
 ) -> dict[str, Any]:
     """Apply sports subscription + channel numbering (+ Dispatcharr URL)."""
     rows = assign_channel_starts(leagues or load_leagues()["leagues"])
     own = client is None
-    http = client or httpx.Client(base_url=base_url, timeout=30.0)
+    teamarr_base = base_url or tunnel_hosts.internal_base_for_app("teamarr", 9195)
+    http = client or httpx.Client(base_url=teamarr_base, timeout=30.0)
     try:
         if not wait_ready(http, timeout=wait_timeout):
             log("teamarr: not ready in time")

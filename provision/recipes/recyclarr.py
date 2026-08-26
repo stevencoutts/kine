@@ -9,6 +9,7 @@ import pathlib
 
 import keys
 
+import tunnel_hosts
 from keys import api_key, resolve_key
 
 # TRaSH Guide profile trash IDs — 1080p-focused defaults.
@@ -50,10 +51,11 @@ def _config_dir() -> pathlib.Path:
 
 
 def _secrets(sonarr_key: str, radarr_key: str) -> dict[str, str]:
+    profiles = tunnel_hosts.load_profiles()
     return {
-        "sonarr_url": "http://gluetun:8989",
+        "sonarr_url": tunnel_hosts.internal_base(profiles, "sonarr", 8989),
         "sonarr_apikey": sonarr_key,
-        "radarr_url": "http://gluetun:7878",
+        "radarr_url": tunnel_hosts.internal_base(profiles, "radarr", 7878),
         "radarr_apikey": radarr_key,
     }
 

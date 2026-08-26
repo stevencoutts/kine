@@ -8,6 +8,7 @@ import os
 
 from arrclient import ArrClient, http_error_detail
 from keys import resolve_key
+import tunnel_hosts
 from prowlarr_indexers import ensure_indexers
 from recipes import prowlarr_newznab
 
@@ -44,7 +45,7 @@ def transmission_client() -> dict:
 
 
 def configure(enabled: set[str], log) -> None:
-    client = ArrClient("http://gluetun:9696", resolve_key("prowlarr"), api="v1", timeout=120.0)
+    client = ArrClient(tunnel_hosts.internal_base_for_app("prowlarr", 9696), resolve_key("prowlarr"), api="v1", timeout=120.0)
     if not client.wait():
         log("prowlarr: no API response, skipping wiring")
         return

@@ -5,9 +5,11 @@ from typing import Any
 
 import httpx
 
-from . import config
+from . import config, tunnel_hosts
 
-DISPATCHARR_BASE = "http://gluetun:9191"
+
+def dispatcharr_base() -> str:
+    return tunnel_hosts.internal_base_for_app("dispatcharr", 9191)
 M3U_CREATE_TIMEOUT = 600.0
 DEFAULT_TIMEOUT = 60.0
 
@@ -76,7 +78,7 @@ def _request(
 ) -> Any:
     if not enabled():
         raise ValueError("Dispatcharr is not enabled")
-    url = f"{DISPATCHARR_BASE}{path}"
+    url = f"{dispatcharr_base()}{path}"
     with httpx.Client(timeout=timeout) as client:
         resp = client.request(method, url, headers=_headers(), json=json)
     if resp.status_code >= 400:

@@ -8,7 +8,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "provision"))
 
 from recipes.dispatcharr import (  # noqa: E402
-    DISPATCHARR_HDHR,
+    dispatcharr_hdhr,
     tuner_already_linked,
     tuner_host_payload,
 )
@@ -17,7 +17,7 @@ from recipes.dispatcharr import (  # noqa: E402
 def test_tuner_host_payload_shape():
     body = tuner_host_payload()
     assert body["Type"] == "hdhomerun"
-    assert body["Url"] == DISPATCHARR_HDHR
+    assert body["Url"] == dispatcharr_hdhr()
     assert body["FriendlyName"] == "Dispatcharr"
     assert body["ImportFavoritesOnly"] is False
 
@@ -27,10 +27,10 @@ def test_tuner_already_linked_matches_url():
         {"Url": "http://other:5004", "Type": "hdhomerun"},
     ]) is False
     assert tuner_already_linked([
-        {"Url": DISPATCHARR_HDHR, "Type": "hdhomerun"},
+        {"Url": dispatcharr_hdhr(), "Type": "hdhomerun"},
     ]) is True
     assert tuner_already_linked([
-        {"Url": DISPATCHARR_HDHR + "/", "Type": "hdhomerun"},
+        {"Url": dispatcharr_hdhr() + "/", "Type": "hdhomerun"},
     ]) is True
 
 

@@ -9,7 +9,8 @@ import pathlib
 
 import httpx
 
-RPC = "http://gluetun:9091/transmission/rpc"
+import tunnel_hosts
+
 SETTINGS = pathlib.Path("/stack/config/transmission/settings.json")
 DOWNLOAD_DIR = "/data/downloads/complete"
 INCOMPLETE_DIR = "/data/downloads/incomplete"
@@ -18,6 +19,10 @@ WANTED = {
     "incomplete-dir": INCOMPLETE_DIR,
     "incomplete-dir-enabled": True,
 }
+
+
+def _rpc_url() -> str:
+    return f"{tunnel_hosts.internal_base_for_app('transmission', 9091)}/transmission/rpc"
 
 
 def _persist_settings(log) -> bool:
@@ -39,10 +44,11 @@ def _rpc(client: httpx.Client, method: str, arguments: dict | None = None) -> di
     payload = {"method": method}
     if arguments:
         payload["arguments"] = arguments
-    r = client.post(RPC, json=payload)
+    url = _rpc_url()
+    r = client.post(url, json=payload)
     if r.status_code == 409:
         sid = r.headers.get("X-Transmission-Session-Id", "")
-        r = client.post(RPC, json=payload, headers={"X-Transmission-Session-Id": sid})
+        r = client.post(url, json=payload, headers={"X-Transmission-Session-Id": sid})
     r.raise_for_status()
     return r.json()
 

@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import acme_env, appkeys, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, profile_reconcile, prowlarr_newznab, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, updates_info, vpn_profiles, vpn_routing, watching
+from . import acme_env, appkeys, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, profile_reconcile, prowlarr_newznab, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, tunnel_hosts, updates_info, vpn_profiles, vpn_routing, watching
 import sys
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
@@ -151,7 +151,7 @@ def _apply_prowlarr_newznab(rows: list[dict] | None = None) -> dict:
         sys.path.insert(0, provision)
     from arrclient import ArrClient, http_error_detail
 
-    client = ArrClient("http://gluetun:9696", key, api="v1", timeout=120.0)
+    client = ArrClient(tunnel_hosts.internal_base_for_app("prowlarr", 9696), key, api="v1", timeout=120.0)
     if not client.wait(timeout=30):
         return {"ok": False, "indexers": len(rows), "error": "prowlarr unreachable"}
     logs: list[str] = []

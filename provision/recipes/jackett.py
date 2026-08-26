@@ -7,6 +7,7 @@ the *arr apps remains a manual step if Prowlarr is not in use.
 """
 from jackettclient import JackettClient
 from keys import resolve_key
+import tunnel_hosts
 
 # Field ids and values match Jackett's /api/v2.0/indexers/{id}/config API.
 INDEXERS = {
@@ -32,7 +33,7 @@ INDEXERS = {
 
 
 def configure(log) -> None:
-    client = JackettClient("http://gluetun:9117", resolve_key("jackett"))
+    client = JackettClient(tunnel_hosts.internal_base_for_app("jackett", 9117), resolve_key("jackett"))
     if not client.wait():
         log("jackett: no API response, skipping wiring")
         return

@@ -9,8 +9,10 @@ from urllib.parse import urlencode
 import httpx
 
 from keys import resolve_key
+import tunnel_hosts
 
-BASE = "http://gluetun:6767"
+def _base() -> str:
+    return tunnel_hosts.internal_base_for_app("bazarr", 6767)
 SONARR_HOST = "127.0.0.1"
 SONARR_PORT = 8989
 RADARR_HOST = "127.0.0.1"
@@ -32,7 +34,7 @@ def _wait(key: str, timeout: int = 300) -> bool:
     while time.time() < deadline:
         try:
             for path in ("/api/system/ping", "/ping"):
-                r = httpx.get(f"{BASE}{path}", headers=_headers(key), timeout=10.0)
+                r = httpx.get(f"{_base()}{path}", headers=_headers(key), timeout=10.0)
                 if r.status_code == 200:
                     return True
         except httpx.HTTPError:
@@ -45,7 +47,7 @@ def _post_settings(key: str, pairs: list[tuple[str, str]]) -> httpx.Response:
     """POST form fields, allowing repeated keys (Bazarr list settings)."""
     body = urlencode(pairs)
     return httpx.post(
-        f"{BASE}/api/system/settings",
+        f"{_base()}/api/system/settings",
         headers={**_headers(key), "Content-Type": "application/x-www-form-urlencoded"},
         content=body,
         timeout=60.0,
@@ -131,7 +133,7 @@ def _providers_need_defaults(settings: dict) -> bool:
 
 def _apply_defaults(key: str, log) -> None:
     settings = httpx.get(
-        f"{BASE}/api/system/settings", headers=_headers(key), timeout=30.0
+        f"{_base()}/api/system/settings", headers=_headers(key), timeout=30.0
     ).json()
     pairs: list[tuple[str, str]] = []
 
@@ -161,7 +163,7 @@ def _apply_defaults(key: str, log) -> None:
     pairs.append(("languages-enabled", "en"))
 
     profiles = httpx.get(
-        f"{BASE}/api/system/languages/profiles",
+        f"{_base()}/api/system/languages/profiles",
         headers=_headers(key),
         timeout=30.0,
     ).json()
@@ -191,7 +193,7 @@ def _sync_libraries(key: str, log) -> None:
     for taskid in ("update_series", "update_movies"):
         try:
             r = httpx.post(
-                f"{BASE}/api/system/tasks",
+                f"{_base()}/api/system/tasks",
                 headers=_headers(key),
                 data={"taskid": taskid},
                 timeout=120.0,

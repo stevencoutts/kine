@@ -15,6 +15,8 @@ import pathlib
 from keys import resolve_key
 
 STACK = pathlib.Path("/stack")
+# Live-TV affinity keeps dispatcharr/ecm/teamarr in one gluetun namespace;
+# same-container callers reach Dispatcharr on loopback, not kine_internal DNS.
 DISPATCHARR_LOOPBACK = "http://127.0.0.1:9191"
 
 
@@ -85,7 +87,7 @@ def write_dispatcharr_token(app: str, token: str, log) -> bool:
     for key in ("DISPATCHARR_URL", "DISPATCHARR_TOKEN"):
         if key not in order:
             order.append(key)
-    # ECM/Teamarr share gluetun's namespace with Dispatcharr.
+    # ECM/Teamarr share Dispatcharr's tunnel namespace (live-TV affinity).
     existing["DISPATCHARR_URL"] = DISPATCHARR_LOOPBACK
     existing["DISPATCHARR_TOKEN"] = token or ""
     body = "\n".join(f"{k}={existing[k]}" for k in order) + "\n"

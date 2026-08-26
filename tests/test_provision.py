@@ -997,16 +997,21 @@ def test_recyclarr_configure_uses_resolve_key(stack, monkeypatch):
 
 
 def test_seerr_servers_use_gluetun_and_kine_paths():
-    from recipes.seerr import SERVERS
+    from recipes import seerr
+    import tunnel_hosts
 
-    assert SERVERS["sonarr"]["hostname"] == "gluetun"
-    assert SERVERS["sonarr"]["port"] == 8989
-    assert SERVERS["sonarr"]["directory"] == "/data/media/tv"
-    assert SERVERS["sonarr"]["profiles"][0] == "WEB-1080p"
-    assert SERVERS["radarr"]["hostname"] == "gluetun"
-    assert SERVERS["radarr"]["port"] == 7878
-    assert SERVERS["radarr"]["directory"] == "/data/media/movies"
-    assert SERVERS["radarr"]["profiles"][0] == "HD Bluray + WEB"
+    profiles = tunnel_hosts.load_profiles()
+    sonarr = seerr._server_meta("sonarr", profiles)
+    radarr = seerr._server_meta("radarr", profiles)
+
+    assert sonarr["hostname"] == "gluetun"
+    assert sonarr["port"] == 8989
+    assert sonarr["directory"] == "/data/media/tv"
+    assert sonarr["profiles"][0] == "WEB-1080p"
+    assert radarr["hostname"] == "gluetun"
+    assert radarr["port"] == 7878
+    assert radarr["directory"] == "/data/media/movies"
+    assert radarr["profiles"][0] == "HD Bluray + WEB"
 
 
 def test_seerr_picks_1080p_profiles_preferring_trash_names():

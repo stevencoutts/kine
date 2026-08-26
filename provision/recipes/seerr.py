@@ -1,7 +1,7 @@
 """Wire Seerr to Sonarr and Radarr over kine_internal.
 
-Seerr is not VPN-tunnelled. It reaches the gluetun-namespaced *arr apps at
-http://gluetun:8989 / http://gluetun:7878.
+Seerr is not VPN-tunnelled. It reaches the tunnelled *arr apps at
+``http://{tunnel_service(app)}:<port>`` over kine_internal.
 
 The settings API (`POST /api/v1/settings/{radarr,sonarr}`) requires an admin
 user (created at wizard Sign In) and Seerr's own `X-Api-Key`. Media-server
@@ -23,6 +23,7 @@ import httpx
 
 import keys
 from keys import resolve_key
+import tunnel_hosts
 
 BASE = "http://seerr:5055"
 
@@ -30,7 +31,6 @@ BASE = "http://seerr:5055"
 SERVERS = {
     "radarr": {
         "name": "Radarr",
-        "hostname": "gluetun",
         "port": 7878,
         "path": "radarr",
         "directory": "/data/media/movies",
@@ -45,7 +45,6 @@ SERVERS = {
     },
     "sonarr": {
         "name": "Sonarr",
-        "hostname": "gluetun",
         "port": 8989,
         "path": "sonarr",
         "directory": "/data/media/tv",
@@ -157,8 +156,15 @@ def _build_payload(
     return payload
 
 
-def _ensure_server(http: httpx.Client, app: str, log) -> None:
-    meta = SERVERS[app]
+def _server_meta(app: str, profiles: dict) -> dict:
+    meta = dict(SERVERS[app])
+    base = tunnel_hosts.internal_base(profiles, app, meta["port"])
+    meta["hostname"] = base.split("://", 1)[1].rsplit(":", 1)[0]
+    return meta
+
+
+def _ensure_server(http: httpx.Client, app: str, profiles: dict, log) -> None:
+    meta = _server_meta(app, profiles)
     existing = http.get(f"/api/v1/settings/{meta['path']}").json()
     linked = _find_linked(existing, meta["hostname"], meta["port"])
 
@@ -246,6 +252,6 @@ def configure(enabled: set[str], log) -> None:
 
     for app in targets:
         try:
-            _ensure_server(http, app, log)
+            _ensure_server(http, app, tunnel_hosts.load_profiles(), log)
         except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             log(f"seerr: {app} wiring failed ({exc})")
