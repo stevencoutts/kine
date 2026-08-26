@@ -3,7 +3,7 @@
 Kine is a self-hosted media appliance on Docker Compose: acquisition (*arr),
 VPN-routed downloads, optional Emby/Live TV, and metrics — all behind one
 Traefik HTTPS entry point, wired together by a provisioner so a fresh install
-comes up talking to itself.
+comes up mostly pre-configured.
 
 **Helm** is the operator UI: enable apps, watch who’s streaming, check Stats,
 manage VPN profiles, and point Sonarr/Radarr at remote Plex or Emby.
