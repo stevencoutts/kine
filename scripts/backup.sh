@@ -32,7 +32,7 @@ if (( tar_rc >= 2 )); then
 fi
 echo "Snapshot complete ($(du -h "$out" | cut -f1))." >&2
 echo "$out"
-# Keep the last 10
+# Keep the last 3
 # `-r`/`--no-run-if-empty` is GNU-only; `rm -f` with no args is a no-op
 # on BSD/macOS xargs too, so it's portable without the flag.
-ls -1t "${STACK_ROOT}"/backups/kine-*.tar.gz 2>/dev/null | tail -n +11 | xargs rm -f --
+ls -1t "${STACK_ROOT}"/backups/kine-*.tar.gz 2>/dev/null | tail -n +4 | xargs rm -f --

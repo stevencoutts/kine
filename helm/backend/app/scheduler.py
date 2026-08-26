@@ -102,6 +102,10 @@ async def _update_check() -> None:
 
 async def _backup() -> None:
     code, out = await compose.script("backup.sh", timeout=1800)
+    if code == 0:
+        from . import backups
+
+        await asyncio.to_thread(backups.prune_old_snapshots)
     data = _load()
     data["backup"] = {
         "ran": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -307,7 +311,7 @@ async def _dispatcharr_wire_loop() -> None:
 
 async def _loop(name: str, cron_key: str, default: str, job) -> None:
     while True:
-        expr = config.read().get(cron_key, default) or default
+        expr = (config.read().get(cron_key, default) or default).strip()
         try:
             delay = max(30.0, _next(expr) - time.time())
         except (ValueError, KeyError):
@@ -317,6 +321,13 @@ async def _loop(name: str, cron_key: str, default: str, job) -> None:
             data.setdefault("errors", {})[name] = f"invalid cron {expr!r}, using {default!r}"
             _save(data)
             delay = max(30.0, _next(default) - time.time())
+        else:
+            data = _load()
+            if name in data.get("errors", {}):
+                data["errors"].pop(name, None)
+                if not data["errors"]:
+                    data.pop("errors", None)
+                _save(data)
         await asyncio.sleep(delay)
         try:
             await job()

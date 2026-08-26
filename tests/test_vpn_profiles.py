@@ -98,3 +98,17 @@ def test_vpn_ui_has_profile_cards():
     assert "data-vpn-activate" in frontend
     assert "promptVpnProfile" in frontend
     assert "/vpn/profiles" in frontend
+
+
+def test_vpn_ui_collapses_detail_into_active_profile():
+    """Live tunnel state belongs on the active profile card, not a second widget."""
+    frontend = (ROOT / "helm" / "frontend" / "index.html").read_text()
+    vpn = frontend.split("render.vpn = async () => {", 1)[1].split("\nconst fmtBytes", 1)[0]
+    assert 'id="leak"' in vpn
+    assert "Public IP" in vpn
+    # Old standalone hero used connection type as the card title with a status dot.
+    assert 'vpn-card-title"><span class="dot' not in vpn
+    assert "<h2>VPN</h2>" not in vpn
+    # Detail / tunnel actions are rendered for the active profile only.
+    assert "p.active" in vpn
+    assert "vpn-active-detail" in vpn

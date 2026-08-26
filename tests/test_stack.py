@@ -542,6 +542,13 @@ def test_helm_can_resolve_host_absolute_env_files():
     assert "${STACK_ROOT}:${STACK_ROOT}" in helm.get("volumes", [])
 
 
+def test_helm_mounts_data_root_media_for_status_disk():
+    """Status disk usage needs the NFS media bind; parent DATA_ROOT alone hides it."""
+    _, helm = SERVICES["helm"]
+    vols = helm.get("volumes", [])
+    assert "${DATA_ROOT}/media:${DATA_ROOT}/media:ro" in vols
+
+
 def test_vpn_portsync_mounts_the_real_script():
     _, portsync = SERVICES["vpn-portsync"]
     assert "../scripts/vpn-portsync.sh:/portsync.sh:ro" in portsync.get("volumes", [])

@@ -15,7 +15,8 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import acme_env, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, profile_reconcile, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, updates_info, vpn_profiles, watching
+from . import acme_env, appkeys, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, profile_reconcile, prowlarr_newznab, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, updates_info, vpn_profiles, watching
+import sys
 from .gluetun import connection_label as _connection_label
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
@@ -89,6 +90,7 @@ _MEDIA_SERVER_KEYS = (
 _LIVE_TV_KEYS = ("DISPATCHARR_TOKEN",)
 _SUBTITLE_KEYS = ("OPENSUBTITLES_USERNAME", "OPENSUBTITLES_PASSWORD")
 NZBGET_NEWS_KEY = "NZBGET_NEWS_SERVERS"
+PROWLARR_NEWZNAB_KEY = "PROWLARR_NEWZNAB_INDEXERS"
 
 
 def _store_nzbget_servers(servers) -> list[dict]:
@@ -118,6 +120,46 @@ def _store_nzbget_servers(servers) -> list[dict]:
     )
     config.write({NZBGET_NEWS_KEY: recipe.serialize_servers(parsed)})
     return parsed
+
+
+def _store_prowlarr_newznab(indexers) -> list[dict]:
+    recipe = prowlarr_newznab.recipe()
+    incoming = indexers if isinstance(indexers, list) else []
+    existing = recipe.parse_indexers(config.read().get(PROWLARR_NEWZNAB_KEY, ""))
+    merged = recipe.merge_indexers(incoming, existing)
+    parsed = recipe.parse_indexers(recipe.serialize_indexers(merged))
+    config.write({PROWLARR_NEWZNAB_KEY: recipe.serialize_indexers(parsed)})
+    return parsed
+
+
+def _apply_prowlarr_newznab(rows: list[dict] | None = None) -> dict:
+    """Upsert Newznab indexers in Prowlarr from Settings / .env."""
+    recipe = prowlarr_newznab.recipe()
+    rows = rows if rows is not None else recipe.parse_indexers(
+        config.read().get(PROWLARR_NEWZNAB_KEY, "")
+    )
+    if "prowlarr" not in config.profiles():
+        return {"ok": True, "indexers": len(rows), "deferred": True}
+    if not rows:
+        return {"ok": True, "indexers": 0}
+    key = appkeys.arr_key("prowlarr")
+    if not key:
+        return {"ok": False, "indexers": len(rows), "error": "prowlarr API key missing"}
+    provision = str(_REPO / "provision")
+    if provision not in sys.path:
+        sys.path.insert(0, provision)
+    from arrclient import ArrClient, http_error_detail
+
+    client = ArrClient("http://gluetun:9696", key, api="v1", timeout=120.0)
+    if not client.wait(timeout=30):
+        return {"ok": False, "indexers": len(rows), "error": "prowlarr unreachable"}
+    logs: list[str] = []
+    try:
+        actions = recipe.ensure_newznab_indexers(client, rows, logs.append)
+    except Exception as exc:  # noqa: BLE001
+        detail = http_error_detail(exc) if hasattr(exc, "response") else str(exc)
+        return {"ok": False, "indexers": len(rows), "error": detail, "log": logs}
+    return {"ok": True, "indexers": len(rows), "actions": actions, "log": logs}
 
 
 def _apply_nzbget_conf(servers: list[dict] | None = None) -> None:
@@ -310,20 +352,34 @@ async def health():
 async def status(user: str = Depends(require_user)):
     env = config.read()
     disks = {}
-    for label, key in (("stack", "STACK_ROOT"), ("data", "DATA_ROOT")):
-        mount = "/stack" if key == "STACK_ROOT" else "/data"
-        try:
-            st = os.statvfs(mount)
+
+    def _disk(display_path: str, candidates: list[str]) -> dict:
+        for mount in candidates:
+            if not mount:
+                continue
+            try:
+                st = os.statvfs(mount)
+            except OSError:
+                continue
             total = st.f_blocks * st.f_frsize
             free = st.f_bavail * st.f_frsize
-            disks[label] = {
-                "path": env.get(key, ""),
+            return {
+                "path": display_path or mount,
                 "total_gb": round(total / 1e9, 1),
                 "free_gb": round(free / 1e9, 1),
                 "used_pct": round(100 * (1 - free / total), 1) if total else None,
             }
-        except OSError:
-            disks[label] = {"path": env.get(key, ""), "error": "not mounted"}
+        return {"path": display_path, "error": "not mounted"}
+
+    stack_root = (env.get("STACK_ROOT") or "").rstrip("/")
+    data_root = (env.get("DATA_ROOT") or "").rstrip("/")
+    media_mount = promquery.nfs_media_mountpoint(env)
+    disks["stack"] = _disk(stack_root, ["/stack", stack_root])
+    # Prefer the NFS media share (downloads usually live under it).
+    disks["data"] = _disk(
+        data_root or media_mount,
+        [media_mount, f"{data_root}/media" if data_root else "", data_root, "/data/media", "/data"],
+    )
 
     code, ps = await compose.run("ps", "--format", "json", timeout=60)
     return {
@@ -1214,6 +1270,13 @@ async def get_settings(user: str = Depends(require_user)):
         env.get(NZBGET_NEWS_KEY, "")
     )
     out["nzbget_enabled"] = "nzbget" in config.profiles()
+    out["prowlarr_newznab_indexers"] = [
+        {**row, "api_key": "********" if row.get("api_key") else ""}
+        for row in prowlarr_newznab.recipe().parse_indexers(
+            env.get(PROWLARR_NEWZNAB_KEY, "")
+        )
+    ]
+    out["prowlarr_enabled"] = "prowlarr" in config.profiles()
     out["dispatcharr_enabled"] = dispatcharr_sources.enabled()
     out["dispatcharr_configured"] = dispatcharr_sources.configured()
     cloudns = acme_env.read_cloudns()
@@ -1299,11 +1362,22 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
             nzbget_apply = {"ok": True, "servers": len(servers)}
         else:
             nzbget_apply = {"ok": True, "servers": len(servers), "deferred": True}
-    return {"ok": True, "nfs_mount": nfs_mount, "media_wire": media_wire, "nzbget_apply": nzbget_apply}
+    newznab_apply = None
+    if "prowlarr_newznab_indexers" in body:
+        rows = _store_prowlarr_newznab(body.get("prowlarr_newznab_indexers") or [])
+        newznab_apply = await asyncio.to_thread(_apply_prowlarr_newznab, rows)
+    return {
+        "ok": True,
+        "nfs_mount": nfs_mount,
+        "media_wire": media_wire,
+        "nzbget_apply": nzbget_apply,
+        "prowlarr_newznab_apply": newznab_apply,
+    }
 
 
 @app.get("/api/backups")
 async def backups_list(user: str = Depends(require_user)):
+    await asyncio.to_thread(backups.prune_old_snapshots)
     rows = await asyncio.to_thread(backups.list_snapshots)
     return {"ok": True, "snapshots": rows, "busy": provision_lock.status().get("busy")}
 
@@ -1319,6 +1393,7 @@ async def backup(user: str = Depends(require_user)):
         raise HTTPException(409, exc.detail) from exc
     path = out.strip().splitlines()[-1] if code == 0 and out.strip() else None
     if code == 0 and path:
+        await asyncio.to_thread(backups.prune_old_snapshots)
         data = scheduler._load()
         data["backup"] = {
             "ran": datetime.now(timezone.utc).isoformat(timespec="seconds"),

@@ -30,6 +30,8 @@ services:
       # Compose validates env_file paths in this container before it
       # sends their host-absolute paths to Docker.
       - ${STACK_ROOT}:${STACK_ROOT}
+      # NFS media for Status disk usage (parent DATA_ROOT bind hides nested mounts).
+      - ${DATA_ROOT}/media:${DATA_ROOT}/media:ro
     networks: [kine_edge, kine_internal, kine_ctrl]
     extra_hosts:
       - "host.docker.internal:host-gateway"

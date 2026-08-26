@@ -58,3 +58,25 @@ def test_compose_emits_no_warning_for_written_dollar_value(env_file, tmp_path):
 
     assert result.returncode == 0
     assert "variable is not set" not in result.stderr
+
+
+def test_decode_strips_double_quoted_cron(env_file):
+    env_file.write_text('HELM_UPDATE_CHECK_CRON="0 4 * * *"\n')
+    assert config.read()["HELM_UPDATE_CHECK_CRON"] == "0 4 * * *"
+
+
+def test_decode_strips_nested_single_then_double_quotes(env_file):
+    """normalize() once wrapped a double-quoted value in single quotes."""
+    env_file.write_text("HELM_UPDATE_CHECK_CRON='\"0 4 * * *\"'\n")
+    assert config.read()["HELM_UPDATE_CHECK_CRON"] == "0 4 * * *"
+
+
+def test_decode_strips_double_quoted_cron(env_file):
+    env_file.write_text('HELM_UPDATE_CHECK_CRON="0 4 * * *"\n')
+    assert config.read()["HELM_UPDATE_CHECK_CRON"] == "0 4 * * *"
+
+
+def test_decode_strips_nested_single_then_double_quotes(env_file):
+    """normalize() once wrapped a double-quoted value in single quotes."""
+    env_file.write_text("HELM_UPDATE_CHECK_CRON='\"0 4 * * *\"'\n")
+    assert config.read()["HELM_UPDATE_CHECK_CRON"] == "0 4 * * *"

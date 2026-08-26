@@ -146,24 +146,128 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   letter-spacing:.08em;color:var(--muted);font-weight:600;text-align:left}
 .overview-stat{font-size:1.15rem;font-weight:600;line-height:1.2}
 .overview-stat span{color:var(--muted);font-weight:400;font-size:.82rem}
-.settings-nav{display:flex;flex-wrap:wrap;gap:.55rem;margin:0 0 1.15rem}
+.settings-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:1.1rem;align-items:start}
+.settings-side{position:sticky;top:.85rem}
+.settings-side-title{margin:0 0 .75rem;font-size:1.15rem;font-weight:650;letter-spacing:-.01em}
+.settings-nav{display:flex;flex-direction:column;gap:.4rem;margin:0}
 .settings-nav-btn{appearance:none;cursor:pointer;font:inherit;text-align:left;
-  padding:.7rem .95rem;border-radius:var(--radius);
+  padding:.7rem .9rem;border-radius:var(--radius);
   color:var(--muted);background:color-mix(in srgb, var(--panel) 55%, transparent);
   backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);
   border:1px solid color-mix(in srgb, var(--line) 50%, transparent);
   box-shadow:0 4px 18px color-mix(in srgb, #000 5%, transparent);
-  transition:border-color .18s,background .18s,color .18s}
+  transition:border-color .18s,background .18s,color .18s,box-shadow .18s;
+  position:relative}
 .settings-nav-btn:hover{border-color:color-mix(in srgb, var(--accent) 45%, transparent);color:var(--text)}
 .settings-nav-btn.active{color:var(--text);
   border-color:color-mix(in srgb, var(--accent) 65%, transparent);
   background:color-mix(in srgb, var(--accent) 10%, var(--panel));
   box-shadow:0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent),
     0 6px 22px color-mix(in srgb, #000 6%, transparent)}
+.settings-nav-btn.active::before{content:"";position:absolute;left:.35rem;top:.55rem;bottom:.55rem;
+  width:3px;border-radius:999px;background:var(--accent-strong)}
 .settings-nav-btn .settings-nav-label{display:block;font-size:.72rem;line-height:1.2;
-  text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+  text-transform:uppercase;letter-spacing:.08em;font-weight:600;padding-left:.35rem}
+.settings-main{min-width:0}
 .settings-panel[hidden]{display:none!important}
-.settings-panel > .card{margin:0}
+.settings-glass{
+  position:relative;overflow:hidden;
+  background:
+    linear-gradient(145deg,
+      color-mix(in srgb, var(--panel) 58%, transparent),
+      color-mix(in srgb, var(--panel-2) 42%, transparent));
+  backdrop-filter:blur(28px) saturate(1.35);-webkit-backdrop-filter:blur(28px) saturate(1.35);
+  border:1px solid color-mix(in srgb, #fff 14%, var(--line));
+  border-radius:calc(var(--radius) + 2px);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset,
+    0 10px 36px color-mix(in srgb, #000 10%, transparent);
+  padding:1.1rem 1.15rem 1.15rem}
+.settings-glass::before{
+  content:"";position:absolute;inset:0 0 auto 0;height:36%;pointer-events:none;
+  background:linear-gradient(180deg, color-mix(in srgb, #fff 8%, transparent), transparent)}
+.settings-lede{position:relative;margin:0 0 1rem;font-size:.85rem;color:var(--muted);line-height:1.45}
+.settings-groups{position:relative;display:flex;flex-direction:column;gap:.85rem}
+.settings-group{
+  border:1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  border-radius:12px;
+  background:color-mix(in srgb, var(--panel-2) 55%, transparent);
+  padding:.85rem 1rem 1rem}
+.settings-group-title{margin:0 0 .55rem;font-size:.68rem;font-weight:650;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+details.settings-group > summary.settings-group-title{display:flex;align-items:center;gap:.4rem;
+  margin-bottom:0;cursor:pointer;list-style:none}
+details.settings-group > summary.settings-group-title::-webkit-details-marker{display:none}
+details.settings-group > summary.settings-group-title::before{content:"";width:.4rem;height:.4rem;
+  border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);
+  transform:rotate(-45deg);transition:transform .15s}
+details.settings-group[open] > summary.settings-group-title{margin-bottom:.55rem}
+details.settings-group[open] > summary.settings-group-title::before{transform:rotate(45deg)}
+.settings-group .row{margin-top:.15rem}
+.settings-hint{margin:.35rem 0 .55rem;font-size:.78rem;color:var(--muted);line-height:1.4}
+.settings-actions{position:relative;display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;
+  margin-top:1rem;padding-top:.85rem;border-top:1px solid color-mix(in srgb, var(--line) 60%, transparent)}
+.settings-actions .banner{flex:1 1 100%;margin:0}
+@media (max-width:820px){
+  .settings-layout{grid-template-columns:1fr}
+  .settings-side{position:static}
+  .settings-nav{flex-direction:row;flex-wrap:wrap;gap:.45rem}
+  .settings-nav-btn{flex:1 1 auto;min-width:7.5rem}
+  .settings-nav-btn.active::before{display:none}
+  .settings-nav-btn .settings-nav-label{padding-left:0}
+}
+.status-page{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:1.25rem}
+.status-section h2{margin:0 0 .75rem;font-size:1.05rem;font-weight:650}
+.status-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.85rem}
+@media (max-width:720px){.status-grid{grid-template-columns:1fr}}
+.status-glass{
+  position:relative;overflow:hidden;
+  background:
+    linear-gradient(145deg,
+      color-mix(in srgb, var(--panel) 58%, transparent),
+      color-mix(in srgb, var(--panel-2) 42%, transparent));
+  backdrop-filter:blur(28px) saturate(1.35);-webkit-backdrop-filter:blur(28px) saturate(1.35);
+  border:1px solid color-mix(in srgb, #fff 14%, var(--line));
+  border-radius:calc(var(--radius) + 2px);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset,
+    0 10px 36px color-mix(in srgb, #000 10%, transparent);
+  padding:1rem 1.05rem 1.05rem}
+.status-glass::before{
+  content:"";position:absolute;inset:0 0 auto 0;height:40%;pointer-events:none;
+  background:linear-gradient(180deg, color-mix(in srgb, #fff 8%, transparent), transparent)}
+.status-disk{display:flex;align-items:center;gap:1rem;min-height:7.5rem}
+.status-disk-ring{position:relative;flex:none;width:112px;height:112px}
+.status-disk-ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.status-disk-ring .ring-track{fill:none;stroke:color-mix(in srgb, var(--line) 70%, transparent);stroke-width:10}
+.status-disk-ring .ring-used{fill:none;stroke-width:10;stroke-linecap:round;
+  transition:stroke-dashoffset .55s ease}
+.status-disk-ring .ring-used.ok{stroke:var(--ok)}
+.status-disk-ring .ring-used.warn{stroke:var(--warn)}
+.status-disk-ring .ring-used.bad{stroke:var(--bad)}
+.status-disk-ring .ring-used.muted{stroke:color-mix(in srgb, var(--muted) 55%, transparent)}
+.status-disk-pct{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  flex-direction:column;pointer-events:none}
+.status-disk-pct strong{font-size:1.35rem;font-weight:650;letter-spacing:-.02em;line-height:1.1}
+.status-disk-pct span{font-size:.68rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.status-disk-body{position:relative;min-width:0;flex:1}
+.status-disk-body .status-kicker{margin:0 0 .25rem;font-size:.68rem;font-weight:650;
+  letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.status-disk-body h3{margin:0;font-size:1.05rem;font-weight:650}
+.status-disk-body .status-path{margin:.2rem 0 0;font-size:.78rem;color:var(--muted);word-break:break-all}
+.status-disk-body .status-sub{margin:.45rem 0 0;font-size:.85rem;color:var(--text)}
+.status-job-top{position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:.75rem}
+.status-job-top h3{margin:0;font-size:1rem;font-weight:650}
+.status-job-body{position:relative;margin-top:.65rem;font-size:.85rem;color:var(--muted);line-height:1.45}
+.status-job-body b{color:var(--text);font-weight:600}
+.status-backup-list{position:relative;display:flex;flex-direction:column;gap:.65rem;margin-top:.85rem}
+.status-backup-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;
+  padding:.75rem .85rem;border-radius:12px;
+  border:1px solid color-mix(in srgb, var(--line) 55%, transparent);
+  background:color-mix(in srgb, var(--panel-2) 55%, transparent)}
+.status-backup-row h4{margin:0;font-size:.9rem;font-weight:650;word-break:break-all}
+.status-backup-row .status-backup-meta{margin:.2rem 0 0;font-size:.78rem;color:var(--muted)}
+.status-lede{position:relative;margin:0;font-size:.85rem;color:var(--muted);line-height:1.45}
 .watch-list{display:flex;flex-direction:column;gap:.85rem}
 .watch-row{padding:.15rem 0}
 .watch-row strong{display:block;font-size:.95rem}
@@ -300,7 +404,8 @@ pre{background:var(--panel-2);border:1px solid var(--line);border-radius:var(--r
   border:1px solid color-mix(in srgb, var(--line) 55%, transparent);color:var(--muted)}
 .vpn-profiles-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;
   margin:0 0 .75rem}
-.vpn-profiles-head h3{margin:0;font-size:.95rem}
+.vpn-profiles-head h2,.vpn-profiles-head h3{margin:0;font-size:1.05rem;font-weight:650}
+.vpn-active-detail{margin-top:.55rem}
 .vpn-modal label{display:block;margin:.65rem 0 .3rem;font-size:.8rem;color:var(--muted)}
 .vpn-modal input,.vpn-modal textarea{width:100%;box-sizing:border-box}
 .vpn-modal textarea{min-height:160px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -493,6 +598,7 @@ const SETTINGS_SECTIONS = [
   {id:'media-servers', label:'Media Servers'},
   {id:'live-tv', label:'Live TV'},
   {id:'subtitles', label:'Subtitles'},
+  {id:'indexers', label:'Indexers'},
   {id:'nzbget', label:'NZBGet'},
 ];
 const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({
@@ -504,6 +610,82 @@ const emptyNzbServer = () => ({
   name: '', host: '', port: 563, username: '', password: '',
   encryption: true, connections: 8,
 });
+
+const emptyNewznabIndexer = () => ({
+  name: 'Althub',
+  url: 'https://api.althub.co.za',
+  api_key: '',
+  api_path: '/api',
+  enable_rss: true,
+  enable_automatic_search: true,
+  enable_interactive_search: true,
+});
+
+const collectNewznabIndexers = (root=document) => {
+  const rows = [...root.querySelectorAll('[data-newznab]')];
+  return rows.map((el, i) => ({
+    name: $('[data-nz-name]', el)?.value.trim() || `Newznab ${i + 1}`,
+    url: $('[data-nz-url]', el)?.value.trim() || '',
+    api_key: $('[data-nz-key]', el)?.value || '',
+    api_path: $('[data-nz-path]', el)?.value.trim() || '/api',
+    enable_rss: !!$('[data-nz-rss]', el)?.checked,
+    enable_automatic_search: !!$('[data-nz-auto]', el)?.checked,
+    enable_interactive_search: !!$('[data-nz-interactive]', el)?.checked,
+  })).filter(s => s.url);
+};
+
+const newznabRowHtml = (s={}, idx=0) => `
+  <div class="nzb-server" data-newznab>
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <strong style="font-size:.85rem">Newznab ${idx + 1}</strong>
+      <button type="button" class="act" data-nz-remove>Remove</button>
+    </div>
+    <label>Name</label><input data-nz-name value="${escHtml(s.name || '')}" placeholder="Althub">
+    <label>URL</label><input data-nz-url value="${escHtml(s.url || '')}" placeholder="https://api.althub.co.za">
+    <label>API Key</label><input data-nz-key type="password" value="${escHtml(s.api_key || '')}" autocomplete="off" placeholder="leave blank to keep existing">
+    <label>API Path</label><input data-nz-path value="${escHtml(s.api_path || '/api')}" placeholder="/api">
+    <div class="row" style="gap:1.25rem;flex-wrap:wrap;margin-top:.35rem">
+      <label class="tier-switch" style="margin:0" aria-label="Enable RSS">
+        <input type="checkbox" data-nz-rss ${s.enable_rss!==false?'checked':''}>
+        <span class="tier-switch-ui" aria-hidden="true"></span>
+        <span style="margin-left:.55rem;font-size:.8rem;color:var(--muted)">RSS</span>
+      </label>
+      <label class="tier-switch" style="margin:0" aria-label="Automatic Search">
+        <input type="checkbox" data-nz-auto ${s.enable_automatic_search!==false?'checked':''}>
+        <span class="tier-switch-ui" aria-hidden="true"></span>
+        <span style="margin-left:.55rem;font-size:.8rem;color:var(--muted)">Automatic search</span>
+      </label>
+      <label class="tier-switch" style="margin:0" aria-label="Interactive Search">
+        <input type="checkbox" data-nz-interactive ${s.enable_interactive_search!==false?'checked':''}>
+        <span class="tier-switch-ui" aria-hidden="true"></span>
+        <span style="margin-left:.55rem;font-size:.8rem;color:var(--muted)">Interactive search</span>
+      </label>
+    </div>
+  </div>`;
+
+const bindNewznabList = (listEl, addBtn) => {
+  if (!listEl) return;
+  const renumber = () => {
+    [...listEl.querySelectorAll('[data-newznab]')].forEach((el, i) => {
+      const title = el.querySelector('strong');
+      if (title) title.textContent = `Newznab ${i + 1}`;
+    });
+  };
+  listEl.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-nz-remove]');
+    if (!btn) return;
+    const row = btn.closest('[data-newznab]');
+    if (row) row.remove();
+    if (!listEl.querySelector('[data-newznab]')) {
+      listEl.insertAdjacentHTML('beforeend', newznabRowHtml(emptyNewznabIndexer(), 0));
+    }
+    renumber();
+  });
+  if (addBtn) addBtn.onclick = () => {
+    const n = listEl.querySelectorAll('[data-newznab]').length;
+    listEl.insertAdjacentHTML('beforeend', newznabRowHtml(emptyNewznabIndexer(), n));
+  };
+};
 
 const collectNzbServers = (root=document) => {
   const rows = [...root.querySelectorAll('[data-nzb-server]')];
@@ -2128,14 +2310,9 @@ render.vpn = async () => {
   const v = await api('/vpn');
   const profiles = Array.isArray(v.profiles) ? v.profiles : [];
   const tunnelled = (v.tunnelled || []).filter(Boolean);
-  const connLabel = v.connection_type || 'VPN';
   const typeLabel = (t) => (t === 'openvpn' ? 'OpenVPN' : 'WireGuard');
   const typeClass = (t) => (t === 'openvpn' ? 'vpn-ovpn' : 'vpn-wg');
-  const heroBadges = `
-    <div class="watch-badges">
-      <span class="watch-badge vpn-wg">${escHtml(connLabel)}</span>
-      <span class="watch-badge state ${v.enabled ? '' : 'paused'}">${v.enabled ? 'Connected' : 'Off'}</span>
-    </div>`;
+  const hasActive = profiles.some(p => p.active);
   const meta = [
     `<span>Public IP <b>${escHtml(v.public_ip || 'unknown')}</b></span>`,
     `<span>Forwarded port <b>${escHtml(v.forwarded_port != null ? String(v.forwarded_port) : 'none')}</b></span>`,
@@ -2143,18 +2320,33 @@ render.vpn = async () => {
   const chips = tunnelled.length
     ? `<div class="vpn-tunnelled">${tunnelled.map(a => `<span>${escHtml(a)}</span>`).join('')}</div>`
     : `<p style="color:var(--muted);font-size:.8rem;margin:.55rem 0 0">No tunnelled apps configured.</p>`;
+  const tunnelActions = `
+    <button type="button" class="act primary" id="leak">Run Leak Test</button>
+    <button type="button" class="act" id="rst">Restart Tunnel Group</button>
+    ${v.enabled ? '<button type="button" class="act" id="vpn-disable">Disable VPN</button>' : ''}`;
+  const activeDetail = `
+    <div class="vpn-active-detail">
+      <div class="watch-meta">${meta}</div>
+      ${chips}
+    </div>`;
   const profileCards = profiles.length
     ? profiles.map(p => {
         const canActivate = !p.active && (p.type || 'wireguard') === 'wireguard';
-        return `<article class="vpn-card ${p.active ? 'active-hero' : ''}" data-vpn-id="${escAttr(p.id)}">
+        const activeBadges = p.active
+          ? `<span class="watch-badge vpn-active">Active</span>
+             <span class="watch-badge state ${v.enabled ? '' : 'paused'}">${v.enabled ? 'Connected' : 'Off'}</span>`
+          : '';
+        return `<article class="vpn-card ${p.active ? 'active-hero' : ''} ${p.active && !v.enabled ? 'off' : ''}" data-vpn-id="${escAttr(p.id)}">
           <div class="vpn-card-top">
             <h3 class="vpn-card-title">${escHtml(p.name || 'Unnamed')}</h3>
             <div class="watch-badges">
               <span class="watch-badge ${typeClass(p.type)}">${escHtml(typeLabel(p.type))}</span>
-              ${p.active ? '<span class="watch-badge vpn-active">Active</span>' : ''}
+              ${activeBadges}
             </div>
           </div>
+          ${p.active ? activeDetail : ''}
           <div class="vpn-card-actions">
+            ${p.active ? tunnelActions : ''}
             ${canActivate ? `<button type="button" class="act primary" data-vpn-activate="${escAttr(p.id)}">Activate</button>` : ''}
             <button type="button" class="act" data-vpn-edit="${escAttr(p.id)}">Edit</button>
             <button type="button" class="act" data-vpn-delete="${escAttr(p.id)}" ${p.active ? 'disabled title="Activate another profile first"' : ''}>Delete</button>
@@ -2162,41 +2354,43 @@ render.vpn = async () => {
         </article>`;
       }).join('')
     : '<p style="color:var(--muted);margin:0">No profiles yet. Add a WireGuard config to get started.</p>';
-  render.shell(`
-    <div class="section"><h2>VPN</h2>
-      <article class="vpn-card active-hero ${v.enabled ? '' : 'off'}">
+  const orphanTunnel = (!hasActive && (v.enabled || v.public_ip))
+    ? `<article class="vpn-card active-hero ${v.enabled ? '' : 'off'} vpn-orphan">
         <div class="vpn-card-top">
-          <h3 class="vpn-card-title"><span class="dot ${v.enabled?'on':'off'}"></span>
-            ${escHtml(connLabel)}</h3>
-          ${heroBadges}
+          <h3 class="vpn-card-title">Tunnel</h3>
+          <div class="watch-badges">
+            <span class="watch-badge vpn-wg">${escHtml(v.connection_type || 'VPN')}</span>
+            <span class="watch-badge state ${v.enabled ? '' : 'paused'}">${v.enabled ? 'Connected' : 'Off'}</span>
+          </div>
         </div>
-        <div class="watch-meta">${meta}</div>
-        ${chips}
-        <div class="vpn-card-actions">
-          <button type="button" class="act primary" id="leak">Run Leak Test</button>
-          <button type="button" class="act" id="rst">Restart Tunnel Group</button>
-          ${v.enabled ? '<button type="button" class="act" id="vpn-disable">Disable VPN</button>' : ''}
+        <div class="vpn-active-detail">
+          <div class="watch-meta">${meta}</div>
+          ${chips}
         </div>
-      </article>
-    </div>
+        <div class="vpn-card-actions">${tunnelActions}</div>
+      </article>`
+    : '';
+  render.shell(`
     <div class="section vpn-profiles">
       <div class="vpn-profiles-head">
-        <h3>Profiles</h3>
+        <h2>Profiles</h2>
         <button type="button" class="act primary" id="vpn-add">Add Profile</button>
       </div>
-      <div class="vpn-cards">${profileCards}</div>
+      <div class="vpn-cards">${orphanTunnel}${profileCards}</div>
       <pre id="out" style="margin-top:1rem"></pre>
     </div>`);
   const out = $('#out');
   const setOut = (t) => { if (out) out.textContent = t || ''; };
-  $('#leak').onclick = async () => {
+  const leak = $('#leak');
+  if (leak) leak.onclick = async () => {
     setOut('testing...');
     try {
       const r = await api('/vpn/leaktest', {method:'POST'});
       setOut(r.detail);
     } catch (e) { setOut(e.message || String(e)); }
   };
-  $('#rst').onclick = async () => {
+  const rst = $('#rst');
+  if (rst) rst.onclick = async () => {
     setOut('restarting the whole tunnel group...');
     try {
       const r = await api('/vpn/restart', {method:'POST'});
@@ -2293,57 +2487,123 @@ render.status = async () => {
     api('/status'),
     api('/backups').catch(() => ({snapshots: []})),
   ]);
-  const disk = (label, d) => d.error
-    ? `<div class="card"><h3>${label}</h3><p>${d.path}</p><p style="color:var(--warn)">${d.error}</p></div>`
-    : `<div class="card">
-         <h3>${label}</h3><p>${d.path}</p>
-         <p style="font-size:1.4rem;color:${d.used_pct>90?'var(--bad)':d.used_pct>75?'var(--warn)':'var(--text)'}">
-           ${d.used_pct}% used</p>
-         <p>${d.free_gb} GB free of ${d.total_gb} GB</p>
-       </div>`;
+  const ringLen = 2 * Math.PI * 45;
+  const diskTone = (pct, err) => {
+    if (err) return 'muted';
+    if (pct > 90) return 'bad';
+    if (pct > 75) return 'warn';
+    return 'ok';
+  };
+  const diskCard = (label, d) => {
+    const err = d.error;
+    const pct = err ? 0 : Math.max(0, Math.min(100, Number(d.used_pct) || 0));
+    const tone = diskTone(pct, err);
+    const offset = ringLen * (1 - pct / 100);
+    const value = err ? '—' : `${pct}%`;
+    const sub = err
+      ? `<p class="status-sub" style="color:var(--warn)">${escHtml(err)}</p>`
+      : `<p class="status-sub"><b>${escHtml(d.free_gb)}</b> GB free of <b>${escHtml(d.total_gb)}</b> GB</p>`;
+    return `<article class="status-glass status-disk">
+      <div class="status-disk-ring" aria-hidden="true">
+        <svg viewBox="0 0 112 112">
+          <circle class="ring-track" cx="56" cy="56" r="45"></circle>
+          <circle class="ring-used ${tone}" cx="56" cy="56" r="45"
+            stroke-dasharray="${ringLen.toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"></circle>
+        </svg>
+        <div class="status-disk-pct"><strong>${value}</strong><span>used</span></div>
+      </div>
+      <div class="status-disk-body">
+        <p class="status-kicker">Storage</p>
+        <h3>${escHtml(label)}</h3>
+        <p class="status-path">${escHtml(d.path || '')}</p>
+        ${sub}
+      </div>
+    </article>`;
+  };
   const jobs = s.jobs || {};
   const pending = (jobs.updates?.pending || []);
-  const snaps = bak.snapshots || [];
+  const updatesOk = !pending.length;
+  const backupOk = jobs.backup?.ok !== false;
+  const fmtWhen = (iso) => {
+    if (!iso || iso === 'never') return 'never';
+    try {
+      const t = Date.parse(iso);
+      if (!Number.isFinite(t)) return iso;
+      const mins = Math.round((Date.now() - t) / 60000);
+      if (mins < 1) return 'just now';
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.round(mins / 60);
+      if (hrs < 48) return `${hrs}h ago`;
+      return new Date(t).toLocaleString();
+    } catch (_) { return iso; }
+  };
+  const snaps = (bak.snapshots || []).slice(0, 3);
   const snapRows = snaps.length
     ? snaps.map(row => `
-      <article class="dispatch-source" data-backup="${escAttr(row.name)}">
-        <div class="dispatch-source-top">
-          <div>
-            <h4 class="dispatch-source-title">${escHtml(row.name)}</h4>
-            <div class="dispatch-source-meta">${escHtml(row.created || row.mtime || '')} · ${fmtBytes(row.size_bytes)}</div>
-          </div>
+      <article class="status-backup-row" data-backup="${escAttr(row.name)}">
+        <div>
+          <h4>${escHtml(row.name)}</h4>
+          <div class="status-backup-meta">${escHtml(fmtWhen(row.created || row.mtime))} · ${fmtBytes(row.size_bytes)}</div>
         </div>
-        <div class="dispatch-source-actions">
-          <button type="button" class="act" data-backup-restore="${escAttr(row.name)}">Restore</button>
-        </div>
+        <button type="button" class="act" data-backup-restore="${escAttr(row.name)}">Restore</button>
       </article>`).join('')
-    : '<p style="color:var(--muted);font-size:.85rem;margin:.5rem 0">No snapshots yet. Create one with Back Up Now.</p>';
+    : '<p class="status-lede">No snapshots yet. Create one with Back Up Now.</p>';
+  const jobErrors = Object.keys(jobs.errors || {}).length
+    ? `<div class="banner bad">Job errors: ${Object.entries(jobs.errors).map(([k,v])=>escHtml(k)+': '+escHtml(v)).join(' | ')}</div>`
+    : '';
   render.shell(`
-    <div class="section"><h2>Storage</h2><div class="grid">
-      ${disk('Stack', s.disks.stack)}${disk('Media and downloads', s.disks.data)}
-    </div></div>
-    <div class="section"><h2>Background Jobs</h2><div class="grid">
-      <div class="card"><h3>Update Check</h3>
-        <p>Last run: ${jobs.updates?.checked || 'never'}</p>
-        <p>${pending.length ? pending.length + ' app(s) with a newer image: ' + pending.join(', ')
-                            : 'Everything is on its pinned image'}</p></div>
-      <div class="card"><h3>Config Backup</h3>
-        <p>Last run: ${jobs.backup?.ran || 'never'}</p>
-        <p style="font-size:.8rem;color:var(--muted);word-break:break-all">${jobs.backup?.path || 'no snapshot recorded'}</p></div>
-    </div></div>
-    <div class="section"><h2>Backup and Restore</h2><div class="card">
-      <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
-        Snapshots include enabled apps (<code>COMPOSE_PROFILES</code>) and each app's
-        config under the stack. Media files are not included. Restore stops apps,
-        replaces config and profiles from the snapshot, then starts the stack again.</p>
-      <div class="row" style="margin:0 0 1rem">
-        <button type="button" class="act primary" id="backup-now">Back Up Now</button>
+    <div class="status-page">
+      <div class="status-section">
+        <h2>Storage</h2>
+        <div class="status-grid">
+          ${diskCard('Stack', s.disks.stack || {})}
+          ${diskCard('Media and downloads', s.disks.data || {})}
+        </div>
       </div>
-      <div id="backup-msg"></div>
-      <div id="backup-list">${snapRows}</div>
-    </div></div>
-    ${Object.keys(jobs.errors||{}).length ? `<div class="banner bad">
-      Job errors: ${Object.entries(jobs.errors).map(([k,v])=>k+': '+v).join(' | ')}</div>`:''}
+      <div class="status-section">
+        <h2>Background Jobs</h2>
+        <div class="status-grid">
+          <article class="status-glass">
+            <div class="status-job-top">
+              <h3>Update Check</h3>
+              <span class="watch-badge state ${updatesOk ? '' : 'paused'}">${updatesOk ? 'OK' : (pending.length ? 'Updates' : 'Attention')}</span>
+            </div>
+            <div class="status-job-body">
+              Last run: <b>${escHtml(fmtWhen(jobs.updates?.checked || 'never'))}</b><br>
+              ${pending.length
+                ? `${pending.length} app(s) with a newer image: ${escHtml(pending.join(', '))}`
+                : 'Everything is on its pinned image'}
+            </div>
+          </article>
+          <article class="status-glass">
+            <div class="status-job-top">
+              <h3>Config Backup</h3>
+              <span class="watch-badge state ${backupOk ? '' : 'paused'}">${backupOk ? 'OK' : 'Attention'}</span>
+            </div>
+            <div class="status-job-body">
+              Last run: <b>${escHtml(fmtWhen(jobs.backup?.ran || 'never'))}</b><br>
+              <span style="word-break:break-all">${escHtml(jobs.backup?.path || 'no snapshot recorded')}</span>
+            </div>
+          </article>
+        </div>
+      </div>
+      <div class="status-section">
+        <h2>Backup and Restore</h2>
+        <div class="status-glass">
+          <p class="status-lede">
+            Snapshots include enabled apps (<code>COMPOSE_PROFILES</code>) and each app's
+            config under the stack. Media files are not included. Only the latest
+            <strong>3</strong> snapshots are kept. Restore stops apps, replaces config
+            and profiles, then starts the stack again.</p>
+          <div class="row" style="margin:1rem 0 0;position:relative">
+            <button type="button" class="act primary" id="backup-now">Back Up Now</button>
+          </div>
+          <div id="backup-msg" style="position:relative;margin-top:.75rem"></div>
+          <div id="backup-list" class="status-backup-list">${snapRows}</div>
+        </div>
+      </div>
+      ${jobErrors}
+    </div>
   `);
   const msg = $('#backup-msg');
   const show = (html) => { if (msg) msg.innerHTML = html; };
@@ -2521,188 +2781,262 @@ render.settings = async () => {
       ${body}
     </div>`;
   render.shell(`
-    <div class="section">
-      <h2>Settings</h2>
-      <div class="settings-nav" role="tablist" aria-label="Settings sections">${settingsNav}</div>
-      ${settingsPanel('appliance', `<div class="card">
-      <label>Domain</label><input id="KINE_DOMAIN" value="${s.KINE_DOMAIN}">
-      <label>TLS Mode</label>
-      <select id="KINE_TLS_MODE">
-        ${['internal','acme-dns','custom'].map(m =>
-          `<option ${s.KINE_TLS_MODE===m?'selected':''}>${m}</option>`).join('')}
-      </select>
-      <p style="color:var(--muted);font-size:.8rem;margin:.35rem 0 .75rem">
-        <code>acme-dns</code> = Let's Encrypt wildcard via DNS-01 (ClouDNS by default).
-        Enter your ClouDNS API Auth ID and password below (from CloudDNS → API).
-      </p>
-      <label>ACME Email (acme-dns only)</label>
-      <input id="KINE_ACME_EMAIL" value="${s.KINE_ACME_EMAIL}">
-      <label>ACME DNS Provider</label>
-      <input id="KINE_ACME_DNS_PROVIDER" value="${s.KINE_ACME_DNS_PROVIDER||'cloudns'}">
-      <label>ClouDNS Auth ID</label>
-      <input id="CLOUDNS_AUTH_ID" value="${s.CLOUDNS_AUTH_ID||''}" autocomplete="off">
-      <label>ClouDNS Auth Password</label>
-      <input id="CLOUDNS_AUTH_PASSWORD" type="password" value=""
-        placeholder="${s.CLOUDNS_AUTH_PASSWORD_SET?'•••••••• (unchanged if blank)':''}"
-        autocomplete="new-password">
-      <label>Timezone</label><input id="KINE_TIMEZONE" value="${s.KINE_TIMEZONE}">
-      <div class="row" style="margin-top:1rem">
+    <div class="section settings-page">
+      <div class="settings-layout">
+        <aside class="settings-side">
+          <h2 class="settings-side-title">Settings</h2>
+          <div class="settings-nav" role="tablist" aria-label="Settings sections">${settingsNav}</div>
+        </aside>
+        <div class="settings-main">
+      ${settingsPanel('appliance', `<div class="settings-glass">
+      <p class="settings-lede">Domain, TLS, and appliance timezone. Saving reloads Traefik so certificates and routes pick up the change.</p>
+      <div class="settings-groups">
+        <div class="settings-group">
+          <h3 class="settings-group-title">Domain & TLS</h3>
+          <label>Domain</label><input id="KINE_DOMAIN" value="${s.KINE_DOMAIN}">
+          <label>TLS Mode</label>
+          <select id="KINE_TLS_MODE">
+            ${['internal','acme-dns','custom'].map(m =>
+              `<option ${s.KINE_TLS_MODE===m?'selected':''}>${m}</option>`).join('')}
+          </select>
+          <p class="settings-hint">
+            <code>acme-dns</code> = Let's Encrypt wildcard via DNS-01 (ClouDNS by default).
+          </p>
+        </div>
+        <div class="settings-group">
+          <h3 class="settings-group-title">ACME</h3>
+          <label>ACME Email (acme-dns only)</label>
+          <input id="KINE_ACME_EMAIL" value="${s.KINE_ACME_EMAIL}">
+          <label>ACME DNS Provider</label>
+          <input id="KINE_ACME_DNS_PROVIDER" value="${s.KINE_ACME_DNS_PROVIDER||'cloudns'}">
+          <label>ClouDNS Auth ID</label>
+          <input id="CLOUDNS_AUTH_ID" value="${s.CLOUDNS_AUTH_ID||''}" autocomplete="off">
+          <label>ClouDNS Auth Password</label>
+          <input id="CLOUDNS_AUTH_PASSWORD" type="password" value=""
+            placeholder="${s.CLOUDNS_AUTH_PASSWORD_SET?'•••••••• (unchanged if blank)':''}"
+            autocomplete="new-password">
+        </div>
+        <div class="settings-group">
+          <h3 class="settings-group-title">Timezone</h3>
+          <label>Timezone</label><input id="KINE_TIMEZONE" value="${s.KINE_TIMEZONE}">
+        </div>
+      </div>
+      <div class="settings-actions">
         <button class="act primary" id="save">Save and Reload Traefik</button>
         <button class="act" id="bk">Back Up Now</button>
+        <div id="msg"></div>
       </div>
-      <div id="msg"></div>
     </div>`)}
-      ${settingsPanel('storage', `<div class="card">
-      <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
+      ${settingsPanel('storage', `<div class="settings-glass">
+      <p class="settings-lede">
         Connect to your NFS server, pick a share for each role, and save.
         Mounts are applied automatically under <code>${s.DATA_ROOT||'/srv/media-data'}</code>.
         If TV and Movies are folders inside your media share, leave those empty.</p>
-      <label>NFS Server</label>
-      <div class="row" style="gap:.5rem">
-        <input id="NFS_SERVER" value="${s.NFS_SERVER||''}" placeholder="10.100.30.222" style="flex:1">
-        <button class="act primary" id="load-nfs-shares" type="button">Load shares</button>
-      </div>
-      <div id="nfs-shares-status" style="margin-top:.75rem"></div>
-      <div id="nfs-shares" class="nfs-shares" style="display:none"></div>
-      <div style="margin-top:1rem">
-        ${nfsPrimary.map(nfsRoleRow).join('')}
-      </div>
-      <details style="margin-top:.75rem">
-        <summary style="cursor:pointer;color:var(--muted);font-size:.85rem">
-          Separate TV / Movies folders (optional)</summary>
-        <p style="margin:.5rem 0;color:var(--muted);font-size:.8rem">
-          Lists folders inside your media share. Leave as not used when TV and
-          Movies are subfolders of the main media library mount.</p>
-        <div style="margin-top:.35rem">
-          ${nfsAdvanced.map(nfsRoleRow).join('')}
+      <div class="settings-groups">
+        <div class="settings-group">
+          <h3 class="settings-group-title">NFS Server</h3>
+          <label>NFS Server</label>
+          <div class="row" style="gap:.5rem">
+            <input id="NFS_SERVER" value="${s.NFS_SERVER||''}" placeholder="10.100.30.222" style="flex:1">
+            <button class="act primary" id="load-nfs-shares" type="button">Load shares</button>
+          </div>
+          <div id="nfs-shares-status" style="margin-top:.75rem"></div>
+          <div id="nfs-shares" class="nfs-shares" style="display:none"></div>
         </div>
-      </details>
-      <div class="row" style="margin-top:1rem">
-        <button class="act primary" id="save-nfs">Save NFS Settings</button>
+        <div class="settings-group">
+          <h3 class="settings-group-title">Share roles</h3>
+          ${nfsPrimary.map(nfsRoleRow).join('')}
+        </div>
+        <details class="settings-group">
+          <summary class="settings-group-title">
+            Separate TV / Movies folders (optional)</summary>
+          <p class="settings-hint">
+            Lists folders inside your media share. Leave as not used when TV and
+            Movies are subfolders of the main media library mount.</p>
+          ${nfsAdvanced.map(nfsRoleRow).join('')}
+        </details>
       </div>
-      <div id="nfs-msg"></div>
+      <div class="settings-actions">
+        <button class="act primary" id="save-nfs">Save NFS Settings</button>
+        <div id="nfs-msg"></div>
+      </div>
     </div>`)}
-      ${settingsPanel('media-servers', `<div class="card">
-      <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
+      ${settingsPanel('media-servers', `<div class="settings-glass">
+      <p class="settings-lede">
         When configured, Sonarr and Radarr notify these servers after imports
         so libraries refresh. Leave a server blank to disable its connection.
         Domain-hosted servers (e.g. <code>emby.${esc(s.KINE_DOMAIN||'example.com')}</code>)
         are served by Traefik on <strong>port 443 with SSL</strong> — not 8096/32400.
         If the media server mounts the same files at a different path, set the
         TV/Movies map fields (both sides) so partial library updates hit the right folders.</p>
-      <h3 style="margin:0 0 .35rem;font-size:.85rem">Plex</h3>
-      <label>Host</label><input id="PLEX_HOST" value="${esc(s.PLEX_HOST)}" placeholder="10.100.100.20">
-      <div class="row" style="gap:1rem;align-items:end">
-        <div style="flex:1"><label>Port</label>
-          <input id="PLEX_PORT" value="${esc(plexPort)}"></div>
-        <label class="tier-switch" style="margin-bottom:.35rem" aria-label="Plex Use SSL">
-          <input type="checkbox" id="PLEX_USE_SSL" ${plexSsl?'checked':''}>
-          <span class="tier-switch-ui" aria-hidden="true"></span>
-          <span style="margin-left:.55rem;font-size:.8rem;color:var(--muted)">Use SSL</span>
-        </label>
+      <div class="settings-groups">
+        <div class="settings-group">
+          <h3 class="settings-group-title">Plex</h3>
+          <label>Host</label><input id="PLEX_HOST" value="${esc(s.PLEX_HOST)}" placeholder="10.100.100.20">
+          <div class="row" style="gap:1rem;align-items:end">
+            <div style="flex:1"><label>Port</label>
+              <input id="PLEX_PORT" value="${esc(plexPort)}"></div>
+            <label class="tier-switch" style="margin-bottom:.35rem" aria-label="Plex Use SSL">
+              <input type="checkbox" id="PLEX_USE_SSL" ${plexSsl?'checked':''}>
+              <span class="tier-switch-ui" aria-hidden="true"></span>
+              <span style="margin-left:.55rem;font-size:.8rem;color:var(--muted)">Use SSL</span>
+            </label>
+          </div>
+          <label>Token</label><input id="PLEX_TOKEN" value="${esc(s.PLEX_TOKEN)}" autocomplete="off">
+          <div class="row" style="gap:1rem">
+            <div style="flex:1"><label>TV map from (*arr)</label>
+              <input id="PLEX_TV_MAP_FROM" value="${esc(s.PLEX_TV_MAP_FROM)}" placeholder="/data/media/tv"></div>
+            <div style="flex:1"><label>TV map to (Plex)</label>
+              <input id="PLEX_TV_MAP_TO" value="${esc(s.PLEX_TV_MAP_TO)}" placeholder="/media/TV"></div>
+          </div>
+          <div class="row" style="gap:1rem">
+            <div style="flex:1"><label>Movies map from (*arr)</label>
+              <input id="PLEX_MOVIES_MAP_FROM" value="${esc(s.PLEX_MOVIES_MAP_FROM)}" placeholder="/data/media/movies"></div>
+            <div style="flex:1"><label>Movies map to (Plex)</label>
+              <input id="PLEX_MOVIES_MAP_TO" value="${esc(s.PLEX_MOVIES_MAP_TO)}" placeholder="/media/Movies"></div>
+          </div>
+        </div>
+        <div class="settings-group">
+          <h3 class="settings-group-title">Emby</h3>
+          <label>Host</label><input id="EMBY_HOST" value="${esc(embyHost)}" placeholder="${esc(s.EMBY_DEFAULT_HOST||'emby.example.com')}">
+          <div class="row" style="gap:1rem;align-items:end">
+            <div style="flex:1"><label>Port</label>
+              <input id="EMBY_PORT" value="${esc(embyPort)}"></div>
+            <label class="tier-switch" style="margin-bottom:.35rem" aria-label="Emby Use SSL">
+              <input type="checkbox" id="EMBY_USE_SSL" ${embySsl?'checked':''}>
+              <span class="tier-switch-ui" aria-hidden="true"></span>
+              <span style="margin-left:.55rem;font-size:.8rem;color:var(--muted)">Use SSL</span>
+            </label>
+          </div>
+          <label>API Key</label><input id="EMBY_API_KEY" value="${esc(s.EMBY_API_KEY)}" autocomplete="off">
+          <div class="row" style="gap:1rem">
+            <div style="flex:1"><label>TV map from (*arr)</label>
+              <input id="EMBY_TV_MAP_FROM" value="${esc(s.EMBY_TV_MAP_FROM)}" placeholder="/data/media/tv/Series"></div>
+            <div style="flex:1"><label>TV map to (Emby)</label>
+              <input id="EMBY_TV_MAP_TO" value="${esc(s.EMBY_TV_MAP_TO)}" placeholder="/mnt/share1"></div>
+          </div>
+          <div class="row" style="gap:1rem">
+            <div style="flex:1"><label>Movies map from (*arr)</label>
+              <input id="EMBY_MOVIES_MAP_FROM" value="${esc(s.EMBY_MOVIES_MAP_FROM)}" placeholder="/data/media/movies"></div>
+            <div style="flex:1"><label>Movies map to (Emby)</label>
+              <input id="EMBY_MOVIES_MAP_TO" value="${esc(s.EMBY_MOVIES_MAP_TO)}" placeholder="/mnt/share2"></div>
+          </div>
+        </div>
       </div>
-      <label>Token</label><input id="PLEX_TOKEN" value="${esc(s.PLEX_TOKEN)}" autocomplete="off">
-      <div class="row" style="gap:1rem">
-        <div style="flex:1"><label>TV map from (*arr)</label>
-          <input id="PLEX_TV_MAP_FROM" value="${esc(s.PLEX_TV_MAP_FROM)}" placeholder="/data/media/tv"></div>
-        <div style="flex:1"><label>TV map to (Plex)</label>
-          <input id="PLEX_TV_MAP_TO" value="${esc(s.PLEX_TV_MAP_TO)}" placeholder="/media/TV"></div>
-      </div>
-      <div class="row" style="gap:1rem">
-        <div style="flex:1"><label>Movies map from (*arr)</label>
-          <input id="PLEX_MOVIES_MAP_FROM" value="${esc(s.PLEX_MOVIES_MAP_FROM)}" placeholder="/data/media/movies"></div>
-        <div style="flex:1"><label>Movies map to (Plex)</label>
-          <input id="PLEX_MOVIES_MAP_TO" value="${esc(s.PLEX_MOVIES_MAP_TO)}" placeholder="/media/Movies"></div>
-      </div>
-      <h3 style="margin:1.25rem 0 .35rem;font-size:.85rem">Emby</h3>
-      <label>Host</label><input id="EMBY_HOST" value="${esc(embyHost)}" placeholder="${esc(s.EMBY_DEFAULT_HOST||'emby.example.com')}">
-      <div class="row" style="gap:1rem;align-items:end">
-        <div style="flex:1"><label>Port</label>
-          <input id="EMBY_PORT" value="${esc(embyPort)}"></div>
-        <label class="tier-switch" style="margin-bottom:.35rem" aria-label="Emby Use SSL">
-          <input type="checkbox" id="EMBY_USE_SSL" ${embySsl?'checked':''}>
-          <span class="tier-switch-ui" aria-hidden="true"></span>
-          <span style="margin-left:.55rem;font-size:.8rem;color:var(--muted)">Use SSL</span>
-        </label>
-      </div>
-      <label>API Key</label><input id="EMBY_API_KEY" value="${esc(s.EMBY_API_KEY)}" autocomplete="off">
-      <div class="row" style="gap:1rem">
-        <div style="flex:1"><label>TV map from (*arr)</label>
-          <input id="EMBY_TV_MAP_FROM" value="${esc(s.EMBY_TV_MAP_FROM)}" placeholder="/data/media/tv/Series"></div>
-        <div style="flex:1"><label>TV map to (Emby)</label>
-          <input id="EMBY_TV_MAP_TO" value="${esc(s.EMBY_TV_MAP_TO)}" placeholder="/mnt/share1"></div>
-      </div>
-      <div class="row" style="gap:1rem">
-        <div style="flex:1"><label>Movies map from (*arr)</label>
-          <input id="EMBY_MOVIES_MAP_FROM" value="${esc(s.EMBY_MOVIES_MAP_FROM)}" placeholder="/data/media/movies"></div>
-        <div style="flex:1"><label>Movies map to (Emby)</label>
-          <input id="EMBY_MOVIES_MAP_TO" value="${esc(s.EMBY_MOVIES_MAP_TO)}" placeholder="/mnt/share2"></div>
-      </div>
-      <div class="row" style="margin-top:1rem">
+      <div class="settings-actions">
         <button class="act primary" id="save-media-servers" type="button">Save Media Servers</button>
+        <div id="media-msg"></div>
       </div>
-      <div id="media-msg"></div>
     </div>`)}
-      ${settingsPanel('live-tv', `<div class="card">
-      <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
+      ${settingsPanel('live-tv', `<div class="settings-glass">
+      <p class="settings-lede">
         Helm talks to Dispatcharr directly — no embed login required.
         When Dispatcharr is enabled, the admin API token is generated automatically
         on first use (same random key Dispatcharr would create in Users → API key).
         You can paste a different token below if you prefer.</p>
-      <label>Dispatcharr API Token</label>
-      <input id="DISPATCHARR_TOKEN" value="${esc(s.DISPATCHARR_TOKEN)}" autocomplete="off">
-      <div class="row" style="margin-top:1rem">
+      <div class="settings-groups">
+        <div class="settings-group">
+          <h3 class="settings-group-title">API Token</h3>
+          <label>Dispatcharr API Token</label>
+          <input id="DISPATCHARR_TOKEN" value="${esc(s.DISPATCHARR_TOKEN)}" autocomplete="off">
+        </div>
+        ${s.dispatcharr_enabled ? `
+        <div class="settings-group">
+          <h3 class="settings-group-title">M3U Accounts</h3>
+          <p id="dispatcharr-sources-note" class="settings-hint"></p>
+          <div id="dispatcharr-m3u-list"></div>
+          <div class="row" style="margin:.5rem 0 0">
+            <button type="button" class="act" id="dispatcharr-m3u-add">Add M3U Account</button>
+          </div>
+        </div>
+        <div class="settings-group">
+          <h3 class="settings-group-title">EPG Sources</h3>
+          <div id="dispatcharr-epg-list"></div>
+          <div class="row" style="margin:.5rem 0 0">
+            <button type="button" class="act" id="dispatcharr-epg-add">Add EPG Source</button>
+          </div>
+        </div>` : `
+        <div class="settings-group">
+          <p class="settings-hint" style="margin:0">Enable Dispatcharr on the Apps tab to manage sources here.</p>
+        </div>`}
+      </div>
+      <div class="settings-actions">
         <button class="act primary" id="save-live-tv" type="button">Save Token</button>
+        <div id="live-tv-msg"></div>
       </div>
-      <div id="live-tv-msg"></div>
-      ${s.dispatcharr_enabled ? `
-      <h3 style="margin:1.5rem 0 .35rem;font-size:.85rem">M3U Accounts</h3>
-      <p id="dispatcharr-sources-note" style="color:var(--muted);font-size:.8rem;margin:0 0 .5rem"></p>
-      <div id="dispatcharr-m3u-list"></div>
-      <div class="row" style="margin:.5rem 0 1rem">
-        <button type="button" class="act" id="dispatcharr-m3u-add">Add M3U Account</button>
-      </div>
-      <h3 style="margin:1.25rem 0 .35rem;font-size:.85rem">EPG Sources</h3>
-      <div id="dispatcharr-epg-list"></div>
-      <div class="row" style="margin:.5rem 0 .25rem">
-        <button type="button" class="act" id="dispatcharr-epg-add">Add EPG Source</button>
-      </div>` : `<p style="color:var(--muted);font-size:.85rem;margin:1rem 0 0">Enable Dispatcharr on the Apps tab to manage sources here.</p>`}
     </div>`)}
-      ${settingsPanel('subtitles', `<div class="card">
-      <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
+      ${settingsPanel('subtitles', `<div class="settings-glass">
+      <p class="settings-lede">
         Bazarr enables Gestdown, TVSubtitles and YIFY by default, with an
         English profile that also collects <code>en:forced</code>.
         Add a free <a class="link" href="https://www.opensubtitles.com/" target="_blank" rel="noopener">OpenSubtitles.com</a>
         account for better coverage (username, not email).</p>
-      <label>OpenSubtitles Username</label>
-      <input id="OPENSUBTITLES_USERNAME" value="${esc(s.OPENSUBTITLES_USERNAME)}" autocomplete="username">
-      <label>OpenSubtitles Password</label>
-      <input id="OPENSUBTITLES_PASSWORD" type="password" value="${esc(s.OPENSUBTITLES_PASSWORD)}" autocomplete="current-password">
-      <div class="row" style="margin-top:1rem">
-        <button class="act primary" id="save-subtitles" type="button">Save Subtitles</button>
+      <div class="settings-groups">
+        <div class="settings-group">
+          <h3 class="settings-group-title">OpenSubtitles</h3>
+          <label>OpenSubtitles Username</label>
+          <input id="OPENSUBTITLES_USERNAME" value="${esc(s.OPENSUBTITLES_USERNAME)}" autocomplete="username">
+          <label>OpenSubtitles Password</label>
+          <input id="OPENSUBTITLES_PASSWORD" type="password" value="${esc(s.OPENSUBTITLES_PASSWORD)}" autocomplete="current-password">
+        </div>
       </div>
-      <div id="subtitles-msg"></div>
+      <div class="settings-actions">
+        <button class="act primary" id="save-subtitles" type="button">Save Subtitles</button>
+        <div id="subtitles-msg"></div>
+      </div>
     </div>`)}
-      ${settingsPanel('nzbget', `<div class="card">
-      <p style="color:var(--muted);font-size:.85rem;margin:0 0 .75rem">
+      ${settingsPanel('indexers', `<div class="settings-glass">
+      <p class="settings-lede">
+        Newznab (Usenet search) indexers are added to <strong>Prowlarr</strong>,
+        which syncs them into Sonarr and Radarr. Leave the API key blank when
+        editing to keep the stored secret.
+        ${s.prowlarr_enabled ? '' : 'Prowlarr is not enabled yet — saving still stores indexers for the next enable.'}</p>
+      <div class="settings-groups">
+        <div class="settings-group">
+          <h3 class="settings-group-title">Newznab indexers</h3>
+          <div id="newznab-settings-list">${
+            (s.prowlarr_newznab_indexers && s.prowlarr_newznab_indexers.length
+              ? s.prowlarr_newznab_indexers
+              : [emptyNewznabIndexer()]
+            ).map((row, i) => newznabRowHtml(row, i)).join('')
+          }</div>
+          <div class="row" style="margin:.5rem 0 0">
+            <button type="button" class="act" id="newznab-settings-add">Add Indexer</button>
+          </div>
+        </div>
+      </div>
+      <div class="settings-actions">
+        <button class="act primary" id="save-indexers" type="button">Save Indexers</button>
+        <div id="indexers-msg"></div>
+      </div>
+    </div>`)}
+      ${settingsPanel('nzbget', `<div class="settings-glass">
+      <p class="settings-lede">
         Usenet news servers written into <code>nzbget.conf</code>.
         Enabling NZBGet also installs <strong>Extended Unpacker</strong>,
         <strong>Fake Detector</strong>, and <strong>Remove Samples</strong>.
         ${s.nzbget_enabled ? '' : 'NZBGet is not enabled yet — saving still stores servers for the next enable.'}</p>
-      <div id="nzb-settings-list">${
-        (s.nzbget_news_servers && s.nzbget_news_servers.length
-          ? s.nzbget_news_servers
-          : [emptyNzbServer()]
-        ).map((row, i) => nzbServerRowHtml(row, i)).join('')
-      }</div>
-      <div class="row" style="margin:.5rem 0 1rem">
-        <button type="button" class="act" id="nzb-settings-add">Add Server</button>
+      <div class="settings-groups">
+        <div class="settings-group">
+          <h3 class="settings-group-title">News servers</h3>
+          <div id="nzb-settings-list">${
+            (s.nzbget_news_servers && s.nzbget_news_servers.length
+              ? s.nzbget_news_servers
+              : [emptyNzbServer()]
+            ).map((row, i) => nzbServerRowHtml(row, i)).join('')
+          }</div>
+          <div class="row" style="margin:.5rem 0 0">
+            <button type="button" class="act" id="nzb-settings-add">Add Server</button>
+          </div>
+        </div>
       </div>
-      <div class="row" style="margin-top:.25rem">
+      <div class="settings-actions">
         <button class="act primary" id="save-nzbget" type="button">Save NZBGet Servers</button>
+        <div id="nzbget-msg"></div>
       </div>
-      <div id="nzbget-msg"></div>
     </div>`)}
+        </div>
+      </div>
     </div>`);
   document.querySelectorAll('[data-settings-section]').forEach(btn => {
     btn.onclick = () => {
@@ -2719,6 +3053,7 @@ render.settings = async () => {
     };
   });
   bindNzbServerList($('#nzb-settings-list'), $('#nzb-settings-add'));
+  bindNewznabList($('#newznab-settings-list'), $('#newznab-settings-add'));
   if (s.dispatcharr_enabled) {
     bindDispatcharrSources();
     loadDispatcharrSources();
@@ -2851,6 +3186,25 @@ render.settings = async () => {
         msg.innerHTML = `<div class="banner ok">Saved ${n} server(s). They will apply when NZBGet is enabled.</div>`;
       } else {
         msg.innerHTML = `<div class="banner ok">Saved ${n} server(s). NZBGet was restarted to reload the config.</div>`;
+      }
+    } catch (e) {
+      msg.innerHTML = `<div class="banner bad">${esc(e.message || 'Could not save')}</div>`;
+    }
+  };
+  $('#save-indexers').onclick = async () => {
+    const msg = $('#indexers-msg');
+    msg.innerHTML = '<div class="banner" style="border:1px solid var(--line)">Saving Newznab indexers…</div>';
+    const body = {prowlarr_newznab_indexers: collectNewznabIndexers($('#newznab-settings-list'))};
+    try {
+      const r = await api('/settings', {method:'POST', body: JSON.stringify(body)});
+      const apply = r.prowlarr_newznab_apply;
+      const n = apply?.indexers ?? body.prowlarr_newznab_indexers.length;
+      if (apply && apply.ok === false) {
+        msg.innerHTML = `<div class="banner bad">Saved, but Prowlarr apply failed: ${esc(apply.error || 'unknown')}</div>`;
+      } else if (apply?.deferred) {
+        msg.innerHTML = `<div class="banner ok">Saved ${n} indexer(s). They will apply when Prowlarr is enabled.</div>`;
+      } else {
+        msg.innerHTML = `<div class="banner ok">Saved ${n} indexer(s). Synced to Prowlarr (Sonarr/Radarr via fullSync).</div>`;
       }
     } catch (e) {
       msg.innerHTML = `<div class="banner bad">${esc(e.message || 'Could not save')}</div>`;

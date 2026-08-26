@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from . import config
 
 NAME_RE = re.compile(r"^kine-\d{8}-\d{6}\.tar\.gz$")
+KEEP_SNAPSHOTS = 3
 
 
 def backups_dir() -> pathlib.Path:
@@ -70,3 +71,19 @@ def list_snapshots() -> list[dict]:
         })
     rows.sort(key=lambda r: r["name"], reverse=True)
     return rows
+
+
+def prune_old_snapshots(keep: int = KEEP_SNAPSHOTS) -> list[str]:
+    """Delete snapshots beyond *keep* newest. Returns removed filenames."""
+    if keep < 1:
+        keep = 1
+    rows = list_snapshots()
+    removed: list[str] = []
+    for row in rows[keep:]:
+        path = pathlib.Path(row["path"])
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            continue
+        removed.append(row["name"])
+    return removed

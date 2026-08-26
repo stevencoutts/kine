@@ -4,9 +4,12 @@ Once this is done, every indexer the user adds in Prowlarr appears in
 both *arr apps automatically. It is the single highest-value piece of
 pre-wiring in the stack.
 """
-from arrclient import ArrClient
+import os
+
+from arrclient import ArrClient, http_error_detail
 from keys import resolve_key
 from prowlarr_indexers import ensure_indexers
+from recipes import prowlarr_newznab
 
 TARGETS = {
     "sonarr": ("Sonarr", "SonarrSettings", "http://localhost:8989"),
@@ -66,6 +69,14 @@ def configure(enabled: set[str], log) -> None:
             log(f"prowlarr: linked {impl}")
 
     ensure_indexers(client, log)
+
+    rows = prowlarr_newznab.parse_indexers(os.environ.get(prowlarr_newznab.ENV_KEY, ""))
+    if rows:
+        try:
+            prowlarr_newznab.ensure_newznab_indexers(client, rows, log)
+        except Exception as exc:  # noqa: BLE001
+            detail = http_error_detail(exc) if hasattr(exc, "response") else str(exc)
+            log(f"prowlarr: newznab failed ({detail})")
 
     if "transmission" in enabled:
         if client.ensure("downloadclient", transmission_client()):

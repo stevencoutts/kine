@@ -16,8 +16,11 @@ _lock = threading.Lock()
 
 
 def _decode(value: str) -> str:
+    value = value.strip()
     if len(value) >= 2 and value[0] == value[-1] == "'":
-        return re.sub(r"\\(['\\])", r"\1", value[1:-1])
+        value = re.sub(r"\\(['\\])", r"\1", value[1:-1])
+    if len(value) >= 2 and value[0] == value[-1] == '"':
+        value = re.sub(r'\\(["\\])', r"\1", value[1:-1])
     return value
 
 

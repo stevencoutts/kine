@@ -22,6 +22,27 @@ def test_status_page_has_backup_restore_ui():
     assert "id=\"backup-now\"" in FRONTEND
 
 
+def test_status_page_has_disk_rings_and_glass():
+    assert "status-disk-ring" in FRONTEND or "status-ring" in FRONTEND
+    assert "status-glass" in FRONTEND
+    assert "stroke-dasharray" in FRONTEND
+    assert "render.status" in FRONTEND
+    status = FRONTEND.split("render.status = async () => {", 1)[1].split("render.settings", 1)[0]
+    assert "status-page" in status
+    assert "svg" in status.lower() or "stroke-dashoffset" in status
+    # Pending updates drive the badge; sticky cron parse noise must not.
+    assert "jobs.errors?.updates" not in status
+    assert "pending.length" in status
+
+
+def test_status_api_stats_media_via_data_root_media():
+    assert "nfs_media_mountpoint" in BACKEND or 'f"{data_root}/media"' in BACKEND or "/media" in BACKEND.split("@app.get(\"/api/status\")", 1)[1].split("@app.get(", 1)[0]
+    status = BACKEND.split('@app.get("/api/status")', 1)[1].split("@app.get(", 1)[0]
+    assert "statvfs" in status
+    assert "media" in status
+    assert 'error": "not mounted"' in status or "not mounted" in status
+
+
 def test_header_has_logout_button():
     assert 'data-logout>Log Out</button>' in FRONTEND
     assert 'data-nav-toggle' in FRONTEND
@@ -235,6 +256,23 @@ def test_settings_section_nav():
     assert "panel.hidden" in FRONTEND or "p.hidden" in FRONTEND or "hidden'" in FRONTEND
 
 
+def test_settings_page_uses_side_nav_and_field_groups():
+    assert "settings-layout" in FRONTEND
+    assert "settings-side" in FRONTEND
+    assert "settings-main" in FRONTEND
+    assert "settings-glass" in FRONTEND
+    assert "settings-group" in FRONTEND
+    assert "settings-group-title" in FRONTEND
+    # Field groups instead of one undifferentiated card dump.
+    for title in ("Domain & TLS", "ACME", "Timezone", "NFS Server", "Share roles", "Plex", "Emby"):
+        assert title in FRONTEND
+    # Desktop side-nav layout (sticky left column).
+    assert "position:sticky" in FRONTEND or "settings-side" in FRONTEND
+    css = FRONTEND.split("</style>", 1)[0]
+    assert ".settings-layout" in css
+    assert "grid-template-columns" in css[css.find(".settings-layout"):css.find(".settings-layout") + 400]
+
+
 def test_settings_subtitles_opensubtitles():
     assert "OPENSUBTITLES_USERNAME" in FRONTEND
     assert "OPENSUBTITLES_PASSWORD" in FRONTEND
@@ -271,6 +309,20 @@ def test_settings_nzbget_news_servers():
     assert "ExtendedUnpacker" in recipe
     assert "FakeDetector" in recipe
     assert "RemoveSamples" in recipe
+
+
+def test_settings_prowlarr_newznab_indexers():
+    assert "Indexers" in FRONTEND
+    assert "save-indexers" in FRONTEND
+    assert "prowlarr_newznab_indexers" in FRONTEND
+    assert "emptyNewznabIndexer" in FRONTEND
+    assert "PROWLARR_NEWZNAB" in BACKEND
+    assert "prowlarr_newznab_apply" in BACKEND
+    text = (ROOT / ".env.example").read_text()
+    assert "PROWLARR_NEWZNAB_INDEXERS=" in text
+    provision = (ROOT / "compose" / "core.provision.yml").read_text()
+    assert "PROWLARR_NEWZNAB_INDEXERS" in provision
+    assert "prowlarr_newznab" in (ROOT / "provision" / "recipes" / "prowlarr.py").read_text()
 
 
 def test_enable_tunnelled_app_recreates_gluetun_group():
