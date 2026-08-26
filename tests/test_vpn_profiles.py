@@ -147,7 +147,19 @@ def test_vpn_profile_routes_exist():
     assert '@app.post("/api/vpn/profiles/{profile_id}/activate")' in main
     assert '@app.post("/api/vpn/disable")' in main
     assert "vpn_profiles.migrate_from_wg0" in main
-    assert "VPN_ENABLED" in main.split("vpn_profile_activate", 1)[1][:800]
+    activate = main.split("vpn_profile_activate", 1)[1].split("@app.post(\"/api/vpn/disable\")", 1)[0]
+    assert "VPN_ENABLED" in activate
+    assert "apply_vpn_routing" in activate
+
+
+def test_vpn_apps_and_primary_routes_exist():
+    main = (ROOT / "helm/backend/app/main.py").read_text()
+    assert '/profiles/{profile_id}/apps' in main
+    assert '/profiles/{profile_id}/primary' in main
+    assert "apply_vpn_routing" in main.split("vpn_profile_set_primary", 1)[1][:600]
+    assert "apply_vpn_routing" in main.split("vpn_profile_set_apps", 1)[1][:800]
+    assert "assignable_apps" in main
+    assert "_vpn_forced_assignable" in main
 
 
 def test_vpn_ui_has_profile_cards():

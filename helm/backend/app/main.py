@@ -24,6 +24,7 @@ from .wireguard import empty_vpn_env as _empty_vpn_env
 from .wireguard import parse_conf as _parse_wireguard_conf
 from .wireguard import remove_gluetun_conf as _remove_gluetun_conf
 from .wireguard import write_gluetun_conf as _write_gluetun_conf
+from .wireguard import write_secondary_conf as _write_secondary_conf
 
 _REPO = pathlib.Path(os.environ.get("KINE_REPO", "/repo"))
 FRONTEND = _REPO / "helm" / "frontend"
@@ -1081,40 +1082,168 @@ async def apply_vpn_routing(
     return last_code, "\n".join(logs), recreated
 
 
-def _vpn_profile_public(profile: dict) -> dict:
+def _vpn_profile_public(profile: dict, *, primary_id: str | None = None) -> dict:
     return {
         "id": profile.get("id"),
         "name": profile.get("name") or "Unnamed",
         "type": profile.get("type") or "wireguard",
         "updated_at": profile.get("updated_at"),
+        "primary": profile.get("id") == primary_id if primary_id is not None else False,
+        "apps": list(profile.get("apps") or []),
         "conf": vpn_profiles.redact_conf(profile.get("conf") or ""),
     }
+
+
+def _vpn_forced_assignable() -> set[str]:
+    """Catalogue tunnelled:forced apps that are currently enabled."""
+    cat = catalogue.load()
+    enabled = set(config.profiles())
+    return {
+        app
+        for app, meta in cat.items()
+        if isinstance(meta, dict)
+        and meta.get("tunnelled") == "forced"
+        and app in enabled
+    }
+
+
+def _vpn_assignable_apps() -> list[dict[str, str]]:
+    cat = catalogue.load()
+    return [
+        {"id": app, "name": (cat.get(app) or {}).get("name") or app}
+        for app in sorted(_vpn_forced_assignable())
+    ]
+
+
+def _vpn_container_name(service: str) -> str:
+    if service == "gluetun":
+        return "kine-gluetun"
+    if service.startswith("gluetun_"):
+        return f"kine-gluetun-{service.removeprefix('gluetun_')}"
+    return f"kine-{service}"
+
+
+def _vpn_running_services(store: dict) -> list[str]:
+    """Compose service names for primary + secondaries that own apps."""
+    services = ["gluetun"]
+    services.extend(svc for _, svc in vpn_routing.running_secondaries(store))
+    return services
+
+
+async def _vpn_probe_tunnel(service: str) -> dict:
+    """Best-effort control-server probe for one Gluetun service."""
+    code, out = await compose.run(
+        "exec", "-T", service,
+        "wget", "-qO-",
+        "http://127.0.0.1:8000/v1/openvpn/portforwarded",
+        timeout=30,
+    )
+    ip_code, ip_out = await compose.run(
+        "exec", "-T", service,
+        "wget", "-qO-",
+        "http://127.0.0.1:8000/v1/publicip/ip",
+        timeout=30,
+    )
+    public_ip = _parse_public_ip(ip_out) if ip_code == 0 else None
+    forwarded_port = _parse_forwarded_port(out) if code == 0 else None
+    return {
+        "service": service,
+        "public_ip": public_ip,
+        "forwarded_port": forwarded_port,
+        "enabled": public_ip is not None or forwarded_port is not None or code == 0 or ip_code == 0,
+    }
+
+
+async def _vpn_resolve_tunnel(request: Request, tunnel: str | None = None) -> str:
+    if tunnel and tunnel.strip():
+        return tunnel.strip()
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    if isinstance(body, dict):
+        for key in ("service", "tunnel"):
+            val = body.get(key)
+            if isinstance(val, str) and val.strip():
+                return val.strip()
+    return "gluetun"
+
+
+async def _vpn_restart_group(service: str, store: dict | None = None) -> tuple[int, str, list[str]]:
+    env = config.read()
+    stack = _vpn_stack_root()
+    data = store
+    if data is None:
+        data = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+    enabled = _vpn_enabled_tunnel_apps(env)
+    active = set(_tunnelled_profiles())
+    peers_enabled = enabled & active if active else enabled
+    peers = vpn_routing.peers_for(data, service, peers_enabled)
+    group = [service]
+    if service == "gluetun":
+        group.append("vpn-portsync")
+    group.extend(peers)
+    seen: set[str] = set()
+    ordered = [s for s in group if not (s in seen or seen.add(s))]
+    code, out = await compose.run("restart", *ordered, timeout=300)
+    return code, out, ordered
 
 
 @app.get("/api/vpn")
 async def vpn_status(user: str = Depends(require_user)):
     env = config.read()
     stack = _vpn_stack_root()
-    code, out = await compose.run("exec", "-T", "gluetun",
-                                  "wget", "-qO-",
-                                  "http://127.0.0.1:8000/v1/openvpn/portforwarded",
-                                  timeout=30)
-    ip_code, ip_out = await compose.run("exec", "-T", "gluetun",
-                                        "wget", "-qO-",
-                                        "http://127.0.0.1:8000/v1/publicip/ip",
-                                        timeout=30)
     store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
     # Ensure Traefik labels exist after Task 4 stripped static gluetun routers.
     await asyncio.to_thread(_vpn_ensure_routing_fs, store, env)
+
+    vpn_on = env.get("VPN_ENABLED") == "true"
+    tunnels: list[dict] = []
+    if vpn_on:
+        for service in _vpn_running_services(store):
+            tunnels.append(await _vpn_probe_tunnel(service))
+    else:
+        tunnels.append({
+            "service": "gluetun",
+            "public_ip": None,
+            "forwarded_port": None,
+            "enabled": False,
+        })
+
+    by_service = {t["service"]: t for t in tunnels}
+    profiles = vpn_profiles.summary(store)
+    for row in profiles:
+        if row.get("primary"):
+            svc = "gluetun"
+        elif row.get("apps"):
+            svc = f"gluetun_{vpn_profiles.short_id(row['id'])}"
+        else:
+            row["tunnel"] = None
+            continue
+        row["tunnel"] = by_service.get(svc) or {
+            "service": svc,
+            "public_ip": None,
+            "forwarded_port": None,
+            "enabled": False,
+        }
+
+    primary_tunnel = by_service.get("gluetun") or {}
     return {
-        "enabled": env.get("VPN_ENABLED") == "true",
+        "enabled": vpn_on,
         "provider": env.get("VPN_SERVICE_PROVIDER"),
         "connection_type": _connection_label(env.get("VPN_TYPE", "")),
         "countries": env.get("VPN_SERVER_COUNTRIES"),
         "tunnelled": [a for a in env.get("VPN_TUNNELLED_APPS", "").split(",") if a],
-        "forwarded_port": _parse_forwarded_port(out) if code == 0 else None,
-        "public_ip": _parse_public_ip(ip_out) if ip_code == 0 else None,
-        "profiles": vpn_profiles.summary(store),
+        "forwarded_port": primary_tunnel.get("forwarded_port"),
+        "public_ip": primary_tunnel.get("public_ip"),
+        "profiles": profiles,
+        "assignable_apps": _vpn_assignable_apps(),
+        "tunnels": tunnels,
+        "tunnels_running": sum(1 for t in tunnels if t.get("enabled")),
+        "note": (
+            "Per-tunnel public_ip/forwarded_port come from each Gluetun "
+            "control server when reachable; otherwise enabled reflects probe failure."
+        ),
     }
 
 
@@ -1147,7 +1276,8 @@ async def vpn_profile_get(profile_id: str, user: str = Depends(require_user)):
             "name": profile.get("name") or "Unnamed",
             "type": profile.get("type") or "wireguard",
             "updated_at": profile.get("updated_at"),
-            "active": profile.get("id") == store.get("active_id"),
+            "primary": profile.get("id") == store.get("primary_id"),
+            "apps": list(profile.get("apps") or []),
             "conf": profile.get("conf") or "",
         },
     }
@@ -1167,7 +1297,11 @@ async def vpn_profile_add(request: Request, user: str = Depends(require_user)):
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"ok": True, "profile": _vpn_profile_public(profile)}
+    store = await asyncio.to_thread(vpn_profiles.load, stack)
+    return {
+        "ok": True,
+        "profile": _vpn_profile_public(profile, primary_id=store.get("primary_id")),
+    }
 
 
 @app.put("/api/vpn/profiles/{profile_id}")
@@ -1187,7 +1321,11 @@ async def vpn_profile_update(profile_id: str, request: Request, user: str = Depe
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    return {"ok": True, "profile": _vpn_profile_public(profile)}
+    store = await asyncio.to_thread(vpn_profiles.load, stack)
+    return {
+        "ok": True,
+        "profile": _vpn_profile_public(profile, primary_id=store.get("primary_id")),
+    }
 
 
 @app.delete("/api/vpn/profiles/{profile_id}")
@@ -1202,54 +1340,105 @@ async def vpn_profile_delete(profile_id: str, user: str = Depends(require_user))
     return {"ok": True}
 
 
-@app.post("/api/vpn/profiles/{profile_id}/activate")
-async def vpn_profile_activate(profile_id: str, user: str = Depends(require_user)):
+@app.post("/api/vpn/profiles/{profile_id}/primary")
+async def vpn_profile_set_primary(profile_id: str, user: str = Depends(require_user)):
     stack = _vpn_stack_root()
     try:
-        conf_text, patch = await asyncio.to_thread(
-            vpn_profiles.prepare_activate, stack, profile_id
+        store = await asyncio.to_thread(vpn_profiles.set_primary, stack, profile_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    code, out, group = await apply_vpn_routing(store)
+    return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
+
+
+@app.put("/api/vpn/profiles/{profile_id}/apps")
+async def vpn_profile_set_apps(
+    profile_id: str, request: Request, user: str = Depends(require_user),
+):
+    body = await request.json()
+    apps = body.get("apps") if isinstance(body, dict) else None
+    if not isinstance(apps, list):
+        raise HTTPException(400, "body must include apps: list[str]")
+    stack = _vpn_stack_root()
+    forced = _vpn_forced_assignable()
+    try:
+        store = await asyncio.to_thread(
+            vpn_profiles.set_profile_apps, stack, profile_id, apps, forced=forced,
         )
     except LookupError as exc:
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    code, out, group = await apply_vpn_routing(store)
+    return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
 
-    await asyncio.to_thread(_write_gluetun_conf, conf_text, stack)
-    config.write({"VPN_ENABLED": "true", **patch})
-    env2 = config.read()
-    code, out, group = await _vpn_recreate_tunnel(env2)
+
+@app.post("/api/vpn/profiles/{profile_id}/activate")
+async def vpn_profile_activate(profile_id: str, user: str = Depends(require_user)):
+    """Rematerialize a profile's WireGuard conf into its tunnel slot, then apply routing."""
+    stack = _vpn_stack_root()
+    store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+    profile = next((p for p in store["profiles"] if p.get("id") == profile_id), None)
+    if not profile:
+        raise HTTPException(404, "profile not found")
+    if (profile.get("type") or "wireguard") != "wireguard":
+        raise HTTPException(400, "OpenVPN profiles cannot be rematerialized yet")
+    conf = (profile.get("conf") or "").strip()
+    if not conf:
+        raise HTTPException(400, "profile has empty config")
+    try:
+        fields = _parse_wireguard_conf(conf)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if not fields or "WIREGUARD_PRIVATE_KEY" not in fields:
+        raise HTTPException(400, "invalid WireGuard config")
+
+    # Rematerializing always leaves VPN_ENABLED on so the tunnel group can start.
+    if profile_id == store.get("primary_id"):
+        await asyncio.to_thread(_write_gluetun_conf, conf + "\n", stack)
+        config.write({"VPN_ENABLED": "true", **fields})
+    else:
+        config.write({"VPN_ENABLED": "true"})
+        await asyncio.to_thread(
+            _write_secondary_conf, stack, vpn_profiles.short_id(profile_id), conf + "\n",
+        )
+
+    code, out, group = await apply_vpn_routing(store)
     return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
 
 
 @app.post("/api/vpn/disable")
 async def vpn_disable(user: str = Depends(require_user)):
     stack = _vpn_stack_root()
-
-    def _clear_active():
-        store = vpn_profiles.migrate_from_wg0(stack)
-        store["active_id"] = None
-        vpn_profiles.save(stack, store)
-
-    await asyncio.to_thread(_clear_active)
+    # Keep primary_id for the next enable; only clear materialization.
+    store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
     await asyncio.to_thread(_remove_gluetun_conf, stack)
     config.write({"VPN_ENABLED": "false", **_empty_vpn_env()})
-    env2 = config.read()
-    code, out, group = await _vpn_recreate_tunnel(env2)
+    code, out, group = await apply_vpn_routing(store)
     return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
 
 
 @app.post("/api/vpn/restart")
-async def vpn_restart(user: str = Depends(require_user)):
-    env = config.read()
-    group = _vpn_tunnel_group(env)
-    code, out = await compose.run("restart", *group, timeout=300)
+async def vpn_restart(
+    request: Request,
+    tunnel: str | None = None,
+    user: str = Depends(require_user),
+):
+    service = await _vpn_resolve_tunnel(request, tunnel)
+    code, out, group = await _vpn_restart_group(service)
     return {"ok": code == 0, "restarted": group, "log": out[-2000:]}
 
 
 @app.post("/api/vpn/leaktest")
-async def vpn_leaktest(user: str = Depends(require_user)):
+async def vpn_leaktest(
+    request: Request,
+    tunnel: str | None = None,
+    user: str = Depends(require_user),
+):
     """The difference between believing the tunnel works and knowing."""
-    code, out = await compose.script("vpn-leaktest.sh", timeout=120)
+    service = await _vpn_resolve_tunnel(request, tunnel)
+    container = _vpn_container_name(service)
+    code, out = await compose.script("vpn-leaktest.sh", container, timeout=120)
     return {"result": {0: "ok", 1: "leaking"}.get(code, "inconclusive"), "detail": out}
 
 

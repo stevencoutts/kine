@@ -172,7 +172,8 @@ cat "$1"
 
 def test_leaktest_probes_from_inside_gluetun():
     script = VPN_LEAKTEST.read_text()
-    assert "docker exec kine-gluetun wget" in script
+    assert 'docker exec "$container" wget' in script or "docker exec kine-gluetun wget" in script
+    assert "kine-gluetun" in script
     assert "--network container:kine-gluetun" not in script
 
 
