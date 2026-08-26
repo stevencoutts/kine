@@ -22,3 +22,18 @@ def internal_base(data: dict, app_id: str, port: int) -> str:
 
 def internal_base_for_app(app_id: str, port: int) -> str:
     return internal_base(load_profiles(), app_id, port)
+
+
+def runtime_internal(app_id: str, entry: dict) -> str:
+    """Catalogue internal URLs are docs defaults; resolve live tunnel host when tunnelled."""
+    from urllib.parse import urlparse
+
+    doc_internal = (entry.get("internal") or "").strip()
+    if not doc_internal:
+        return ""
+    if entry.get("tunnelled") != "forced":
+        return doc_internal.rstrip("/")
+    port = urlparse(doc_internal).port
+    if not port:
+        return doc_internal.rstrip("/")
+    return internal_base_for_app(app_id, port)

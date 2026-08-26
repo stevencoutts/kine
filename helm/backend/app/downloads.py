@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from . import catalogue, config
+from . import catalogue, config, tunnel_hosts
 
 TRANSMISSION_RPC = "/transmission/rpc"
 NZBGET_RPC = "/jsonrpc"
@@ -44,7 +44,8 @@ _TX_STATUS = {
 
 
 def _internal(app_id: str) -> str:
-    return (catalogue.load().get(app_id, {}).get("internal") or "").rstrip("/")
+    entry = catalogue.load().get(app_id, {})
+    return tunnel_hosts.runtime_internal(app_id, entry)
 
 
 def format_eta_seconds(seconds: int | float | None) -> str | None:

@@ -46,13 +46,7 @@ def _bazarr_key() -> str | None:
 
 
 def _runtime_internal(app: str, entry: dict) -> str:
-    """Catalogue internal URLs are docs defaults; resolve live tunnel host."""
-    from urllib.parse import urlparse
-
-    port = urlparse(entry.get("internal", "")).port
-    if not port:
-        port = {"sonarr": 8989, "radarr": 7878, "bazarr": 6767}[app]
-    return tunnel_hosts.internal_base_for_app(app, port)
+    return tunnel_hosts.runtime_internal(app, entry)
 
 
 def _arr_url(base: str, api: str, path: str) -> str:

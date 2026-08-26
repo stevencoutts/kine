@@ -100,6 +100,36 @@ def test_embeddable_requires_flag_and_internal(monkeypatch):
     assert not embed_proxy.embeddable({"embed": True, "subdomain": "sonarr"})
 
 
+def test_upstream_base_uses_secondary_tunnel(monkeypatch):
+    from app import config, tunnel_hosts
+
+    monkeypatch.setattr(config, "profiles", lambda: ["sonarr"])
+    monkeypatch.setattr(
+        embed_proxy.catalogue,
+        "load",
+        lambda: {
+            "sonarr": {
+                "embed": True,
+                "internal": "http://gluetun:8989",
+                "subdomain": "sonarr",
+                "tunnelled": "forced",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        tunnel_hosts,
+        "load_profiles",
+        lambda: {
+            "primary_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "profiles": [
+                {"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "apps": []},
+                {"id": "11111111-2222-3333-4444-555555555555", "apps": ["sonarr"]},
+            ],
+        },
+    )
+    assert embed_proxy.upstream_base("sonarr") == "http://gluetun_11111111:8989"
+
+
 def test_filter_request_headers_forces_identity_encoding():
     out = embed_proxy._filter_request_headers([
         ("Host", "kine-admin.example"),
