@@ -15,6 +15,10 @@ PublicKey = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx=
 Endpoint = 1.2.3.4:51820
 """
 
+FORCED = frozenset({
+    "sonarr", "radarr", "dispatcharr", "ecm", "teamarr", "prowlarr",
+})
+
 
 def test_migrate_schema_active_id_to_primary():
     raw = {
@@ -153,6 +157,35 @@ def test_vpn_ui_has_profile_cards():
     assert "data-vpn-activate" in frontend
     assert "promptVpnProfile" in frontend
     assert "/vpn/profiles" in frontend
+
+
+def test_set_profile_apps_moves_exclusively(tmp_path):
+    primary = vpn_profiles.add_profile(str(tmp_path), "Primary", VALID_CONF)
+    secondary = vpn_profiles.add_profile(str(tmp_path), "Secondary", VALID_CONF)
+    vpn_profiles.set_profile_apps(
+        str(tmp_path), primary["id"], ["sonarr"], forced=FORCED,
+    )
+    vpn_profiles.set_profile_apps(
+        str(tmp_path), secondary["id"], ["sonarr"], forced=FORCED,
+    )
+    data = vpn_profiles.load(str(tmp_path))
+    by_id = {p["id"]: p for p in data["profiles"]}
+    assert "sonarr" in by_id[secondary["id"]]["apps"]
+    assert "sonarr" not in by_id[primary["id"]]["apps"]
+
+
+def test_set_profile_apps_rejects_live_tv_split(tmp_path):
+    import pytest
+
+    primary = vpn_profiles.add_profile(str(tmp_path), "Primary", VALID_CONF)
+    secondary = vpn_profiles.add_profile(str(tmp_path), "Secondary", VALID_CONF)
+    vpn_profiles.set_profile_apps(
+        str(tmp_path), primary["id"], ["ecm", "teamarr"], forced=FORCED,
+    )
+    with pytest.raises(ValueError, match=r"affinity|live.?tv|together"):
+        vpn_profiles.set_profile_apps(
+            str(tmp_path), secondary["id"], ["dispatcharr"], forced=FORCED,
+        )
 
 
 def test_vpn_ui_collapses_detail_into_active_profile():
