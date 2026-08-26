@@ -94,6 +94,7 @@ def _secondary_service(
     kine_domain: str,
     kine_local_domain: str,
 ) -> dict[str, Any]:
+    _ = stack_root  # host path is always ${STACK_ROOT} for compose interpolation
     sid = vpn_profiles.short_id(profile["id"])
     conf = profile.get("conf") or ""
     return {
@@ -104,7 +105,7 @@ def _secondary_service(
         "cap_add": ["NET_ADMIN"],
         "devices": ["/dev/net/tun:/dev/net/tun"],
         "environment": _secondary_environment(conf),
-        "volumes": [f"{stack_root}/config/gluetun-{sid}:/gluetun"],
+        "volumes": [f"${{STACK_ROOT}}/config/gluetun-{sid}:/gluetun"],
         "networks": ["kine_internal", "kine_edge"],
         "healthcheck": {
             "test": ["CMD", "/gluetun-entrypoint", "healthcheck"],
@@ -202,3 +203,84 @@ def write_override(repo: pathlib.Path, text: str) -> pathlib.Path:
         text = text + "\n"
     path.write_text(text)
     return path
+
+
+def running_secondaries(
+    data: dict[str, Any],
+) -> list[tuple[dict[str, Any], str]]:
+    """Non-primary profiles that own at least one app, with compose service names."""
+    primary_id = data.get("primary_id")
+    out: list[tuple[dict[str, Any], str]] = []
+    for profile in data.get("profiles") or []:
+        if not isinstance(profile, dict) or not profile.get("id"):
+            continue
+        if profile.get("id") == primary_id:
+            continue
+        if not (profile.get("apps") or []):
+            continue
+        sid = vpn_profiles.short_id(profile["id"])
+        out.append((profile, f"gluetun_{sid}"))
+    return out
+
+
+def peers_for(
+    data: dict[str, Any],
+    service: str,
+    enabled: set[str],
+) -> list[str]:
+    """Enabled tunnel apps whose ``network_mode`` targets ``service``."""
+    return [
+        app
+        for app in _enabled_tunnel_apps(enabled)
+        if vpn_profiles.tunnel_service(data, app) == service
+    ]
+
+
+def apply_filesystem(
+    stack_root: str,
+    repo: pathlib.Path,
+    data: dict[str, Any],
+    enabled: set[str],
+    *,
+    kine_domain: str,
+    kine_local_domain: str,
+) -> None:
+    """Write primary/secondary wg0.conf files and regenerate the compose override.
+
+    Does not run ``docker compose``; callers recreate tunnel groups separately.
+    """
+    primary_id = data.get("primary_id")
+    by_id = {
+        p.get("id"): p
+        for p in (data.get("profiles") or [])
+        if isinstance(p, dict) and p.get("id")
+    }
+    if primary_id and primary_id in by_id:
+        conf = (by_id[primary_id].get("conf") or "").strip()
+        if conf:
+            wireguard.write_gluetun_conf(conf, stack_root)
+
+    for profile, _svc in running_secondaries(data):
+        apps = [a for a in (profile.get("apps") or []) if a in enabled]
+        if not apps:
+            continue
+        conf = (profile.get("conf") or "").strip()
+        if not conf:
+            continue
+        wireguard.write_secondary_conf(
+            stack_root, vpn_profiles.short_id(profile["id"]), conf
+        )
+
+    text = render_override(
+        data,
+        enabled_apps=enabled,
+        stack_root="${STACK_ROOT}",
+        kine_domain=kine_domain,
+        kine_local_domain=kine_local_domain,
+    )
+    write_override(repo, text)
+
+
+# Alias used in plan / Task 4 notes.
+apply_routing_sync = apply_filesystem
+ensure_routing = apply_filesystem

@@ -12,15 +12,32 @@ import ast
 import pathlib
 import re
 import subprocess
+import sys
 
 import pytest
 import yaml
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "helm" / "backend"))
+from app import vpn_routing  # noqa: E402
+
 CATALOGUE = yaml.safe_load((ROOT / "catalogue.yml").read_text())["apps"]
 FRAGMENTS = sorted((ROOT / "compose").glob("*.yml"))
 HELM_MAIN = ROOT / "helm" / "backend" / "app" / "main.py"
 VPN_LEAKTEST = ROOT / "scripts" / "vpn-leaktest.sh"
+
+
+def _generated_primary_tunnel_labels() -> list[str]:
+    """Traefik labels Helm writes onto primary gluetun (override stub is empty)."""
+    text = vpn_routing.render_override(
+        {"primary_id": None, "profiles": []},
+        enabled_apps=set(vpn_routing.APP_PORTS),
+        stack_root="${STACK_ROOT}",
+        kine_domain="${KINE_DOMAIN}",
+        kine_local_domain="${KINE_LOCAL_DOMAIN}",
+    )
+    doc = yaml.safe_load(text)
+    return list(doc["services"]["gluetun"]["labels"])
 
 
 def fragments():
@@ -31,6 +48,15 @@ def fragments():
         data = yaml.safe_load(f.read_text()) or {}
         for name, svc in (data.get("services") or {}).items():
             out[name] = (f.name, svc)
+    # Static vpn.gluetun.yml no longer carries app routers; merge what the
+    # generator places on primary when all forced apps are leftovers.
+    if "gluetun" in out:
+        fname, svc = out["gluetun"]
+        labels = svc.get("labels") or []
+        if not any("traefik.http.routers." in str(l) for l in labels):
+            merged = dict(svc)
+            merged["labels"] = _generated_primary_tunnel_labels()
+            out["gluetun"] = (fname, merged)
     return out
 
 
