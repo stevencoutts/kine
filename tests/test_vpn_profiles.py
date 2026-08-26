@@ -46,7 +46,7 @@ def test_tunnel_service_leftovers_use_primary():
         ],
     }
     assert vpn_profiles.tunnel_service(data, "sonarr") == "gluetun"
-    assert vpn_profiles.tunnel_service(data, "dispatcharr") == "gluetun_11111111"
+    assert vpn_profiles.tunnel_service(data, "dispatcharr") == "gluetun-11111111"
 
 
 def test_short_id():

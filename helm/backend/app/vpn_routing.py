@@ -30,6 +30,9 @@ def container_name_for_tunnel_service(service: str) -> str:
     """Map a Gluetun compose service name to its ``container_name``."""
     if service == "gluetun":
         return "kine-gluetun"
+    if service.startswith("gluetun-"):
+        return f"kine-gluetun-{service.removeprefix('gluetun-')}"
+    # Legacy underscore service names from the first multi-tunnel builds.
     if service.startswith("gluetun_"):
         return f"kine-gluetun-{service.removeprefix('gluetun_')}"
     return f"kine-{service}"
@@ -206,9 +209,11 @@ def render_override(
         if isinstance(p, dict) and p.get("id")
     }
     for svc, apps in tunnel_apps.items():
-        if svc == "gluetun" or not svc.startswith("gluetun_"):
+        if svc == "gluetun" or not (
+            svc.startswith("gluetun-") or svc.startswith("gluetun_")
+        ):
             continue
-        sid = svc.removeprefix("gluetun_")
+        sid = svc.removeprefix("gluetun-").removeprefix("gluetun_")
         profile = None
         for p in profiles_by_id.values():
             if p.get("id") == primary_id:
@@ -275,7 +280,7 @@ def running_secondaries(
         if not (profile.get("apps") or []):
             continue
         sid = vpn_profiles.short_id(profile["id"])
-        out.append((profile, f"gluetun_{sid}"))
+        out.append((profile, vpn_profiles.secondary_tunnel_service(profile["id"])))
     return out
 
 
@@ -287,9 +292,13 @@ def stale_secondary_services(data: dict[str, Any]) -> list[str]:
     for profile in data.get("profiles") or []:
         if not isinstance(profile, dict) or not profile.get("id"):
             continue
-        svc = f"gluetun_{vpn_profiles.short_id(profile['id'])}"
+        svc = vpn_profiles.secondary_tunnel_service(profile["id"])
+        # Also stop any leftover underscore-named service from older builds.
+        legacy = f"gluetun_{vpn_profiles.short_id(profile['id'])}"
         if profile.get("id") == primary_id or svc not in current:
             stale.append(svc)
+            if legacy != svc:
+                stale.append(legacy)
     return stale
 
 

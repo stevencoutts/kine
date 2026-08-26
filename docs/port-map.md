@@ -19,7 +19,7 @@ must claim a free port here first.
 
 With multiple VPN profiles, each running tunnel has its own namespace.
 The primary profile uses `gluetun`; other profiles with assigned apps
-get `gluetun_<shortId>` (first 8 hex chars of the profile UUID).
+get `gluetun-<shortId>` (first 8 hex chars of the profile UUID).
 Unassigned forced-tunnel apps stay on the primary tunnel.
 
 | Port | Application | Reached from outside as |
@@ -39,7 +39,7 @@ Unassigned forced-tunnel apps stay on the primary tunnel.
 Inside a namespace, apps address each other as `127.0.0.1:<port>`.
 From `kine_internal` (Traefik, Helm, the provisioner, Emby) reach a
 tunnelled app as `<tunnel_service>:<port>` — `gluetun:<port>` for apps
-on the primary tunnel, or `gluetun_<shortId>:<port>` when assigned to
+on the primary tunnel, or `gluetun-<shortId>:<port>` when assigned to
 another profile. Helm resolves the owning tunnel from
 `config/helm/vpn-profiles.json`.
 

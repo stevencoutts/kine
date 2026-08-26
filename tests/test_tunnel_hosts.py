@@ -18,7 +18,7 @@ def test_internal_base_uses_secondary():
     }
     assert (
         tunnel_hosts.internal_base(data, "dispatcharr", 9191)
-        == "http://gluetun_11111111:9191"
+        == "http://gluetun-11111111:9191"
     )
 
 

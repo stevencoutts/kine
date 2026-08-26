@@ -1265,7 +1265,7 @@ async def vpn_status(user: str = Depends(require_user)):
         if row.get("primary"):
             svc = "gluetun"
         elif row.get("apps"):
-            svc = f"gluetun_{vpn_profiles.short_id(row['id'])}"
+            svc = vpn_profiles.secondary_tunnel_service(row["id"])
         else:
             row["tunnel"] = None
             continue
@@ -1383,6 +1383,7 @@ async def vpn_profile_delete(profile_id: str, user: str = Depends(require_user))
     store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
     stale: set[str] = set()
     if profile_id != store.get("primary_id"):
+        stale.add(vpn_profiles.secondary_tunnel_service(profile_id))
         stale.add(f"gluetun_{vpn_profiles.short_id(profile_id)}")
     try:
         await asyncio.to_thread(vpn_profiles.delete_profile, stack, profile_id)

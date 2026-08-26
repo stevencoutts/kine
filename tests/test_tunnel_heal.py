@@ -69,14 +69,14 @@ def test_orphan_services_secondary_tunnel_only():
 
 def test_container_to_service():
     assert tunnel_heal.container_to_service("kine-gluetun") == "gluetun"
-    assert tunnel_heal.container_to_service("kine-gluetun-11111111") == "gluetun_11111111"
+    assert tunnel_heal.container_to_service("kine-gluetun-11111111") == "gluetun-11111111"
     assert tunnel_heal.container_to_service("kine-sonarr") is None
 
 
 def test_container_name_for_tunnel_service():
     assert vpn_routing.container_name_for_tunnel_service("gluetun") == "kine-gluetun"
     assert (
-        vpn_routing.container_name_for_tunnel_service("gluetun_11111111")
+        vpn_routing.container_name_for_tunnel_service("gluetun-11111111")
         == "kine-gluetun-11111111"
     )
 
@@ -94,7 +94,7 @@ def test_discover_gluetun_services():
 
     assert tunnel_heal.discover_gluetun_services(runner=runner) == [
         "gluetun",
-        "gluetun_11111111",
+        "gluetun-11111111",
     ]
 
 
@@ -134,7 +134,7 @@ def test_heal_all_multi_tunnel():
     result = tunnel_heal.heal_all(
         {
             "gluetun": {"sonarr", "radarr"},
-            "gluetun_11111111": {"dispatcharr", "ecm"},
+            "gluetun-11111111": {"dispatcharr", "ecm"},
         },
         runner=runner,
     )

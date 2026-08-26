@@ -104,7 +104,7 @@ apply() {
   # it alone leaves those containers pinned to the old namespace — Seerr
   # then reports "Unable to connect to Radarr, Sonarr". Pull the whole
   # group onto the new gateway the same way the VPN restart button does.
-  if [[ "$svc" == "gluetun" ]] || [[ "$svc" == gluetun_* ]]; then
+  if [[ "$svc" == "gluetun" ]] || [[ "$svc" == gluetun_* ]] || [[ "$svc" == gluetun-* ]]; then
     mapfile -t tunnelled < <(python3 - <<'PY'
 import json, os, subprocess
 cfg = json.loads(subprocess.check_output(

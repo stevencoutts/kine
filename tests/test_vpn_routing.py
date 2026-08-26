@@ -62,8 +62,8 @@ def test_render_override_secondary_and_network_mode():
         kine_domain="example.com",
         kine_local_domain="kine.local",
     )
-    assert "gluetun_11111111:" in text
-    assert "network_mode: service:gluetun_11111111" in text
+    assert "gluetun-11111111:" in text
+    assert "network_mode: service:gluetun-11111111" in text
     assert "dispatcharr" in text
     assert (
         "service:gluetun\n" in text
@@ -77,11 +77,11 @@ def test_render_override_secondary_and_network_mode():
     assert "traefik.http.routers.dispatcharr" in text
     assert "traefik.http.routers.sonarr" in text
 
-    sec = text.split("gluetun_11111111:", 1)[1].split("\n  sonarr:", 1)[0]
+    sec = text.split("gluetun-11111111:", 1)[1].split("\n  sonarr:", 1)[0]
     assert "traefik.http.routers.dispatcharr" in sec
     assert "traefik.http.routers.sonarr" not in sec
 
-    prim = text.split("gluetun:", 1)[1].split("\n  gluetun_11111111:", 1)[0]
+    prim = text.split("gluetun:", 1)[1].split("\n  gluetun-11111111:", 1)[0]
     assert "traefik.http.routers.sonarr" in prim
     assert "traefik.http.routers.dispatcharr" not in prim
 
@@ -95,9 +95,9 @@ def test_secondary_embeds_wireguard_from_parse_conf():
         kine_domain="example.com",
         kine_local_domain="kine.local",
     )
-    sec = "gluetun_11111111:" + text.split("gluetun_11111111:", 1)[1].split("\n  dispatcharr:", 1)[0]
+    sec = "gluetun-11111111:" + text.split("gluetun-11111111:", 1)[1].split("\n  dispatcharr:", 1)[0]
     doc = yaml.safe_load("services:\n  " + sec)
-    env = doc["services"]["gluetun_11111111"]["environment"]
+    env = doc["services"]["gluetun-11111111"]["environment"]
     assert env["VPN_SERVICE_PROVIDER"] == "custom"
     assert env["VPN_TYPE"] == "wireguard"
     assert env["WIREGUARD_PRIVATE_KEY"] == (
@@ -124,11 +124,11 @@ def test_app_overrides_depend_on_correct_tunnel():
     )
     assert "depends_on: !reset" in text
     assert 'network_mode: service:gluetun' in text
-    assert 'network_mode: service:gluetun_11111111' in text
+    assert 'network_mode: service:gluetun-11111111' in text
     assert "sonarr:" in text
     assert "dispatcharr:" in text
     assert "gluetun:" in text
-    assert "gluetun_11111111:" in text
+    assert "gluetun-11111111:" in text
 
 
 def test_vpn_portsync_follows_transmission_tunnel():
@@ -161,9 +161,9 @@ def test_render_override_disabled_is_empty():
 
 def test_stale_secondary_services():
     data = _sample_data()
-    assert "gluetun_11111111" not in vpn_routing.stale_secondary_services(data)
+    assert "gluetun-11111111" not in vpn_routing.stale_secondary_services(data)
     data["profiles"][1]["apps"] = []
-    assert "gluetun_11111111" in vpn_routing.stale_secondary_services(data)
+    assert "gluetun-11111111" in vpn_routing.stale_secondary_services(data)
     assert f"gluetun_{vpn_profiles.short_id(PRIMARY_ID)}" in vpn_routing.stale_secondary_services(
         data,
     )

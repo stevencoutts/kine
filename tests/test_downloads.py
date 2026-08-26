@@ -175,7 +175,7 @@ def test_internal_uses_secondary_tunnel(monkeypatch):
             ],
         },
     )
-    assert downloads._internal("transmission") == "http://gluetun_11111111:9091"
+    assert downloads._internal("transmission") == "http://gluetun-11111111:9091"
 
 
 def test_nzbget_snapshot_fetches_rpc_in_parallel(monkeypatch):

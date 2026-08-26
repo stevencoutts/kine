@@ -178,7 +178,7 @@ def test_updating_gluetun_recreates_tunnelled_apps():
     """Recreating gluetun alone orphans every network_mode: service:gluetun
     container on the old namespace — Seerr then cannot reach Radarr/Sonarr."""
     script = (ROOT / "scripts" / "updates.sh").read_text()
-    assert 'svc" == "gluetun"' in script or "gluetun_*" in script
+    assert 'svc" == "gluetun"' in script or "gluetun_*" in script or "gluetun-*" in script
     assert "force-recreate" in script
     assert "service:gluetun" in script
     assert "tunnel_heal" in script or "heal-tunnel" in script

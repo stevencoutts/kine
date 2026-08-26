@@ -44,7 +44,7 @@ def _sample_data():
 def test_peers_for_secondary():
     data = _sample_data()
     assert vpn_routing.peers_for(
-        data, "gluetun_11111111", {"dispatcharr", "sonarr"}
+        data, "gluetun-11111111", {"dispatcharr", "sonarr"}
     ) == ["dispatcharr"]
     assert "sonarr" in vpn_routing.peers_for(
         data, "gluetun", {"dispatcharr", "sonarr"}
@@ -57,7 +57,7 @@ def test_running_secondaries():
     assert len(rows) == 1
     profile, svc = rows[0]
     assert profile["id"] == SECONDARY_ID
-    assert svc == "gluetun_11111111"
+    assert svc == "gluetun-11111111"
 
 
 def test_secondary_volume_uses_stack_root_env_var():
@@ -70,10 +70,10 @@ def test_secondary_volume_uses_stack_root_env_var():
         kine_local_domain="kine.local",
     )
     doc = yaml.safe_load(
-        "services:\n  gluetun_11111111:"
-        + text.split("gluetun_11111111:", 1)[1].split("\n  dispatcharr:", 1)[0]
+        "services:\n  gluetun-11111111:"
+        + text.split("gluetun-11111111:", 1)[1].split("\n  dispatcharr:", 1)[0]
     )
-    vols = doc["services"]["gluetun_11111111"]["volumes"]
+    vols = doc["services"]["gluetun-11111111"]["volumes"]
     assert vols == ["${STACK_ROOT}/config/gluetun-11111111:/gluetun"]
 
 
@@ -99,7 +99,7 @@ def test_apply_filesystem_writes_confs_and_override(tmp_path):
     override = repo / vpn_routing.ROUTING_GENERATED_REL
     assert override.is_file()
     text = override.read_text()
-    assert "gluetun_11111111:" in text
+    assert "gluetun-11111111:" in text
     assert "${STACK_ROOT}/config/gluetun-11111111:/gluetun" in text
     assert "traefik.http.routers.sonarr" in text
     assert "traefik.http.routers.dispatcharr" in text

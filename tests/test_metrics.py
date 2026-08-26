@@ -266,7 +266,7 @@ def test_base_uses_secondary_tunnel(monkeypatch):
             ],
         },
     )
-    assert metrics._base("sonarr") == "http://gluetun_11111111:8989"
+    assert metrics._base("sonarr") == "http://gluetun-11111111:8989"
 
 
 def test_update_samples_come_from_the_cache_not_a_live_check(monkeypatch):

@@ -99,7 +99,7 @@ async def test_disable_stops_all_tunnel_groups(vpn_env):
     assert any(args[0] == "stop" for args in calls)
     assert any(args[0] == "rm" for args in calls)
     assert "gluetun" in stopped
-    assert "gluetun_11111111" in stopped
+    assert "gluetun-11111111" in stopped
     assert not any(args[0] == "up" for args in calls)
     override = repo / vpn_routing.ROUTING_GENERATED_REL
     assert override.is_file()
@@ -123,9 +123,9 @@ async def test_empty_apps_removes_secondary(vpn_env):
     assert code == 0
     stop_rm = [args for args in calls if args[0] in ("stop", "rm")]
     flat = [svc for args in stop_rm for svc in args[1:]]
-    assert "gluetun_11111111" in flat
+    assert "gluetun-11111111" in flat
     assert "gluetun" in recreated
-    assert "gluetun_11111111" not in recreated
+    assert "gluetun-11111111" not in recreated
 
 
 @pytest.mark.asyncio

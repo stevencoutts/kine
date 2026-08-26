@@ -130,6 +130,15 @@ def summary(data: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def secondary_tunnel_service(profile_id: str) -> str:
+    """Compose service name for a non-primary Gluetun (hyphen, not underscore).
+
+    Underscores are invalid in HTTP Host names; Django apps (Dispatcharr)
+    return 400 when Helm's embed proxy sets Host to ``gluetun_<id>:port``.
+    """
+    return f"gluetun-{short_id(profile_id)}"
+
+
 def tunnel_service(data: dict[str, Any], app_id: str) -> str:
     primary_id = data.get("primary_id")
     for profile in data.get("profiles") or []:
@@ -138,7 +147,7 @@ def tunnel_service(data: dict[str, Any], app_id: str) -> str:
             pid = profile.get("id")
             if pid == primary_id:
                 return "gluetun"
-            return f"gluetun_{short_id(pid)}"
+            return secondary_tunnel_service(pid)
     return "gluetun"
 
 

@@ -1,7 +1,7 @@
 """Heal apps still pinned to a dead Gluetun network namespace.
 
 Every tunnelled service uses ``network_mode: service:gluetun`` (or
-``service:gluetun_<shortId>`` for secondary tunnels). Docker binds that
+``service:gluetun-<shortId>`` for secondary tunnels). Docker binds that
 to the Gluetun *container ID* at create time. Recreating Gluetun without
 recreating those peers leaves them healthy-looking but unreachable
 (Traefik 502). This module finds and recreates orphans per tunnel.
@@ -31,7 +31,7 @@ def container_to_service(container_name: str) -> str | None:
         return "gluetun"
     prefix = "kine-gluetun-"
     if container_name.startswith(prefix):
-        return f"gluetun_{container_name.removeprefix(prefix)}"
+        return f"gluetun-{container_name.removeprefix(prefix)}"
     return None
 
 

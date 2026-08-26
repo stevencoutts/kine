@@ -127,7 +127,7 @@ def test_upstream_base_uses_secondary_tunnel(monkeypatch):
             ],
         },
     )
-    assert embed_proxy.upstream_base("sonarr") == "http://gluetun_11111111:8989"
+    assert embed_proxy.upstream_base("sonarr") == "http://gluetun-11111111:8989"
 
 
 def test_filter_request_headers_forces_identity_encoding():
