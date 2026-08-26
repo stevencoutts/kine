@@ -207,12 +207,18 @@ run `mount-media.sh` on the host after changes.
 
 Helm stores WireGuard profiles in `config/helm/vpn-profiles.json`. The first
 VPN tab visit imports an existing `wg0.conf` as **Default** when needed.
-Activating a profile writes config, updates gluetun env, and recreates the
-tunnel group. Tunnelled apps are listed in `VPN_TUNNELLED_APPS`.
+Each profile can be marked **Primary** and assigned a checklist of
+forced-tunnel apps; unassigned apps stay on the primary tunnel. Saving
+assignments regenerates `config/helm/vpn-routing.override.yml`, which
+adds secondary `gluetun_<shortId>` containers and moves each app to
+`network_mode: service:<tunnel>` (kill switch unchanged). Multiple
+profiles can run concurrently with different egress IPs.
 
-Most of acquisition and Live TV use `network_mode: service:gluetun` (kill
-switch). Seerr stays on `kine_internal` and reaches *arr as `gluetun:<port>`.
-Emby stays untunnelled and reaches Dispatcharr HDHomeRun at `gluetun:9191`.
+Most of acquisition and Live TV use `network_mode: service:gluetun` by
+default; the override moves apps to their assigned tunnel. Seerr stays on
+`kine_internal` and reaches *arr at the tunnel that owns each app. Emby
+stays untunnelled and reaches Dispatcharr HDHomeRun on that app's tunnel
+host.
 
 - No independent interface or fallback route for tunnelled apps
 - Tunnel down ⇒ acquisition/Live TV down (by design)
