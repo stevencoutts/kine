@@ -3,7 +3,11 @@ FROM python:3.12-slim
 # Debian carries no docker-compose-plugin package; fetch the official
 # static binary instead of pulling in Docker's whole apt repo for one file.
 ARG TARGETARCH
-ARG COMPOSE_VERSION=v2.32.4
+# v5+ merges same-named services across `include:` (needed for
+# vpn-routing.generated.yml overlaying gluetun labels). v2.x errors with
+# "services.gluetun conflicts with imported resource", which breaks Helm's
+# compose ps/exec and makes Apps show 0 running / tunnel status unknown.
+ARG COMPOSE_VERSION=v5.5.0
 RUN apt-get update && apt-get install -y --no-install-recommends \
       curl ca-certificates docker-cli nfs-common \
     && rm -rf /var/lib/apt/lists/* \
