@@ -70,6 +70,22 @@ APP_TRAEFIK_HOST: dict[str, str] = {
     "teamarr": "sports",
 }
 
+# Extra Host() names kept for legacy clients (Plex/Emby still use
+# dispatcharr.couttsnet.com; catalogue subdomain is tv).
+APP_TRAEFIK_ALIASES: dict[str, tuple[str, ...]] = {
+    "dispatcharr": ("dispatcharr",),
+}
+
+
+def _host_rule(app: str, *, kine_domain: str, kine_local_domain: str) -> str:
+    """Traefik Host() rule for an app, including legacy aliases."""
+    hosts = (APP_TRAEFIK_HOST[app],) + APP_TRAEFIK_ALIASES.get(app, ())
+    parts = [
+        f"Host(`{h}.{kine_domain}`) || Host(`{h}.{kine_local_domain}`)"
+        for h in hosts
+    ]
+    return " || ".join(parts)
+
 
 def _traefik_router_label_lines(
     apps: list[str],
@@ -82,11 +98,12 @@ def _traefik_router_label_lines(
     for app in apps:
         if app not in APP_TRAEFIK_HOST:
             continue
-        host = APP_TRAEFIK_HOST[app]
         port = APP_PORTS[app]
         labels.append(
             f"traefik.http.routers.{app}.rule="
-            f"Host(`{host}.{kine_domain}`) || Host(`{host}.{kine_local_domain}`)"
+            + _host_rule(
+                app, kine_domain=kine_domain, kine_local_domain=kine_local_domain
+            )
         )
         labels.append(f"traefik.http.routers.{app}.service={app}")
         labels.append(
@@ -128,13 +145,13 @@ def render_traefik_dynamic(
         for app in _enabled_tunnel_apps(enabled_apps):
             if app not in APP_TRAEFIK_HOST:
                 continue
-            host = APP_TRAEFIK_HOST[app]
             port = APP_PORTS[app]
             tunnel = vpn_profiles.tunnel_service(data, app)
             routers[app] = {
-                "rule": (
-                    f"Host(`{host}.{kine_domain}`) || "
-                    f"Host(`{host}.{kine_local_domain}`)"
+                "rule": _host_rule(
+                    app,
+                    kine_domain=kine_domain,
+                    kine_local_domain=kine_local_domain,
                 ),
                 "service": app,
                 "entryPoints": ["websecure"],

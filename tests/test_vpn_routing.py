@@ -88,6 +88,7 @@ def test_render_override_secondary_and_network_mode():
     assert "gluetun-11111111:9191" in dyn["http"]["services"]["dispatcharr"]["loadBalancer"]["servers"][0]["url"]
     assert "gluetun:8989" in dyn["http"]["services"]["sonarr"]["loadBalancer"]["servers"][0]["url"]
     assert "Host(`tv.example.com`)" in dyn["http"]["routers"]["dispatcharr"]["rule"]
+    assert "Host(`dispatcharr.example.com`)" in dyn["http"]["routers"]["dispatcharr"]["rule"]
 
 
 def test_secondary_embeds_wireguard_from_parse_conf():
