@@ -1,0 +1,34 @@
+# Tunnelled. Every tier 2 application runs inside gluetun's network
+# namespace, so this fragment carries no ports, no networks and no
+# Traefik labels: all three live on the gluetun service.
+#
+# Inside the namespace these apps address each other as 127.0.0.1,
+# because they genuinely share one loopback.
+services:
+  lidarr:
+    image: lscr.io/linuxserver/lidarr:${LIDARR_TAG}
+    container_name: kine-lidarr
+    profiles: ["lidarr"]
+    restart: unless-stopped
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    network_mode: "service:gluetun"
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+      TZ: ${KINE_TIMEZONE}
+    volumes:
+      - ${STACK_ROOT}/config/lidarr:/config
+      # Bind media and downloads directly so host NFS submounts are
+      # visible (a single DATA_ROOT bind hides them behind rprivate).
+      # Both paths sit on one host filesystem, so hardlinks still work.
+      - ${DATA_ROOT}/media:/data/media
+      - ${DATA_ROOT}/downloads:/data/downloads
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8686/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s

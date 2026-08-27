@@ -265,6 +265,8 @@ def test_ensure_data_tree_creates_category_directories(monkeypatch):
     ensure_data_tree()
     assert "/data/downloads/complete/tv-sonarr" in created
     assert "/data/downloads/complete/radarr" in created
+    assert "/data/downloads/complete/lidarr" in created
+    assert "/data/media/music" in created
 
 
 def test_prowlarr_links_both_pvrs_over_loopback():

@@ -15,6 +15,7 @@ from recipes import prowlarr_newznab
 TARGETS = {
     "sonarr": ("Sonarr", "SonarrSettings", "http://localhost:8989"),
     "radarr": ("Radarr", "RadarrSettings", "http://localhost:7878"),
+    "lidarr": ("Lidarr", "LidarrSettings", "http://localhost:8686"),
 }
 
 

@@ -5,7 +5,10 @@ import os
 import pathlib
 import sys
 
-_REPO = pathlib.Path(__file__).resolve().parents[1]
+_REPO = pathlib.Path(
+    os.environ.get("KINE_REPO")
+    or pathlib.Path(__file__).resolve().parents[1]
+)
 _HELM_BACKEND = _REPO / "helm" / "backend"
 if str(_HELM_BACKEND) not in sys.path:
     sys.path.insert(0, str(_HELM_BACKEND))

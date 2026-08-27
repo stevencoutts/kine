@@ -1,0 +1,29 @@
+# Untunnelled. Beets tags and organises the local music library; it does
+# not need outbound indexer access, so it stays on its own network stack
+# with Traefik labels here rather than joining gluetun.
+services:
+  beets:
+    image: lscr.io/linuxserver/beets:${BEETS_TAG}
+    container_name: kine-beets
+    profiles: ["beets"]
+    restart: unless-stopped
+    environment:
+      PUID: ${PUID}
+      PGID: ${PGID}
+      UMASK: ${UMASK}
+      TZ: ${KINE_TIMEZONE}
+    volumes:
+      - ${STACK_ROOT}/config/beets:/config
+      - ${DATA_ROOT}/media/music:/music
+      - ${DATA_ROOT}/downloads:/downloads
+    networks: [kine_internal, kine_edge]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8337/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.beets.rule=Host(`beets.${KINE_DOMAIN}`) || Host(`beets.${KINE_LOCAL_DOMAIN}`)
+      - traefik.http.services.beets.loadbalancer.server.port=8337

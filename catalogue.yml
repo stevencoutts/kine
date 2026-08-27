@@ -62,10 +62,41 @@ apps:
     dev_tag: develop
     default: true
 
+  lidarr:
+    name: Lidarr
+    tier: acquisition
+    summary: Music management and automatic downloading.
+    releases: https://github.com/Lidarr/Lidarr/releases
+    internal: http://gluetun:8686
+    subdomain: lidarr
+    embed: true
+    api: v1
+    provides: [music-pvr]
+    wires: [download-client, indexer-proxy, root-folder]
+    requires: [gluetun]
+    tunnelled: forced
+    # linuxserver/lidarr develop tracks Lidarr's develop branch.
+    dev_tag: develop
+    default: false
+
+  beets:
+    name: Beets
+    tier: acquisition
+    summary: Music library tagger and organiser for the Lidarr music folder.
+    url: https://beets.io
+    releases: https://github.com/beetbox/beets/releases
+    internal: http://beets:8337
+    subdomain: beets
+    embed: true
+    provides: [music-tagger]
+    # linuxserver/beets publishes a nightly channel.
+    dev_tag: nightly
+    default: false
+
   prowlarr:
     name: Prowlarr
     tier: acquisition
-    summary: Indexer manager. Pushes indexers to Sonarr and Radarr.
+    summary: Indexer manager. Pushes indexers to Sonarr, Radarr and Lidarr.
     releases: https://github.com/Prowlarr/Prowlarr/releases
     internal: http://gluetun:9696
     subdomain: prowlarr

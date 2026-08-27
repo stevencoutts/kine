@@ -30,6 +30,7 @@ Unassigned forced-tunnel apps stay on the primary tunnel.
 | 6789 | NZBGet | `gluetun:6789` |
 | 7878 | Radarr | `gluetun:7878` |
 | 8000 | gluetun control server | `gluetun:8000` (internal only) |
+| 8686 | Lidarr | `gluetun:8686` |
 | 8989 | Sonarr | `gluetun:8989` |
 | 9091 | Transmission | `gluetun:9091` |
 | 9117 | Jackett | `gluetun:9117` |
@@ -55,6 +56,7 @@ Untunnelled, on their own service names as usual:
 | Emby | `emby:8096` |
 | Tdarr | `tdarr:8265` (UI), `tdarr:8266` (server) |
 | Seerr | `seerr:5055` |
+| Beets | `beets:8337` |
 
 Seerr reaches tunnelled Sonarr/Radarr at each app's assigned tunnel
 host (for example `gluetun:8989` / `gluetun:7878` when both are on the

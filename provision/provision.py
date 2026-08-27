@@ -44,12 +44,14 @@ def ensure_data_tree() -> None:
     for path in (
         "/data/media/movies",
         "/data/media/tv",
+        "/data/media/music",
         "/data/media/sports",
         "/data/media/recordings",
         "/data/downloads/incomplete",
         "/data/downloads/complete",
         "/data/downloads/complete/tv-sonarr",
         "/data/downloads/complete/radarr",
+        "/data/downloads/complete/lidarr",
     ):
         pathlib.Path(path).mkdir(parents=True, exist_ok=True)
 
@@ -60,7 +62,7 @@ def wire(enabled: set[str]) -> None:
 
     envfiles.configure(enabled, log)
 
-    for app in ("sonarr", "radarr"):
+    for app in ("sonarr", "radarr", "lidarr"):
         if app in enabled:
             try:
                 arr.configure(app, enabled, log)

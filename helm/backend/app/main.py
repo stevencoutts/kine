@@ -75,8 +75,8 @@ async def _refresh_mdns() -> None:
 
 
 _MEDIA_VOLUME_APPS = (
-    "sonarr", "radarr", "prowlarr", "transmission", "bazarr",
-    "nzbget", "unpackerr", "emby", "tdarr", "dispatcharr",
+    "sonarr", "radarr", "lidarr", "prowlarr", "transmission", "bazarr",
+    "nzbget", "unpackerr", "emby", "tdarr", "dispatcharr", "beets",
 )
 _NFS_KEYS = ("NFS_SERVER", "NFS_MEDIA", "NFS_TV", "NFS_MOVIES", "NFS_DOWNLOADS", "NFS_CACHE")
 _NFS_EXPORT_KEYS = _NFS_KEYS[1:]

@@ -103,10 +103,13 @@ def write_dispatcharr_token(app: str, token: str, log) -> bool:
 
 def configure(enabled: set[str], log) -> None:
     if "unpackerr" in enabled:
-        _write("unpackerr", {
+        keys = {
             "UN_SONARR_0_API_KEY": resolve_key("sonarr"),
             "UN_RADARR_0_API_KEY": resolve_key("radarr"),
-        }, log)
+        }
+        if "lidarr" in enabled:
+            keys["UN_LIDARR_0_API_KEY"] = resolve_key("lidarr")
+        _write("unpackerr", keys, log)
 
     for app in ("ecm", "teamarr"):
         if app in enabled:

@@ -24,6 +24,25 @@ from keys import resolve_key
 ROOT_FOLDERS = {
     "sonarr": "/data/media/tv",
     "radarr": "/data/media/movies",
+    "lidarr": "/data/media/music",
+}
+
+APP_PORTS = {
+    "sonarr": 8989,
+    "radarr": 7878,
+    "lidarr": 8686,
+}
+
+APP_API = {
+    "sonarr": "v3",
+    "radarr": "v3",
+    "lidarr": "v1",
+}
+
+DOWNLOAD_CATEGORIES = {
+    "sonarr": "tv-sonarr",
+    "radarr": "radarr",
+    "lidarr": "lidarr",
 }
 
 
@@ -51,8 +70,12 @@ def transmission_client(category: str) -> dict:
 
 
 def nzbget_client(category: str) -> dict:
-    # Sonarr schema uses tvCategory; Radarr uses movieCategory.
-    category_field = "tvCategory" if category == "tv-sonarr" else "movieCategory"
+    # Sonarr uses tvCategory; Radarr movieCategory; Lidarr musicCategory.
+    category_field = {
+        "tv-sonarr": "tvCategory",
+        "radarr": "movieCategory",
+        "lidarr": "musicCategory",
+    }.get(category, "movieCategory")
     return {
         "enable": True,
         "protocol": "usenet",
@@ -110,19 +133,27 @@ def _app_events(app: str) -> dict:
             "onEpisodeFileDelete": False,
             "onEpisodeFileDeleteForUpgrade": True,
         })
-    else:
+    elif app == "radarr":
         events.update({
             "onMovieAdded": False,
             "onMovieDelete": False,
             "onMovieFileDelete": False,
             "onMovieFileDeleteForUpgrade": True,
         })
+    else:
+        # Lidarr
+        events.update({
+            "onArtistDelete": False,
+            "onAlbumDelete": False,
+            "onTrackFileDelete": False,
+            "onTrackFileDeleteForUpgrade": True,
+        })
     return events
 
 
 def _path_map_fields(server: str, app: str) -> list[dict]:
     """Optional mapFrom/mapTo when remote library mounts differ from *arr paths."""
-    kind = "TV" if app == "sonarr" else "MOVIES"
+    kind = {"sonarr": "TV", "radarr": "MOVIES", "lidarr": "MUSIC"}[app]
     prefix = f"{server.upper()}_{kind}_MAP"
     map_from = os.environ.get(f"{prefix}_FROM", "").strip()
     map_to = os.environ.get(f"{prefix}_TO", "").strip()
@@ -284,24 +315,40 @@ def _bazarr_webhook(app: str, bazarr_key: str) -> dict:
     }
 
 
+def _lidarr_root_folder(client: ArrClient) -> dict:
+    """Lidarr requires name + default quality/metadata profile ids."""
+    quality = client.get("qualityprofile")
+    metadata = client.get("metadataprofile")
+    if not quality or not metadata:
+        raise RuntimeError("lidarr: no quality/metadata profiles yet")
+    return {
+        "path": ROOT_FOLDERS["lidarr"],
+        "name": "Music",
+        "defaultQualityProfileId": quality[0]["id"],
+        "defaultMetadataProfileId": metadata[0]["id"],
+    }
+
+
 def configure(app: str, enabled: set[str], log) -> None:
     client = ArrClient(
         # The provisioner sits on kine_internal, outside the tunnel, so it
         # reaches the tier 2 apps at gluetun's address: that container is
         # the one that actually holds their sockets.
-        tunnel_hosts.internal_base_for_app(
-            app,
-            {"sonarr": 8989, "radarr": 7878}[app],
-        ),
+        tunnel_hosts.internal_base_for_app(app, APP_PORTS[app]),
         resolve_key(app),
+        api=APP_API[app],
     )
     if not client.wait():
         log(f"{app}: no API response, skipping wiring")
         return
 
-    category = "tv-sonarr" if app == "sonarr" else "radarr"
+    category = DOWNLOAD_CATEGORIES[app]
 
-    if client.ensure("rootfolder", {"path": ROOT_FOLDERS[app]}, match_on="path"):
+    root_payload = (
+        _lidarr_root_folder(client) if app == "lidarr"
+        else {"path": ROOT_FOLDERS[app]}
+    )
+    if client.ensure("rootfolder", root_payload, match_on="path"):
         log(f"{app}: root folder {ROOT_FOLDERS[app]}")
 
     if "transmission" in enabled:
@@ -320,15 +367,20 @@ def configure(app: str, enabled: set[str], log) -> None:
         ("config/downloadclient", {"enableCompletedDownloadHandling": True}),
         ("config/host", {"analyticsEnabled": False}),
     ):
-        current = client.get(cfg)
-        current.update(patch)
-        client.put(f"{cfg}/{current['id']}", current)
+        try:
+            current = client.get(cfg)
+            current.update(patch)
+            client.put(f"{cfg}/{current['id']}", current)
+        except Exception as exc:  # noqa: BLE001 — host config schemas differ
+            log(f"{app}: skipped {cfg} ({exc})")
 
     _sync_media_notifications(client, app, enabled, log)
 
-    if "bazarr" in enabled:
-        _sync_one_notification(
-            client, app, log, "Bazarr", _bazarr_webhook(app, resolve_key("bazarr"))
-        )
-    else:
-        _sync_one_notification(client, app, log, "Bazarr", None)
+    # Bazarr only knows Sonarr/Radarr.
+    if app in ("sonarr", "radarr"):
+        if "bazarr" in enabled:
+            _sync_one_notification(
+                client, app, log, "Bazarr", _bazarr_webhook(app, resolve_key("bazarr"))
+            )
+        else:
+            _sync_one_notification(client, app, log, "Bazarr", None)

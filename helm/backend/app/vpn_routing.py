@@ -46,6 +46,7 @@ APP_PORTS: dict[str, int] = {
     "bazarr": 6767,
     "nzbget": 6789,
     "radarr": 7878,
+    "lidarr": 8686,
     "sonarr": 8989,
     "transmission": 9091,
     "jackett": 9117,
@@ -59,6 +60,7 @@ APP_PORTS: dict[str, int] = {
 APP_TRAEFIK_HOST: dict[str, str] = {
     "sonarr": "sonarr",
     "radarr": "radarr",
+    "lidarr": "lidarr",
     "prowlarr": "prowlarr",
     "jackett": "jackett",
     "bazarr": "bazarr",

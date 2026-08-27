@@ -24,6 +24,7 @@ SEERR_GID = 1000
 ARR_DEFAULTS = {
     "sonarr": {"Port": "8989", "UrlBase": ""},
     "radarr": {"Port": "7878", "UrlBase": ""},
+    "lidarr": {"Port": "8686", "UrlBase": ""},
     "prowlarr": {"Port": "9696", "UrlBase": ""},
 }
 
@@ -200,6 +201,25 @@ def seed_bazarr(enabled: set[str]) -> None:
     print("  bazarr: seeded config/config.yaml with derived API key")
 
 
+def seed_beets() -> None:
+    """Minimal config so the web UI binds on all interfaces."""
+    cfg_dir = STACK / "config" / "beets"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg = cfg_dir / "config.yaml"
+    if cfg.exists():
+        print("  beets: existing config.yaml retained")
+        return
+    cfg.write_text(
+        "directory: /music\n"
+        "library: /config/library.db\n"
+        "plugins: web fetchart embedart lastgenre scrub\n"
+        "web:\n"
+        "  host: 0.0.0.0\n"
+        "  port: 8337\n"
+    )
+    print("  beets: seeded config.yaml with web UI on 0.0.0.0:8337")
+
+
 def seed_all(enabled: set[str]) -> None:
     print("Seeding application config...")
     for app in ARR_DEFAULTS:
@@ -217,6 +237,8 @@ def seed_all(enabled: set[str]) -> None:
         seed_seerr()
     if "bazarr" in enabled:
         seed_bazarr(enabled)
+    if "beets" in enabled:
+        seed_beets()
     if "nzbget" in enabled:
         from recipes import nzbget
 

@@ -15,6 +15,8 @@ services:
       UN_SONARR_0_PATHS_0: /data/downloads
       UN_RADARR_0_URL: http://localhost:7878
       UN_RADARR_0_PATHS_0: /data/downloads
+      UN_LIDARR_0_URL: http://localhost:8686
+      UN_LIDARR_0_PATHS_0: /data/downloads
     env_file:
       - ${STACK_ROOT}/config/unpackerr/unpackerr.env
     volumes:

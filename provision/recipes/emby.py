@@ -15,6 +15,7 @@ BASE = "http://emby:8096"
 LIBRARIES = [
     ("Movies", "movies", "/data/media/movies"),
     ("TV", "tvshows", "/data/media/tv"),
+    ("Music", "music", "/data/media/music"),
     ("Sports", "tvshows", "/data/media/sports"),
 ]
 

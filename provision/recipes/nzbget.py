@@ -104,10 +104,11 @@ RUNTIME_DEFAULTS = {
     "RotateLog": "3",
 }
 
-# Match Sonarr/Radarr download-client categories (and ensure_data_tree dirs).
+# Match Sonarr/Radarr/Lidarr download-client categories (and ensure_data_tree dirs).
 CATEGORIES = (
     {"name": "tv-sonarr", "dest": f"{DEST_DIR}/tv-sonarr"},
     {"name": "radarr", "dest": f"{DEST_DIR}/radarr"},
+    {"name": "lidarr", "dest": f"{DEST_DIR}/lidarr"},
 )
 
 _CATEGORY_LINE = re.compile(r"^Category\d+\.", re.IGNORECASE)

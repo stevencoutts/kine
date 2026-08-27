@@ -11,6 +11,7 @@ services:
       KINE_TIMEZONE: ${KINE_TIMEZONE}
       KINE_SECRET: ${KINE_SECRET}
       KINE_DOMAIN: ${KINE_DOMAIN}
+      KINE_REPO: /repo
       COMPOSE_PROFILES: ${COMPOSE_PROFILES}
       VPN_TUNNELLED_APPS: ${VPN_TUNNELLED_APPS}
       PUID: ${PUID}
@@ -41,6 +42,7 @@ services:
       NZBGET_NEWS_SERVERS: ${NZBGET_NEWS_SERVERS:-}
       PROWLARR_NEWZNAB_INDEXERS: ${PROWLARR_NEWZNAB_INDEXERS:-}
     volumes:
+      - ../:/repo:ro
       - ${STACK_ROOT}:/stack
       - ${DATA_ROOT}/media:/data/media
       - ${DATA_ROOT}/downloads:/data/downloads

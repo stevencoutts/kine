@@ -22,6 +22,7 @@ include:
   - compose/media.tdarr.yml
   - compose/acq.sonarr.yml
   - compose/acq.radarr.yml
+  - compose/acq.lidarr.yml
   - compose/acq.prowlarr.yml
   - compose/acq.jackett.yml
   - compose/acq.bazarr.yml
@@ -30,6 +31,7 @@ include:
   - compose/acq.unpackerr.yml
   - compose/acq.recyclarr.yml
   - compose/acq.seerr.yml
+  - compose/acq.beets.yml
   - compose/live.dispatcharr.yml
   - compose/live.ecm.yml
   - compose/live.ecm-mcp.yml
