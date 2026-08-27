@@ -48,3 +48,10 @@ def test_schedule_create_rejects_cron_type():
         assert False, "expected ValueError"
     except ValueError as exc:
         assert "cron" in str(exc)
+
+
+def test_task_enabled_patch_only_when_different():
+    mod = _load()
+    assert mod.task_enabled_patch({"enabled": True}, {"enabled": False}) == {"enabled": True}
+    assert mod.task_enabled_patch({"enabled": True}, {"enabled": True}) is None
+    assert mod.task_enabled_patch({}, {"enabled": False}) is None

@@ -224,6 +224,15 @@ def _tasks_by_id(payload: Any) -> dict[str, dict]:
     }
 
 
+def task_enabled_patch(src: dict, dest: dict) -> dict | None:
+    """Return PATCH body to align dest task enabled with source, or None."""
+    if "enabled" not in src:
+        return None
+    if bool(src.get("enabled")) == bool(dest.get("enabled")):
+        return None
+    return {"enabled": bool(src.get("enabled"))}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-url", default=DEFAULT_SOURCE_URL)
@@ -281,10 +290,30 @@ def main() -> int:
         print(f"schedules: kore tasks={len(source_tasks)} kine tasks={len(dest_tasks)}")
 
         for task_id, src in sorted(source_tasks.items()):
-            schedules = src.get("schedules") or []
             if task_id not in dest_tasks:
                 print(f"skip schedules for {task_id} (missing on kine)")
                 continue
+            patch = task_enabled_patch(src, dest_tasks[task_id])
+            if patch is not None:
+                print(
+                    f"{'enable' if args.apply else 'would set'} {task_id}.enabled="
+                    f"{patch['enabled']} (was {dest_tasks[task_id].get('enabled')})"
+                )
+                if args.apply:
+                    try:
+                        dest_request(
+                            args.dest_container,
+                            dest_token,
+                            "PATCH",
+                            f"/api/tasks/{task_id}",
+                            patch,
+                            timeout=60.0,
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"  FAIL enable {task_id}: {exc}", file=sys.stderr)
+                        failed += 1
+
+            schedules = src.get("schedules") or []
             dest_existing = dest_tasks[task_id].get("schedules") or []
             print(
                 f"{'replace' if args.apply else 'would replace'} {task_id}: "
