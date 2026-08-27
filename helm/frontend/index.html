@@ -2343,26 +2343,39 @@ render.vpn = async () => {
     return !!(p.apps || []).length && p.tunnel.enabled;
   };
   const LIVE_TV_AFFINITY = ['dispatcharr', 'ecm', 'teamarr'];
+  const ACQUISITION_AFFINITY = [
+    'sonarr', 'radarr', 'prowlarr', 'jackett', 'bazarr',
+    'transmission', 'nzbget', 'unpackerr',
+  ];
+  const VPN_GROUPS = [
+    {id: 'live', label: 'Live TV', apps: LIVE_TV_AFFINITY},
+    {id: 'acquisition', label: 'Acquisition', apps: ACQUISITION_AFFINITY},
+  ];
   const appLabel = (id) => {
     const hit = assignableApps.find(a => a.id === id);
     return (hit && hit.name) || id;
   };
-  const expandAffinity = (appId) => {
-    if (LIVE_TV_AFFINITY.includes(appId)) {
-      return LIVE_TV_AFFINITY.filter(id => assignableIds.includes(id));
-    }
-    return [appId];
+  const expandGroup = (groupId) => {
+    const group = VPN_GROUPS.find(g => g.id === groupId);
+    if (!group) return [];
+    return group.apps.filter(id => assignableIds.includes(id));
+  };
+  const groupsOnTunnel = (p) => {
+    const apps = new Set(tunnelAppsFor(p));
+    return VPN_GROUPS.filter(g => g.apps.some(id => apps.has(id) && assignableIds.includes(id)));
   };
   const appChipsHtml = (p) => {
-    const apps = tunnelAppsFor(p);
-    if (!apps.length) {
-      return `<p style="color:var(--muted);font-size:.8rem;margin:.55rem 0 0">No apps on this tunnel. Click a chip on another profile to move one here.</p>`;
+    const groups = groupsOnTunnel(p);
+    if (!groups.length) {
+      return `<p style="color:var(--muted);font-size:.8rem;margin:.55rem 0 0">No groups on this tunnel. Click a chip on another profile to move one here.</p>`;
     }
-    const chips = apps.map(id =>
-      `<button type="button" class="vpn-app-chip" data-vpn-move-app="${escAttr(id)}" data-vpn-from="${escAttr(p.id)}" title="Move ${escAttr(appLabel(id))}">${escHtml(appLabel(id))}</button>`
-    ).join('');
+    const chips = groups.map(g => {
+      const members = expandGroup(g.id);
+      const title = `Move ${g.label}: ${members.map(appLabel).join(', ')}`;
+      return `<button type="button" class="vpn-app-chip" data-vpn-move-group="${escAttr(g.id)}" data-vpn-from="${escAttr(p.id)}" title="${escAttr(title)}">${escHtml(g.label)}</button>`;
+    }).join('');
     return `<div class="vpn-tunnelled">${chips}</div>
-      <p class="vpn-apps-hint">Click an app to move it to another VPN.</p>`;
+      <p class="vpn-apps-hint">Click a group to move it to another VPN.</p>`;
   };
   const tunnelDetailHtml = (p) => {
     const t = p.tunnel || {};
@@ -2383,7 +2396,7 @@ render.vpn = async () => {
     if (p.primary || showTunnelDetail(p)) return '';
     const apps = p.apps || [];
     if (!apps.length) {
-      return `<p class="vpn-apps-hint">No apps assigned. Click a chip on the primary tunnel to move apps here.</p>`;
+      return `<p class="vpn-apps-hint">No groups assigned. Click a chip on the primary tunnel to move a group here.</p>`;
     }
     return appChipsHtml(p);
   };
@@ -2522,15 +2535,15 @@ render.vpn = async () => {
       el.textContent = '';
     }
   };
-  const moveAppsToProfile = async (appId, fromId, targetId) => {
-    const moving = expandAffinity(appId);
+  const moveAppsToProfile = async (groupId, fromId, targetId) => {
+    const moving = expandGroup(groupId);
+    const group = VPN_GROUPS.find(g => g.id === groupId);
     const target = profiles.find(p => p.id === targetId);
     if (!target) throw new Error('target profile not found');
+    if (!moving.length) throw new Error('no apps in that group are enabled');
     const next = [...new Set([...(target.apps || []), ...moving])];
-    const note = moving.length > 1
-      ? ` (Live TV affinity: ${moving.join(', ')})`
-      : '';
-    setOut(`moving ${moving.map(appLabel).join(', ')} → ${target.name || targetId}${note}...`);
+    const label = (group && group.label) || groupId;
+    setOut(`moving ${label} → ${target.name || targetId}...`);
     setCardErr(fromId, '');
     setCardErr(targetId, '');
     try {
@@ -2538,7 +2551,7 @@ render.vpn = async () => {
         method: 'PUT',
         body: JSON.stringify({apps: next}),
       });
-      setOut(r.log || `moved to ${target.name || targetId}${note}`);
+      setOut(r.log || `moved ${label} to ${target.name || targetId}`);
       await render.vpn();
     } catch (e) {
       const msg = e.message || String(e);
@@ -2546,15 +2559,15 @@ render.vpn = async () => {
       setOut(msg);
     }
   };
-  document.querySelectorAll('[data-vpn-move-app]').forEach(chip => {
+  document.querySelectorAll('[data-vpn-move-group]').forEach(chip => {
     chip.onclick = (ev) => {
       ev.stopPropagation();
       closeVpnMoveMenu();
-      const appId = chip.dataset.vpnMoveApp;
+      const groupId = chip.dataset.vpnMoveGroup;
       const fromId = chip.dataset.vpnFrom;
       const destinations = profiles.filter(p => p.id !== fromId);
       if (!destinations.length) {
-        setCardErr(fromId, 'Add another VPN profile to move apps.');
+        setCardErr(fromId, 'Add another VPN profile to move groups.');
         return;
       }
       const menu = document.createElement('div');
@@ -2573,7 +2586,7 @@ render.vpn = async () => {
         btn.onclick = async (e) => {
           e.stopPropagation();
           closeVpnMoveMenu();
-          await moveAppsToProfile(appId, fromId, btn.dataset.vpnMoveTo);
+          await moveAppsToProfile(groupId, fromId, btn.dataset.vpnMoveTo);
         };
       });
       setTimeout(() => {

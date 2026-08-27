@@ -189,24 +189,50 @@ def test_set_profile_apps_moves_exclusively(tmp_path):
     assert "sonarr" not in by_id[primary["id"]]["apps"]
 
 
-def test_set_profile_apps_rejects_live_tv_split(tmp_path):
-    import pytest
-
+def test_set_profile_apps_expands_live_tv_affinity(tmp_path):
     primary = vpn_profiles.add_profile(str(tmp_path), "Primary", VALID_CONF)
     secondary = vpn_profiles.add_profile(str(tmp_path), "Secondary", VALID_CONF)
     vpn_profiles.set_profile_apps(
-        str(tmp_path), primary["id"], ["ecm", "teamarr"], forced=FORCED,
+        str(tmp_path), primary["id"], ["ecm", "teamarr", "dispatcharr"], forced=FORCED,
     )
+    data = vpn_profiles.set_profile_apps(
+        str(tmp_path), secondary["id"], ["dispatcharr"], forced=FORCED,
+    )
+    by_id = {p["id"]: p for p in data["profiles"]}
+    assert set(by_id[secondary["id"]]["apps"]) >= {"dispatcharr", "ecm", "teamarr"}
+    assert not set(by_id[primary["id"]]["apps"]) & {"dispatcharr", "ecm", "teamarr"}
+
+
+def test_set_profile_apps_expands_acquisition_affinity(tmp_path):
+    primary = vpn_profiles.add_profile(str(tmp_path), "Primary", VALID_CONF)
+    secondary = vpn_profiles.add_profile(str(tmp_path), "Secondary", VALID_CONF)
+    data = vpn_profiles.set_profile_apps(
+        str(tmp_path), secondary["id"], ["sonarr"], forced=FORCED,
+    )
+    by_id = {p["id"]: p for p in data["profiles"]}
+    assert set(by_id[secondary["id"]]["apps"]) >= {"sonarr", "radarr", "prowlarr"}
+    assert "sonarr" not in by_id[primary["id"]]["apps"]
+
+
+def test_validate_affinity_groups_rejects_split_state():
+    import pytest
+
+    data = {
+        "primary_id": "a",
+        "profiles": [
+            {"id": "a", "apps": ["ecm"]},
+            {"id": "b", "apps": ["dispatcharr", "teamarr"]},
+        ],
+    }
     with pytest.raises(ValueError, match=r"affinity|live.?tv|together"):
-        vpn_profiles.set_profile_apps(
-            str(tmp_path), secondary["id"], ["dispatcharr"], forced=FORCED,
-        )
+        vpn_profiles._validate_affinity_groups(data, FORCED)
 
 
 def test_vpn_ui_has_apps_checklist_and_primary():
     fe = (ROOT / "helm/frontend/index.html").read_text()
     assert "data-vpn-primary" in fe or "/primary" in fe
-    assert "data-vpn-move-app" in fe or "/apps" in fe
+    assert "data-vpn-move-group" in fe
+    assert "Live TV" in fe and "Acquisition" in fe
     assert "vpn-app-chip" in fe or "Move to" in fe
 
 

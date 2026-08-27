@@ -15,6 +15,23 @@ WG0_REL = pathlib.Path("config/gluetun/wireguard/wg0.conf")
 
 LIVE_TV_AFFINITY = ("dispatcharr", "ecm", "teamarr")
 
+# Forced-tunnel acquisition apps that must share one Gluetun together.
+ACQUISITION_AFFINITY = (
+    "sonarr",
+    "radarr",
+    "prowlarr",
+    "jackett",
+    "bazarr",
+    "transmission",
+    "nzbget",
+    "unpackerr",
+)
+
+AFFINITY_GROUPS = (
+    ("live tv", LIVE_TV_AFFINITY),
+    ("acquisition", ACQUISITION_AFFINITY),
+)
+
 
 def profiles_path(stack_root: str) -> pathlib.Path:
     return pathlib.Path(stack_root) / PROFILES_REL
@@ -158,16 +175,34 @@ def _app_owner(data: dict[str, Any], app_id: str) -> str | None:
     return data.get("primary_id")
 
 
-def _validate_live_tv_affinity(data: dict[str, Any], forced: set[str]) -> None:
-    affinity = [a for a in LIVE_TV_AFFINITY if a in forced]
-    if not affinity:
-        return
-    owners = {_app_owner(data, app) for app in affinity}
-    owners.discard(None)
-    if len(owners) > 1:
-        raise ValueError(
-            "live tv affinity apps must use the same tunnel together"
-        )
+def _expand_affinity_apps(apps: list[str], forced: set[str]) -> list[str]:
+    """If any affinity member is selected, include every forced member of that group."""
+    selected = set(apps)
+    out = list(apps)
+    seen = set(apps)
+    for _label, members in AFFINITY_GROUPS:
+        group = [a for a in members if a in forced]
+        if not group:
+            continue
+        if selected.intersection(group):
+            for app in group:
+                if app not in seen:
+                    seen.add(app)
+                    out.append(app)
+    return out
+
+
+def _validate_affinity_groups(data: dict[str, Any], forced: set[str]) -> None:
+    for label, members in AFFINITY_GROUPS:
+        affinity = [a for a in members if a in forced]
+        if not affinity:
+            continue
+        owners = {_app_owner(data, app) for app in affinity}
+        owners.discard(None)
+        if len(owners) > 1:
+            raise ValueError(
+                f"{label} affinity apps must use the same tunnel together"
+            )
 
 
 def _normalize_forced_apps(apps: list[str], forced: set[str]) -> list[str]:
@@ -181,7 +216,7 @@ def _normalize_forced_apps(apps: list[str], forced: set[str]) -> list[str]:
         if app not in seen:
             seen.add(app)
             out.append(app)
-    return out
+    return _expand_affinity_apps(out, forced)
 
 
 def set_primary(stack_root: str, profile_id: str) -> tuple[dict[str, Any], dict[str, str]]:
@@ -219,7 +254,7 @@ def set_profile_apps(
             a for a in (profile.get("apps") or []) if a not in normalized
         ]
     target["apps"] = normalized
-    _validate_live_tv_affinity(data, forced)
+    _validate_affinity_groups(data, forced)
     save(stack_root, data)
     return data
 
