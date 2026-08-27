@@ -243,7 +243,7 @@ def _rewrite_url_base(text: str, prefix: str) -> str:
     return text
 
 
-def _rewrite_html(text: str, prefix: str) -> str:
+def _rewrite_html(text: str, prefix: str, *, app_id: str = "") -> str:
     def repl(match: re.Match[str]) -> str:
         path = match.group("path")
         pref = prefix.lstrip("/") + "/"
@@ -256,6 +256,8 @@ def _rewrite_html(text: str, prefix: str) -> str:
     text = _ATTR_ABS.sub(repl, text)
     text = _rewrite_url_base(text, prefix)
     boot = _bootstrap_script(prefix)
+    if app_id == "dispatcharr":
+        boot += _DISPATCHARR_CONTRAST_STYLE
     lower = text.lower()
     idx = lower.find("<head>")
     if idx >= 0:
@@ -267,6 +269,32 @@ def _rewrite_html(text: str, prefix: str) -> str:
         if end >= 0:
             return text[: end + 1] + boot + text[end + 1 :]
     return boot + text
+
+
+# Dispatcharr (Mantine) dark theme: filter/menu popovers sometimes portal with a
+# light paper while inheriting light-on-dark text → white-on-white. Force dark
+# surfaces + readable labels for portaled dropdowns.
+_DISPATCHARR_CONTRAST_STYLE = (
+    "<style data-kine-dispatcharr-contrast>"
+    "[data-portal] .mantine-Popover-dropdown,"
+    "[data-portal] .mantine-Menu-dropdown,"
+    "[data-portal] .mantine-Select-dropdown,"
+    "[data-portal] .mantine-Combobox-dropdown,"
+    "[data-portal] .m_38a85659{"
+    "background-color:var(--mantine-color-dark-6,#25262b)!important;"
+    "color:var(--mantine-color-dark-0,#c1c2c5)!important;"
+    "--popover-border-color:var(--mantine-color-dark-4,#373a40);"
+    "}"
+    "[data-portal] .mantine-Popover-dropdown :is(label,.mantine-Checkbox-label,"
+    ".mantine-Menu-itemLabel,.mantine-Text,span,p,button),"
+    "[data-portal] .mantine-Menu-dropdown :is(label,.mantine-Checkbox-label,"
+    ".mantine-Menu-itemLabel,.mantine-Text,span,p,button),"
+    "[data-portal] .m_38a85659 :is(label,.mantine-Checkbox-label,"
+    ".mantine-Menu-itemLabel,.mantine-Text,span,p,button){"
+    "color:var(--mantine-color-dark-0,#c1c2c5)!important;"
+    "}"
+    "</style>"
+)
 
 
 def _rewrite_css(text: str, prefix: str) -> str:
@@ -388,7 +416,7 @@ async def proxy_http(app_id: str, path: str, request: Request) -> Response:
             text = raw.decode(upstream_resp.charset_encoding or "utf-8")
         except (LookupError, UnicodeDecodeError):
             text = raw.decode("utf-8", errors="replace")
-        raw = _rewrite_html(text, prefix).encode("utf-8")
+        raw = _rewrite_html(text, prefix, app_id=app_id).encode("utf-8")
     elif media == "text/css":
         try:
             text = raw.decode(upstream_resp.charset_encoding or "utf-8")

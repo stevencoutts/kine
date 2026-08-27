@@ -47,6 +47,16 @@ def test_rewrite_html_injects_bootstrap_and_prefixes_assets():
     assert "Location.prototype.replace" in out
     # Same-origin absolute URLs (Socket.IO) must be rewritten.
     assert "x.origin!==location.origin" in out or "x.origin===location.origin" in out
+    # Contrast fix is Dispatcharr-only.
+    assert "kine-dispatcharr-contrast" not in out
+
+
+def test_rewrite_html_injects_dispatcharr_contrast_fix():
+    html = "<html><head><title>d</title></head><body></body></html>"
+    out = embed_proxy._rewrite_html(html, "/view/dispatcharr", app_id="dispatcharr")
+    assert "data-kine-dispatcharr-contrast" in out
+    assert "mantine-Popover-dropdown" in out
+    assert "--mantine-color-dark-6" in out
 
 
 def test_rewrite_url_base_empty_string():
