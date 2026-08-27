@@ -47,7 +47,7 @@ def test_convert_preserves_group_id():
 
 def test_convert_rule_actions_rewrites_only_matching():
     mod = _load()
-    new_actions, warnings = mod.convert_rule_actions({
+    new_actions, warnings, rule_group = mod.convert_rule_actions({
         "name": "BBC 1",
         "target_group_id": None,
         "actions": [
@@ -59,11 +59,17 @@ def test_convert_rule_actions_rewrites_only_matching():
             },
             {"type": "assign_logo", "value": "from_stream"},
         ],
-    })
+    }, default_group_id=1)
     assert new_actions is not None
-    assert new_actions[0]["type"] == "create_channel"
+    assert new_actions[0] == {
+        "type": "create_channel",
+        "name_template": "BBC 1",
+        "if_exists": "merge",
+        "group_id": 1,
+    }
     assert new_actions[1] == {"type": "assign_logo", "value": "from_stream"}
     assert warnings == []
+    assert rule_group == 1
 
 
 def test_convert_anchored_name_regex():
@@ -93,3 +99,22 @@ def test_convert_rejects_complex_regex():
     })
     assert action is None
     assert warn and "unsupported" in warn
+
+
+def test_ensure_group_on_existing_create_channel():
+    mod = _load()
+    new_actions, warnings, rule_group = mod.convert_rule_actions({
+        "name": "BBC 1",
+        "target_group_id": None,
+        "actions": [
+            {"type": "create_channel", "name_template": "BBC 1", "if_exists": "merge"},
+        ],
+    }, default_group_id=7)
+    assert new_actions == [{
+        "type": "create_channel",
+        "name_template": "BBC 1",
+        "if_exists": "merge",
+        "group_id": 7,
+    }]
+    assert rule_group == 7
+    assert warnings == []

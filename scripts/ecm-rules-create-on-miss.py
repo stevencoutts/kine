@@ -7,7 +7,12 @@ On an empty kine, imported kore rules fail with \"Channel not found for merge\"
 because they only attach streams to channels that already exist. This converts:
 
   merge_streams + target=existing_channel + find_channel_by=name_exact
-→ create_channel + name_template=<find value> + if_exists=merge
+→ create_channel + name_template=<find value> + if_exists=merge + group_id
+
+Dispatcharr rejects create without channel_group_id, so every create_channel
+action also gets group_id (from the rule's target_group_id, or
+--default-group-id / Default Group). Already-converted rules missing group_id
+are patched the same way.
 
 Example (on osiris):
 
@@ -68,14 +73,39 @@ def convert_action(action: dict, *, group_id: int | None = None) -> tuple[dict |
     return out, warn
 
 
-def convert_rule_actions(rule: dict) -> tuple[list[dict] | None, list[str]]:
-    """Return (new_actions, warnings) or (None, warnings) if no changes."""
+def ensure_create_group(action: dict, *, group_id: int) -> dict | None:
+    """Add group_id to a create_channel action that lacks one."""
+    if not isinstance(action, dict) or action.get("type") != "create_channel":
+        return None
+    existing = action.get("group_id")
+    if isinstance(existing, int):
+        return None
+    out = dict(action)
+    out["group_id"] = group_id
+    return out
+
+
+def convert_rule_actions(
+    rule: dict,
+    *,
+    default_group_id: int | None = None,
+) -> tuple[list[dict] | None, list[str], int | None]:
+    """Return (new_actions, warnings, target_group_id) or (None, warnings, None).
+
+    target_group_id is set when the rule should also receive that field on PUT.
+    """
     actions = rule.get("actions") or []
     if not isinstance(actions, list):
-        return None, ["actions is not a list"]
+        return None, ["actions is not a list"], None
+
     group_id = rule.get("target_group_id")
     if not isinstance(group_id, int):
-        group_id = None
+        group_id = default_group_id
+    need_rule_group = (
+        not isinstance(rule.get("target_group_id"), int)
+        and isinstance(default_group_id, int)
+    )
+
     changed = False
     warnings: list[str] = []
     out: list[dict] = []
@@ -83,12 +113,27 @@ def convert_rule_actions(rule: dict) -> tuple[list[dict] | None, list[str]]:
         converted, warn = convert_action(action, group_id=group_id)
         if warn:
             warnings.append(f"{rule.get('name')}: {warn}")
-        if converted is None:
-            out.append(action)
-        else:
+        if converted is not None:
             out.append(converted)
             changed = True
-    return (out if changed else None), warnings
+            continue
+        if isinstance(group_id, int):
+            patched = ensure_create_group(action, group_id=group_id)
+            if patched is not None:
+                out.append(patched)
+                changed = True
+                continue
+        out.append(action)
+
+    has_create = any(
+        isinstance(a, dict) and a.get("type") == "create_channel" for a in out
+    )
+    rule_group: int | None = None
+    if need_rule_group and has_create:
+        rule_group = default_group_id
+        changed = True
+
+    return (out if changed else None), warnings, rule_group
 
 
 def mint_token(container: str) -> str:
@@ -167,15 +212,42 @@ except urllib.error.HTTPError as exc:
     return json.loads(proc.stdout.strip() or "{}")
 
 
+def resolve_default_group_id(container: str, token: str, explicit: int | None) -> int:
+    if explicit is not None:
+        return explicit
+    payload = dest_request(container, token, "GET", "/api/channel-groups")
+    rows = payload if isinstance(payload, list) else payload.get("results") or []
+    if not isinstance(rows, list) or not rows:
+        raise RuntimeError("no channel groups found; pass --default-group-id")
+    for row in rows:
+        if isinstance(row, dict) and row.get("name") == "Default Group" and isinstance(row.get("id"), int):
+            return row["id"]
+    first = rows[0]
+    if isinstance(first, dict) and isinstance(first.get("id"), int):
+        return first["id"]
+    raise RuntimeError("could not resolve a channel group id; pass --default-group-id")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dest-container", default="kine-ecm")
     parser.add_argument("--dest-token", default="")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--limit", type=int, default=0, help="Stop after N updates (0=all)")
+    parser.add_argument(
+        "--default-group-id",
+        type=int,
+        default=None,
+        help="Dispatcharr channel_group_id for create_channel (default: Default Group)",
+    )
     args = parser.parse_args()
 
     token = args.dest_token or mint_token(args.dest_container)
+    default_group_id = resolve_default_group_id(
+        args.dest_container, token, args.default_group_id
+    )
+    print(f"using channel group_id={default_group_id}")
+
     payload = dest_request(args.dest_container, token, "GET", "/api/channel-pipeline/rules")
     rows = payload if isinstance(payload, list) else payload.get("rules") or payload.get("items") or []
     if not isinstance(rows, list):
@@ -186,28 +258,36 @@ def main() -> int:
     for rule in rows:
         if not isinstance(rule, dict):
             continue
-        new_actions, warnings = convert_rule_actions(rule)
+        new_actions, warnings, rule_group = convert_rule_actions(
+            rule, default_group_id=default_group_id
+        )
         for w in warnings:
             print(f"warn: {w}")
         if new_actions is None:
             continue
         rid = rule.get("id")
         name = rule.get("name")
+        gid = next(
+            (a.get("group_id") for a in new_actions if a.get("type") == "create_channel"),
+            rule_group,
+        )
         print(
             f"{'update' if args.apply else 'would update'} rule {rid} {name!r}: "
-            f"merge_streams(existing) -> create_channel({new_actions[0].get('name_template')!r}, if_exists=merge)"
-            if len(new_actions) == 1 and new_actions[0].get("type") == "create_channel"
-            else f"{'update' if args.apply else 'would update'} rule {rid} {name!r}"
+            f"create_channel group_id={gid}"
+            + (f" target_group_id={rule_group}" if rule_group is not None else "")
         )
         would += 1
         if args.apply:
+            body: dict[str, Any] = {"actions": new_actions}
+            if rule_group is not None:
+                body["target_group_id"] = rule_group
             try:
                 dest_request(
                     args.dest_container,
                     token,
                     "PUT",
                     f"/api/channel-pipeline/rules/{rid}",
-                    {"actions": new_actions},
+                    body,
                     timeout=60.0,
                 )
             except Exception as exc:  # noqa: BLE001
