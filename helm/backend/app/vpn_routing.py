@@ -42,6 +42,7 @@ def container_name_for_tunnel_service(service: str) -> str:
 # Apps without Traefik routers still need a port entry for pinning.
 APP_PORTS: dict[str, int] = {
     "ecm": 6100,
+    "ecm-mcp": 6101,
     "bazarr": 6767,
     "nzbget": 6789,
     "radarr": 7878,
@@ -65,6 +66,7 @@ APP_TRAEFIK_HOST: dict[str, str] = {
     "nzbget": "nzbget",
     "dispatcharr": "tv",
     "ecm": "channels",
+    "ecm-mcp": "mcp",
     "teamarr": "sports",
 }
 

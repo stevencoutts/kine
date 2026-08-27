@@ -1,5 +1,6 @@
 # Enhanced Channel Manager — tunnelled with Dispatcharr.
 # Traefik router lives on gluetun (port 6100).
+# MCP credential projection shares ecm-mcp-secrets with optional ecm-mcp.
 services:
   ecm:
     image: ghcr.io/motwakorb/enhancedchannelmanager:${ECM_TAG}
@@ -18,7 +19,16 @@ services:
       PGID: ${PGID}
       ECM_PORT: "6100"
       DISPATCHARR_URL: http://127.0.0.1:9191
+      # Projection dir for Settings > MCP Integration (sidecar reads the same volume).
+      MCP_SECRETS_DIR: /run/secrets/ecm-mcp
+      # Both share gluetun's network namespace; probe loopback, not Docker DNS.
+      MCP_HOST: localhost
     env_file:
       - ${STACK_ROOT}/config/ecm/ecm.env
     volumes:
       - ${STACK_ROOT}/config/ecm:/config
+      - ecm-mcp-secrets:/run/secrets/ecm-mcp
+
+volumes:
+  ecm-mcp-secrets:
+    name: kine_ecm-mcp-secrets

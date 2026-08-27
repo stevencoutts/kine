@@ -25,6 +25,7 @@ Unassigned forced-tunnel apps stay on the primary tunnel.
 | Port | Application | Reached from outside as |
 |---|---|---|
 | 6100 | ECM | `gluetun:6100` |
+| 6101 | ECM MCP | `gluetun:6101` |
 | 6767 | Bazarr | `gluetun:6767` |
 | 6789 | NZBGet | `gluetun:6789` |
 | 7878 | Radarr | `gluetun:7878` |

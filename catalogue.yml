@@ -198,6 +198,17 @@ apps:
     dev_tag: dev
     default: true
 
+  ecm-mcp:
+    name: ECM MCP
+    tier: live
+    summary: MCP sidecar for Enhanced Channel Manager (AI tools over HTTPS /mcp).
+    releases: https://github.com/MotWakorb/enhancedchannelmanager/releases
+    internal: http://gluetun:6101
+    subdomain: mcp
+    requires: [gluetun, ecm]
+    tunnelled: forced
+    default: false
+
   game-thumbs:
     name: Game Thumbs
     tier: live

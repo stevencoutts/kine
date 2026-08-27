@@ -1,0 +1,41 @@
+# ECM MCP sidecar — tunnelled with ECM (same loopback / secrets projection).
+# Traefik router lives on gluetun (port 6101). Upstream requires HTTPS at the
+# proxy and an explicit trusted-proxy CIDR; FIREWALL_OUTBOUND_SUBNETS covers
+# Traefik on kine_internal.
+services:
+  ecm-mcp:
+    image: ghcr.io/motwakorb/enhancedchannelmanager-mcp:${ECM_MCP_TAG}
+    container_name: kine-ecm-mcp
+    profiles: ["ecm-mcp"]
+    restart: unless-stopped
+    depends_on:
+      gluetun:
+        condition: service_healthy
+      ecm:
+        condition: service_started
+    network_mode: "service:gluetun"
+    user: "${PUID}:${PGID}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 1.0
+    environment:
+      TZ: ${KINE_TIMEZONE}
+      MCP_SECRETS_DIR: /run/secrets/ecm-mcp
+      ECM_URL: http://127.0.0.1:6100
+      MCP_PORT: "6101"
+      MCP_BIND_ADDRESS: "0.0.0.0"
+      MCP_REQUIRE_HTTPS: "true"
+      MCP_TRUSTED_PROXY_IPS: ${FIREWALL_OUTBOUND_SUBNETS}
+      MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-mcp.${KINE_DOMAIN},mcp.${KINE_LOCAL_DOMAIN}}
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
+    volumes:
+      - ecm-mcp-secrets:/run/secrets/ecm-mcp:ro
+
+volumes:
+  ecm-mcp-secrets:
+    name: kine_ecm-mcp-secrets

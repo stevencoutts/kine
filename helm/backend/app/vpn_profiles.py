@@ -13,7 +13,7 @@ from . import wireguard
 PROFILES_REL = pathlib.Path("config/helm/vpn-profiles.json")
 WG0_REL = pathlib.Path("config/gluetun/wireguard/wg0.conf")
 
-LIVE_TV_AFFINITY = ("dispatcharr", "ecm", "teamarr")
+LIVE_TV_AFFINITY = ("dispatcharr", "ecm", "ecm-mcp", "teamarr")
 
 # Forced-tunnel acquisition apps that must share one Gluetun together.
 ACQUISITION_AFFINITY = (

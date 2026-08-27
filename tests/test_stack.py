@@ -337,6 +337,23 @@ def test_game_thumbs_is_untunnelled_for_teamarr_art():
     assert "game-thumbs" in CATALOGUE["teamarr"].get("requires", [])
 
 
+def test_ecm_mcp_is_optional_tunnelled_sidecar():
+    _, mcp = SERVICES["ecm-mcp"]
+    assert mcp["image"] == "ghcr.io/motwakorb/enhancedchannelmanager-mcp:${ECM_MCP_TAG}"
+    assert mcp["network_mode"] == "service:gluetun"
+    assert mcp["profiles"] == ["ecm-mcp"]
+    assert "ecm-mcp-secrets:/run/secrets/ecm-mcp:ro" in mcp.get("volumes", [])
+    assert CATALOGUE["ecm-mcp"]["default"] is False
+    assert CATALOGUE["ecm-mcp"]["tunnelled"] == "forced"
+    assert "ecm" in CATALOGUE["ecm-mcp"]["requires"]
+    _, ecm = SERVICES["ecm"]
+    assert "ecm-mcp-secrets:/run/secrets/ecm-mcp" in ecm.get("volumes", [])
+    assert ecm["environment"].get("MCP_SECRETS_DIR") == "/run/secrets/ecm-mcp"
+    assert ecm["environment"].get("MCP_HOST") == "localhost"
+    assert vpn_routing.APP_PORTS["ecm-mcp"] == 6101
+    assert vpn_routing.APP_TRAEFIK_HOST["ecm-mcp"] == "mcp"
+
+
 def test_tdarr_is_untunnelled_with_media_and_cache_mounts():
     _, tdarr = SERVICES["tdarr"]
     assert tdarr["image"] == "ghcr.io/haveagitgat/tdarr:${TDARR_TAG}"

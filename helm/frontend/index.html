@@ -2342,7 +2342,7 @@ render.vpn = async () => {
     if (p.primary && v.enabled) return true;
     return !!(p.apps || []).length && p.tunnel.enabled;
   };
-  const LIVE_TV_AFFINITY = ['dispatcharr', 'ecm', 'teamarr'];
+  const LIVE_TV_AFFINITY = ['dispatcharr', 'ecm', 'ecm-mcp', 'teamarr'];
   const ACQUISITION_AFFINITY = [
     'sonarr', 'radarr', 'prowlarr', 'jackett', 'bazarr',
     'transmission', 'nzbget', 'unpackerr',

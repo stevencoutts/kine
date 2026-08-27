@@ -46,9 +46,11 @@ def test_app_ports_and_traefik_hosts():
     assert vpn_routing.APP_PORTS["radarr"] == 7878
     assert vpn_routing.APP_PORTS["dispatcharr"] == 9191
     assert vpn_routing.APP_PORTS["ecm"] == 6100
+    assert vpn_routing.APP_PORTS["ecm-mcp"] == 6101
     assert vpn_routing.APP_PORTS["teamarr"] == 9195
     assert vpn_routing.APP_TRAEFIK_HOST["dispatcharr"] == "tv"
     assert vpn_routing.APP_TRAEFIK_HOST["ecm"] == "channels"
+    assert vpn_routing.APP_TRAEFIK_HOST["ecm-mcp"] == "mcp"
     assert vpn_routing.APP_TRAEFIK_HOST["teamarr"] == "sports"
     assert vpn_routing.APP_TRAEFIK_HOST["sonarr"] == "sonarr"
 

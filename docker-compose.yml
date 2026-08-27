@@ -32,6 +32,7 @@ include:
   - compose/acq.seerr.yml
   - compose/live.dispatcharr.yml
   - compose/live.ecm.yml
+  - compose/live.ecm-mcp.yml
   - compose/live.game-thumbs.yml
   - compose/live.teamarr.yml
   - compose/metrics.cadvisor.yml
