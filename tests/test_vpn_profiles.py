@@ -234,6 +234,9 @@ def test_vpn_ui_has_apps_checklist_and_primary():
     assert "data-vpn-move-group" in fe
     assert "Live TV" in fe and "Acquisition" in fe
     assert "vpn-app-chip" in fe or "Move to" in fe
+    # Menu must not live inside overflow:hidden vpn-card (clips destinations).
+    assert ".vpn-move-menu{position:fixed" in fe.replace(" ", "")
+    assert "document.body.appendChild(menu)" in fe
 
 
 def test_vpn_ui_collapses_detail_into_running_tunnel_cards():

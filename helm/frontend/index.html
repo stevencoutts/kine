@@ -406,7 +406,7 @@ details.settings-group[open] > summary.settings-group-title::before{transform:ro
 .vpn-tunnelled .vpn-app-chip:hover,.vpn-tunnelled .vpn-app-chip:focus-visible{
   border-color:color-mix(in srgb, var(--accent) 55%, var(--line));
   color:var(--text);outline:none}
-.vpn-move-menu{position:absolute;z-index:40;min-width:11rem;padding:.35rem;
+.vpn-move-menu{position:fixed;z-index:200;min-width:11rem;padding:.35rem;
   border-radius:10px;border:1px solid color-mix(in srgb, var(--line) 70%, transparent);
   background:color-mix(in srgb, var(--panel) 92%, transparent);
   box-shadow:0 10px 28px color-mix(in srgb, #000 18%, transparent);backdrop-filter:blur(10px)}
@@ -2575,13 +2575,17 @@ render.vpn = async () => {
       menu.innerHTML = `<p>Move to</p>` + destinations.map(p =>
         `<button type="button" data-vpn-move-to="${escAttr(p.id)}">${escHtml(p.name || p.id)}${p.primary ? ' (Primary)' : ''}</button>`
       ).join('');
-      const card = chip.closest('.vpn-card') || document.body;
-      if (getComputedStyle(card).position === 'static') card.style.position = 'relative';
-      card.appendChild(menu);
+      // Fixed to the viewport — vpn-card uses overflow:hidden, which clipped
+      // destination buttons when the menu was positioned inside the card.
+      document.body.appendChild(menu);
       const chipRect = chip.getBoundingClientRect();
-      const cardRect = card.getBoundingClientRect();
-      menu.style.left = `${Math.max(8, chipRect.left - cardRect.left)}px`;
-      menu.style.top = `${chipRect.bottom - cardRect.top + 6}px`;
+      const menuWidth = menu.offsetWidth || 176;
+      const left = Math.min(
+        Math.max(8, chipRect.left),
+        Math.max(8, window.innerWidth - menuWidth - 8),
+      );
+      menu.style.left = `${left}px`;
+      menu.style.top = `${chipRect.bottom + 6}px`;
       menu.querySelectorAll('[data-vpn-move-to]').forEach(btn => {
         btn.onclick = async (e) => {
           e.stopPropagation();
