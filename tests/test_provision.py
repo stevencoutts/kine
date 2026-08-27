@@ -963,6 +963,9 @@ def test_recyclarr_seed_writes_trash_guide_config(stack, monkeypatch):
     body = cfg.read_text()
     assert recyclarr.SONARR_PROFILE in body
     assert recyclarr.RADARR_PROFILE in body
+    assert "upgrade:" in body
+    assert "allowed: false" in body
+    assert body.count("allowed: false") >= 2
     assert "127.0.0.1:8989" not in secrets.read_text()
     assert "gluetun:8989" in secrets.read_text()
     assert api_key("sonarr") in secrets.read_text()

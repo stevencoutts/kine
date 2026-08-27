@@ -19,6 +19,7 @@ RADARR_PROFILE = "d1d67249d3890e49bc12e275d989a7e9"  # HD Bluray + WEB
 RECYCLARR_YML = """\
 # yaml-language-server: $schema=https://schemas.recyclarr.dev/latest/config-schema.json
 # Seeded by Kine provision. TRaSH Guide 1080p profiles for Sonarr and Radarr.
+# Upgrades disabled: grab once; do not replace existing files for CF/quality.
 
 sonarr:
   tv:
@@ -31,6 +32,8 @@ sonarr:
       - trash_id: {sonarr_profile}  # WEB-1080p
         reset_unmatched_scores:
           enabled: true
+        upgrade:
+          allowed: false
 
 radarr:
   movies:
@@ -43,6 +46,8 @@ radarr:
       - trash_id: {radarr_profile}  # HD Bluray + WEB
         reset_unmatched_scores:
           enabled: true
+        upgrade:
+          allowed: false
 """
 
 
