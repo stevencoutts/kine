@@ -524,6 +524,7 @@ async def first_run(request: Request):
         await asyncio.to_thread(_remove_gluetun_conf, stack_root)
         config.write({"VPN_ENABLED": "false", **_empty_vpn_env()})
     config.set_profiles(wanted)
+    _ensure_vpn_tunnelled_apps(wanted, cat)
     await _refresh_mdns()
 
     if vpn_enabled:
@@ -682,6 +683,7 @@ async def enable_tier(tier: str, request: Request, user: str = Depends(require_u
         if app_id not in wanted:
             wanted.append(app_id)
     config.set_profiles(wanted)
+    _ensure_vpn_tunnelled_apps(wanted, cat)
     await _refresh_mdns()
     try:
         async with provision_lock.acquire(reason=f"enable tier {tier}"):
@@ -798,6 +800,7 @@ async def enable(app_id: str, request: Request, user: str = Depends(require_user
     if app_id not in wanted:
         wanted.append(app_id)
     config.set_profiles(wanted)
+    _ensure_vpn_tunnelled_apps(wanted, cat)
     await _refresh_mdns()
 
     try:
@@ -1028,7 +1031,26 @@ async def apply_update(app_id: str, user: str = Depends(require_user)):
 
 
 # ── VPN ─────────────────────────────────────────────────────────
-def _vpn_stack_root() -> str:
+def _ensure_vpn_tunnelled_apps(app_ids: list[str], cat: dict[str, dict]) -> None:
+    """Append forced-tunnel catalogue apps to VPN_TUNNELLED_APPS when enabled."""
+    existing = [
+        a.strip()
+        for a in config.read().get("VPN_TUNNELLED_APPS", "").split(",")
+        if a.strip()
+    ]
+    to_add = [
+        app_id
+        for app_id in app_ids
+        if app_id in cat
+        and cat[app_id].get("tunnelled") == "forced"
+        and app_id in vpn_routing.APP_PORTS
+        and app_id not in existing
+    ]
+    if not to_add:
+        return
+    config.write({"VPN_TUNNELLED_APPS": ",".join(existing + to_add)})
+
+
     env = config.read()
     return env.get("STACK_ROOT") or os.environ.get("KINE_ROOT", "/stack")
 
@@ -1051,7 +1073,7 @@ def _vpn_ensure_routing_fs(data: dict, env: dict | None = None) -> None:
         _vpn_stack_root(),
         _REPO,
         data,
-        _vpn_enabled_tunnel_apps(e),
+        _vpn_peers_enabled(e),
         kine_domain=e.get("KINE_DOMAIN") or "",
         kine_local_domain=e.get("KINE_LOCAL_DOMAIN") or "127.0.0.1.nip.io",
         vpn_enabled=e.get("VPN_ENABLED") == "true",

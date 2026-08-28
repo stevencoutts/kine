@@ -93,6 +93,22 @@ def test_render_override_secondary_and_network_mode():
     assert "Host(`dispatcharr.example.com`)" in dyn["http"]["routers"]["dispatcharr"]["rule"]
 
 
+def test_render_traefik_dynamic_includes_ecm_mcp():
+    data = _sample_data()
+    dyn = vpn_routing.render_traefik_dynamic(
+        data,
+        enabled_apps={"ecm", "ecm-mcp", "gluetun"},
+        kine_domain="couttsnet.com",
+        kine_local_domain="kine.local",
+    )
+    assert "ecm-mcp" in dyn["http"]["routers"]
+    assert "Host(`mcp.couttsnet.com`)" in dyn["http"]["routers"]["ecm-mcp"]["rule"]
+    assert (
+        "gluetun:6101"
+        in dyn["http"]["services"]["ecm-mcp"]["loadBalancer"]["servers"][0]["url"]
+    )
+
+
 def test_secondary_embeds_wireguard_from_parse_conf():
     data = _sample_data()
     text = vpn_routing.render_override(
