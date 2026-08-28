@@ -314,3 +314,7 @@ for script in install.sh kine scripts/*.sh; do bash -n "$script"; done
 On macOS set `COMPOSE_FILE=docker-compose.yml:.local/compose.macos.yml` before
 the Compose check. Tests cover profile/catalogue drift, VPN namespace
 invariants, ports, mounts, provisioner behavior, and Helm access.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
