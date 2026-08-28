@@ -292,6 +292,34 @@ def ensure_art_base_url(
     return ensure_epg_settings(http, log, art_base_url=art_base_url, epg_timezone="")
 
 
+DISPATCHARR_PUT_PRESERVE = (
+    "default_channel_group_mode",
+    "default_channel_profile_ids",
+    "default_stream_profile_id",
+    "default_channel_group_id",
+    "cleanup_unused_logos",
+    "epg_id",
+)
+
+
+def preserve_dispatcharr_put_fields(
+    current: dict[str, Any],
+    disp: dict[str, Any],
+) -> dict[str, Any]:
+    """Teamarr PUT replaces Dispatcharr settings; echo existing output fields."""
+    out = dict(disp)
+    for key in DISPATCHARR_PUT_PRESERVE:
+        if key in out:
+            continue
+        if key not in current:
+            continue
+        val = current[key]
+        if key == "epg_id" and val in (None, "", 0):
+            continue
+        out[key] = val
+    return out
+
+
 def _channel_output_is_stock(disp: dict[str, Any]) -> bool:
     mode = str(disp.get("default_channel_group_mode") or "").strip().lower()
     profiles = disp.get("default_channel_profile_ids")
@@ -427,6 +455,288 @@ def load_leagues() -> dict[str, Any]:
     }
 
 
+_INACTIVE_M3U_STATUSES = {"disabled", "error"}
+TEAMARR_EPG_SOURCE_NAME = "teamarr"
+
+
+def resolve_teamarr_epg_source_id(sources: list[Any]) -> int | None:
+    """Return the Dispatcharr EPG source id named Teamarr, if present."""
+    for row in sources:
+        if not isinstance(row, dict) or row.get("id") is None:
+            continue
+        if str(row.get("name") or "").strip().lower() == TEAMARR_EPG_SOURCE_NAME:
+            try:
+                return int(row["id"])
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def ensure_dispatcharr_epg_id(
+    http: httpx.Client,
+    log: Callable[[str], None],
+    disp: dict[str, Any],
+) -> dict[str, Any]:
+    """Stamp Teamarr's XMLTV source onto Dispatcharr settings when missing."""
+    try:
+        resp = http.get("/api/v1/dispatcharr/epg-sources")
+        resp.raise_for_status()
+        payload = resp.json() if resp.content else {}
+    except (httpx.HTTPError, ValueError) as exc:
+        log(f"teamarr: could not list EPG sources ({exc})")
+        return disp
+    sources = _json_list(payload, "sources", "results")
+    epg_id = resolve_teamarr_epg_source_id(sources)
+    if epg_id is None:
+        log("teamarr: no Dispatcharr EPG source named Teamarr")
+        return disp
+    if disp.get("epg_id") == epg_id:
+        log(f"teamarr: epg_id already {epg_id}")
+        return disp
+    out = dict(disp)
+    out["epg_id"] = epg_id
+    log(f"teamarr: epg_id -> {epg_id}")
+    return out
+
+
+def warn_inactive_event_group_m3us(
+    http: httpx.Client,
+    log: Callable[[str], None],
+) -> list[dict[str, Any]]:
+    """Log enabled event groups whose Dispatcharr M3U account is missing or down."""
+    try:
+        acc_resp = http.get("/api/v1/dispatcharr/m3u-accounts")
+        acc_resp.raise_for_status()
+        accounts = acc_resp.json() if acc_resp.content else []
+    except (httpx.HTTPError, ValueError) as exc:
+        log(f"teamarr: could not list M3U accounts ({exc})")
+        return []
+    if isinstance(accounts, dict):
+        accounts = accounts.get("results") or accounts.get("accounts") or []
+    by_id: dict[int, dict[str, Any]] = {}
+    for row in accounts if isinstance(accounts, list) else []:
+        if not isinstance(row, dict) or row.get("id") is None:
+            continue
+        by_id[int(row["id"])] = row
+
+    try:
+        grp_resp = http.get("/api/v1/groups")
+        grp_resp.raise_for_status()
+        payload = grp_resp.json() if grp_resp.content else {}
+    except (httpx.HTTPError, ValueError) as exc:
+        log(f"teamarr: could not list event groups ({exc})")
+        return []
+    groups = payload.get("groups") if isinstance(payload, dict) else payload
+    stale: list[dict[str, Any]] = []
+    for group in groups if isinstance(groups, list) else []:
+        if not isinstance(group, dict) or not group.get("enabled"):
+            continue
+        aid = group.get("m3u_account_id")
+        if aid is None or aid == "":
+            continue
+        try:
+            account = by_id.get(int(aid))
+        except (TypeError, ValueError):
+            account = None
+        status = str((account or {}).get("status") or "").strip().lower()
+        if account is not None and status not in _INACTIVE_M3U_STATUSES:
+            continue
+        name = str(group.get("name") or group.get("id") or "group")
+        acc_name = str(
+            (account or {}).get("name")
+            or group.get("m3u_account_name")
+            or aid
+        )
+        log(
+            f"teamarr: event group {name!r} bound to inactive M3U "
+            f"{acc_name!r} ({aid})"
+        )
+        stale.append(group)
+    return stale
+
+
+MANAGED_GROUP_SUFFIX = " | Sports"
+SPORTS_GROUP_PATTERN = (
+    r"(?i)(epl|football|soccer|uefa|sport|ppv|dazn|tnt|sky sport|espn|"
+    r"ufc|box|nba|nfl|mlb|nhl|f1|formula|cricket|rugby|mls|liga|"
+    r"bundesliga|championship|premier league|bein)"
+)
+STREAM_HEADER_EXCLUDE = r"^#+"
+
+
+def managed_event_group_name(account_name: str) -> str:
+    """Kine-managed Teamarr event group name for an M3U account."""
+    return f"{str(account_name or '').strip()}{MANAGED_GROUP_SUFFIX}"
+
+
+def _json_list(payload: Any, *keys: str) -> list[Any]:
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for key in keys:
+            rows = payload.get(key)
+            if isinstance(rows, list):
+                return rows
+    return []
+
+
+def _list_m3u_accounts(http: httpx.Client) -> list[dict[str, Any]]:
+    resp = http.get("/api/v1/dispatcharr/m3u-accounts")
+    resp.raise_for_status()
+    rows = _json_list(resp.json() if resp.content else [], "results", "accounts")
+    return [r for r in rows if isinstance(r, dict)]
+
+
+def _list_event_groups(http: httpx.Client, *, include_disabled: bool = False) -> list[dict[str, Any]]:
+    resp = http.get("/api/v1/groups", params={"include_disabled": include_disabled})
+    resp.raise_for_status()
+    rows = _json_list(resp.json() if resp.content else {}, "groups")
+    return [r for r in rows if isinstance(r, dict)]
+
+
+def _m3u_is_active(account: dict[str, Any]) -> bool:
+    status = str(account.get("status") or "").strip().lower()
+    return status not in _INACTIVE_M3U_STATUSES
+
+
+def _event_group_payload(account: dict[str, Any]) -> dict[str, Any]:
+    name = str(account.get("name") or "").strip()
+    return {
+        "name": managed_event_group_name(name),
+        "m3u_account_id": int(account["id"]),
+        "m3u_account_name": name,
+        "m3u_group_name_pattern": SPORTS_GROUP_PATTERN,
+        "m3u_group_name_pattern_enabled": True,
+        "stream_exclude_regex": STREAM_HEADER_EXCLUDE,
+        "stream_exclude_regex_enabled": True,
+        "duplicate_event_handling": "consolidate",
+        "channel_assignment_mode": "auto",
+        "name_match_enabled": True,
+        "enabled": True,
+    }
+
+
+def _set_group_enabled(http: httpx.Client, group_id: int, enabled: bool) -> None:
+    action = "enable" if enabled else "disable"
+    resp = http.post(f"/api/v1/groups/{int(group_id)}/{action}")
+    resp.raise_for_status()
+
+
+def ensure_event_groups(http: httpx.Client, log: Callable[[str], None]) -> int:
+    """Upsert one sports-pattern event group per active Dispatcharr M3U account."""
+    try:
+        accounts = _list_m3u_accounts(http)
+        groups = _list_event_groups(http, include_disabled=True)
+    except (httpx.HTTPError, ValueError) as exc:
+        log(f"teamarr: could not list M3U accounts/groups ({exc})")
+        return 0
+
+    created = 0
+    by_account: dict[int, list[dict[str, Any]]] = {}
+    for group in groups:
+        aid = group.get("m3u_account_id")
+        if aid is None or aid == "":
+            continue
+        try:
+            by_account.setdefault(int(aid), []).append(group)
+        except (TypeError, ValueError):
+            continue
+
+    seen_active: set[int] = set()
+    for account in accounts:
+        if account.get("id") is None:
+            continue
+        try:
+            aid = int(account["id"])
+        except (TypeError, ValueError):
+            continue
+        name = str(account.get("name") or "").strip()
+        if not name:
+            continue
+        want = managed_event_group_name(name)
+        siblings = by_account.get(aid, [])
+        managed = next((g for g in siblings if str(g.get("name") or "") == want), None)
+
+        if not _m3u_is_active(account):
+            if managed and managed.get("enabled"):
+                try:
+                    _set_group_enabled(http, int(managed["id"]), False)
+                    managed["enabled"] = False
+                    log(f"teamarr: disabled event group {want!r} (M3U inactive)")
+                except (httpx.HTTPError, TypeError, ValueError) as exc:
+                    log(f"teamarr: could not disable {want!r} ({exc})")
+            continue
+
+        seen_active.add(aid)
+        payload = _event_group_payload(account)
+        if managed is None:
+            try:
+                resp = http.post("/api/v1/groups", json=payload)
+                resp.raise_for_status()
+                created += 1
+                log(f"teamarr: created event group {want!r}")
+            except httpx.HTTPError as exc:
+                log(f"teamarr: create event group {want!r} failed ({exc})")
+                continue
+        else:
+            if not managed.get("enabled"):
+                try:
+                    _set_group_enabled(http, int(managed["id"]), True)
+                    managed["enabled"] = True
+                    log(f"teamarr: enabled event group {want!r}")
+                except (httpx.HTTPError, TypeError, ValueError) as exc:
+                    log(f"teamarr: could not enable {want!r} ({exc})")
+            needs = any(
+                managed.get(key) != value
+                for key, value in payload.items()
+                if key != "enabled"
+            )
+            if needs:
+                try:
+                    resp = http.put(f"/api/v1/groups/{int(managed['id'])}", json=payload)
+                    resp.raise_for_status()
+                    managed.update(payload)
+                    log(f"teamarr: updated event group {want!r}")
+                except (httpx.HTTPError, TypeError, ValueError) as exc:
+                    log(f"teamarr: update event group {want!r} failed ({exc})")
+
+        for sibling in siblings:
+            sid = sibling.get("id")
+            if sid is None or str(sibling.get("name") or "") == want:
+                continue
+            if not sibling.get("enabled"):
+                continue
+            try:
+                _set_group_enabled(http, int(sid), False)
+                sibling["enabled"] = False
+                log(
+                    f"teamarr: disabled overlapping event group "
+                    f"{sibling.get('name')!r} on {name}"
+                )
+            except (httpx.HTTPError, TypeError, ValueError) as exc:
+                log(f"teamarr: could not disable group {sid} ({exc})")
+
+    for group in groups:
+        gname = str(group.get("name") or "")
+        if not gname.endswith(MANAGED_GROUP_SUFFIX) or not group.get("enabled"):
+            continue
+        aid = group.get("m3u_account_id")
+        try:
+            account_id = int(aid)
+        except (TypeError, ValueError):
+            account_id = None
+        if account_id in seen_active:
+            continue
+        try:
+            _set_group_enabled(http, int(group["id"]), False)
+            group["enabled"] = False
+            log(f"teamarr: disabled event group {gname!r} (M3U missing)")
+        except (httpx.HTTPError, TypeError, ValueError) as exc:
+            log(f"teamarr: could not disable {gname!r} ({exc})")
+
+    return created
+
+
 def wait_ready(
     client: httpx.Client,
     *,
@@ -536,9 +846,14 @@ def configure(
         else:
             log("teamarr: channel output already customized")
 
+        disp = preserve_dispatcharr_put_fields(current_disp, disp)
+        disp = ensure_dispatcharr_epg_id(http, log, disp)
+
         resp = http.put("/api/v1/settings/dispatcharr", json=disp)
         resp.raise_for_status()
         log("teamarr: Dispatcharr URL set to loopback")
+        ensure_event_groups(http, log)
+        warn_inactive_event_group_m3us(http, log)
         return {"ok": True, "leagues": rows}
     except httpx.HTTPError as exc:
         log(f"teamarr: configure failed ({exc})")

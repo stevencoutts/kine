@@ -145,6 +145,10 @@ class _FakeClient:
             "soccer_mode": "manual",
             "soccer_followed_teams": [],
         }
+        self.groups = {"groups": []}
+        self.m3u_accounts = []
+        self.epg_sources = []
+        self.next_group_id = 100
 
     def __enter__(self):
         return self
@@ -153,6 +157,9 @@ class _FakeClient:
         return False
 
     def get(self, path, **kwargs):
+        params = kwargs.get("params") or {}
+        if params.get("include_disabled") in (True, "true", "1", 1):
+            path = f"{path}{'&' if '?' in path else '?'}include_disabled=true"
         if path.endswith("/health") or path == "/health":
             return _FakeResp(200, {
                 "status": "healthy" if self.healthy else "starting",
@@ -178,6 +185,17 @@ class _FakeClient:
             return _FakeResp(200, self.stream_profiles)
         if path.endswith("/sports-subscription"):
             return _FakeResp(200, dict(self.subscription))
+        if path.endswith("/dispatcharr/m3u-accounts"):
+            return _FakeResp(200, list(self.m3u_accounts))
+        if path.endswith("/dispatcharr/epg-sources"):
+            return _FakeResp(200, {"success": True, "sources": list(self.epg_sources)})
+        group_path = path.split("?", 1)[0]
+        if group_path in ("/api/v1/groups", "/groups"):
+            rows = list(self.groups.get("groups") or [])
+            include_disabled = "include_disabled=true" in path.lower()
+            if not include_disabled:
+                rows = [g for g in rows if g.get("enabled")]
+            return _FakeResp(200, {"groups": rows, "total": len(rows)})
         return _FakeResp(200, {})
 
     def put(self, path, **kwargs):
@@ -187,6 +205,12 @@ class _FakeClient:
             self.dispatcharr.update(body)
         if path.endswith("/sports-subscription"):
             self.subscription.update(body)
+        if "/api/v1/groups/" in path and not path.endswith("/disable") and not path.endswith("/enable"):
+            gid = int(path.rstrip("/").split("/")[-1])
+            for row in self.groups["groups"]:
+                if row.get("id") == gid:
+                    row.update(body)
+                    return _FakeResp(200, dict(row))
         return _FakeResp(200, body)
 
     def delete(self, path, **kwargs):
@@ -217,6 +241,23 @@ class _FakeClient:
             }
             self.assignments.append(row)
             return _FakeResp(201, row)
+        if path.split("?")[0].rstrip("/") in ("/api/v1/groups", "/groups"):
+            row = {"id": self.next_group_id, "enabled": True, **body}
+            self.next_group_id += 1
+            self.groups.setdefault("groups", []).append(row)
+            return _FakeResp(201, row)
+        if path.endswith("/disable"):
+            gid = int(path.rstrip("/").split("/")[-2])
+            for row in self.groups["groups"]:
+                if row.get("id") == gid:
+                    row["enabled"] = False
+            return _FakeResp(200, {"success": True})
+        if path.endswith("/enable"):
+            gid = int(path.rstrip("/").split("/")[-2])
+            for row in self.groups["groups"]:
+                if row.get("id") == gid:
+                    row["enabled"] = True
+            return _FakeResp(200, {"success": True})
         return _FakeResp(200, body)
 
 
@@ -339,10 +380,11 @@ def test_configure_skips_channel_output_when_already_customized(monkeypatch):
     )
     assert out["ok"] is True
     disp_puts = [body for p, body in fake.puts if p.endswith("settings/dispatcharr")]
-    # Still writes URL/creds, but does not re-stamp group/profile defaults.
-    assert "default_channel_group_mode" not in disp_puts[-1]
-    assert "default_channel_profile_ids" not in disp_puts[-1]
-    assert "default_stream_profile_id" not in disp_puts[-1]
+    # Teamarr PUT replaces the whole object — echo customized output fields.
+    assert disp_puts[-1]["default_channel_group_mode"] == "{sport} | {league}"
+    assert disp_puts[-1]["default_channel_profile_ids"] == ["{sport}"]
+    assert disp_puts[-1]["default_stream_profile_id"] == 19
+    assert disp_puts[-1]["cleanup_unused_logos"] is False
 
 
 def test_configure_replaces_placeholder_template_assignments(monkeypatch):
@@ -383,3 +425,147 @@ def test_configure_skips_templates_when_already_customized(monkeypatch):
     assert fake.deletes == []
     assert not any(p.endswith("/subscription-templates") for p, _ in fake.posts)
     assert not any(p.endswith("/templates") for p, _ in fake.posts)
+
+
+def test_warns_when_event_group_bound_to_disabled_m3u():
+    fake = _FakeClient()
+    fake.groups = {"groups": [
+        {
+            "id": 2, "name": "Sports | EPL", "enabled": True,
+            "m3u_account_id": 3, "m3u_account_name": "Lumen-direct",
+        },
+        {
+            "id": 13, "name": "Strong8K | EPL PPV", "enabled": True,
+            "m3u_account_id": 5, "m3u_account_name": "Strong8K",
+        },
+        {
+            "id": 8, "name": "old lumen sky", "enabled": False,
+            "m3u_account_id": 3,
+        },
+    ]}
+    fake.m3u_accounts = [
+        {"id": 3, "name": "Lumen-direct", "status": "disabled"},
+        {"id": 5, "name": "Strong8K", "status": "success"},
+    ]
+    logs = []
+    stale = teamarr.warn_inactive_event_group_m3us(fake, logs.append)
+    assert [g["id"] for g in stale] == [2]
+    assert any("Sports | EPL" in m and "Lumen-direct" in m for m in logs)
+
+
+def _active_accounts():
+    return [
+        {"id": 3, "name": "Lumen-direct", "status": "idle"},
+        {"id": 5, "name": "Strong8K", "status": "success"},
+        {"id": 1, "name": "custom", "status": "error"},
+        {"id": 9, "name": "Dead", "status": "disabled"},
+    ]
+
+
+def test_managed_event_group_name():
+    assert teamarr.managed_event_group_name("Strong8K") == "Strong8K | Sports"
+
+
+def test_ensure_event_groups_creates_pattern_group_per_active_m3u():
+    fake = _FakeClient()
+    fake.m3u_accounts = _active_accounts()
+    logs = []
+    created = teamarr.ensure_event_groups(fake, logs.append)
+    names = [g["name"] for g in fake.groups["groups"] if g.get("enabled")]
+    assert names == ["Lumen-direct | Sports", "Strong8K | Sports"]
+    assert created == 2
+    for row in fake.groups["groups"]:
+        if not row.get("enabled"):
+            continue
+        assert row["m3u_group_name_pattern_enabled"] is True
+        assert row["m3u_group_name_pattern"] == teamarr.SPORTS_GROUP_PATTERN
+        assert row["stream_exclude_regex_enabled"] is True
+        assert row["duplicate_event_handling"] == "consolidate"
+        posts = [body for p, body in fake.posts if p.rstrip("/") in ("/api/v1/groups", "/groups")]
+        assert posts and posts[0]["m3u_account_id"] in {3, 5}
+
+
+def test_ensure_event_groups_skips_disabled_and_error_m3u():
+    fake = _FakeClient()
+    fake.m3u_accounts = _active_accounts()
+    teamarr.ensure_event_groups(fake, lambda _m: None)
+    ids = {g["m3u_account_id"] for g in fake.groups["groups"]}
+    assert ids == {3, 5}
+
+
+def test_ensure_event_groups_updates_existing_instead_of_duplicating():
+    fake = _FakeClient()
+    fake.m3u_accounts = [{"id": 5, "name": "Strong8K", "status": "success"}]
+    fake.groups = {"groups": [{
+        "id": 13, "name": "Strong8K | Sports", "enabled": True,
+        "m3u_account_id": 5, "m3u_group_name_pattern_enabled": True,
+        "m3u_group_name_pattern": "old",
+    }]}
+    fake.next_group_id = 50
+    logs = []
+    created = teamarr.ensure_event_groups(fake, logs.append)
+    assert created == 0
+    enabled = [g for g in fake.groups["groups"] if g.get("enabled")]
+    assert len(enabled) == 1
+    assert enabled[0]["id"] == 13
+    assert enabled[0]["m3u_group_name_pattern"] == teamarr.SPORTS_GROUP_PATTERN
+    assert not any(p.rstrip("/") in ("/api/v1/groups", "/groups") for p, _ in fake.posts)
+
+
+def test_ensure_event_groups_disables_sibling_groups_on_same_account():
+    fake = _FakeClient()
+    fake.m3u_accounts = [{"id": 5, "name": "Strong8K", "status": "success"}]
+    fake.groups = {"groups": [{
+        "id": 13, "name": "Strong8K | EPL PPV", "enabled": True,
+        "m3u_account_id": 5, "m3u_group_name_pattern_enabled": False,
+    }]}
+    teamarr.ensure_event_groups(fake, lambda _m: None)
+    by_id = {g["id"]: g for g in fake.groups["groups"]}
+    assert by_id[13]["enabled"] is False
+    sports = [g for g in fake.groups["groups"] if g["name"] == "Strong8K | Sports"]
+    assert len(sports) == 1 and sports[0]["enabled"] is True
+
+
+def test_ensure_event_groups_disables_managed_group_when_m3u_disabled():
+    fake = _FakeClient()
+    fake.m3u_accounts = [{"id": 3, "name": "Lumen-direct", "status": "disabled"}]
+    fake.groups = {"groups": [{
+        "id": 20, "name": "Lumen-direct | Sports", "enabled": True,
+        "m3u_account_id": 3, "m3u_group_name_pattern_enabled": True,
+    }]}
+    teamarr.ensure_event_groups(fake, lambda _m: None)
+    assert fake.groups["groups"][0]["enabled"] is False
+    assert any(p.endswith("/disable") for p, _ in fake.posts)
+
+
+def test_resolve_teamarr_epg_source_id():
+    sources = [
+        {"id": 8, "name": "Open-EPG"},
+        {"id": 7, "name": "Teamarr"},
+        {"id": 2, "name": "Jesmann - UK"},
+    ]
+    assert teamarr.resolve_teamarr_epg_source_id(sources) == 7
+    assert teamarr.resolve_teamarr_epg_source_id([]) is None
+    assert teamarr.resolve_teamarr_epg_source_id([{"id": 1, "name": "Lumen"}]) is None
+
+
+def test_configure_sets_dispatcharr_epg_id_from_teamarr_source(monkeypatch):
+    fake = _FakeClient()
+    fake.epg_sources = [
+        {"id": 8, "name": "Open-EPG"},
+        {"id": 7, "name": "Teamarr"},
+    ]
+    monkeypatch.setattr(teamarr.httpx, "Client", lambda **kw: fake)
+    monkeypatch.delenv("KINE_DOMAIN", raising=False)
+    monkeypatch.delenv("GAME_THUMBS_PUBLIC_URL", raising=False)
+    monkeypatch.delenv("KINE_TIMEZONE", raising=False)
+    monkeypatch.delenv("TZ", raising=False)
+    out = teamarr.configure(
+        [{"id": "eng.1", "name": "EPL"}],
+        log=lambda _m: None,
+        dispatcharr_username="kine",
+        dispatcharr_password="secret",
+    )
+    assert out["ok"] is True
+    disp = next(body for p, body in fake.puts if p.endswith("settings/dispatcharr"))
+    assert disp["epg_id"] == 7
