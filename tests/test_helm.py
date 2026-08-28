@@ -83,6 +83,7 @@ def test_empty_vpn_env_blanks_all_keys():
     cleared = empty_vpn_env()
     assert cleared["VPN_SERVICE_PROVIDER"] == ""
     assert cleared["WIREGUARD_PRIVATE_KEY"] == ""
+    assert cleared["FIREWALL_VPN_INPUT_PORTS"] == ""
 
 
 def test_missing_peer_raises():

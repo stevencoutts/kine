@@ -38,3 +38,15 @@ def parse_forwarded_port(raw: str) -> int | None:
     except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
         return None
     return port or None
+
+
+def coalesce_forwarded_port(*candidates: int | None) -> int | None:
+    """Prefer Gluetun's live PF API, then a static provider port (Njalla)."""
+    for port in candidates:
+        try:
+            value = int(port)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            continue
+        if value > 0:
+            return value
+    return None

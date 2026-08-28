@@ -109,6 +109,38 @@ def test_summary_omits_conf(tmp_path):
     assert rows[0]["primary"] is True
     assert rows[0]["apps"] == ["sonarr"]
     assert "conf" not in rows[0]
+    assert rows[0]["forwarded_port"] is None
+
+
+def test_forwarded_port_for_service():
+    primary = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    secondary = "11111111-2222-3333-4444-555555555555"
+    data = {
+        "primary_id": primary,
+        "profiles": [
+            {"id": primary, "forwarded_port": 51413, "apps": []},
+            {"id": secondary, "forwarded_port": 12345, "apps": ["dispatcharr"]},
+        ],
+    }
+    assert vpn_profiles.forwarded_port_for_service(data, "gluetun") == 51413
+    assert vpn_profiles.forwarded_port_for_service(
+        data, vpn_profiles.secondary_tunnel_service(secondary)
+    ) == 12345
+    assert vpn_profiles.firewall_env(data["profiles"][0]) == {
+        "FIREWALL_VPN_INPUT_PORTS": "51413",
+    }
+
+
+def test_update_profile_forwarded_port(tmp_path):
+    p = vpn_profiles.add_profile(str(tmp_path), "Njalla", VALID_CONF)
+    updated = vpn_profiles.update_profile(
+        str(tmp_path), p["id"], forwarded_port=51413,
+    )
+    assert updated["forwarded_port"] == 51413
+    cleared = vpn_profiles.update_profile(
+        str(tmp_path), p["id"], forwarded_port="",
+    )
+    assert "forwarded_port" not in cleared
 
 
 def test_add_and_prepare_activate(tmp_path):

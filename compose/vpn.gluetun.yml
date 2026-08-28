@@ -47,6 +47,9 @@ services:
       SERVER_COUNTRIES: ${VPN_SERVER_COUNTRIES:-}
       VPN_PORT_FORWARDING: ${VPN_PORT_FORWARDING:-off}
       VPN_PORT_FORWARDING_PROVIDER: ${VPN_PORT_FORWARDING_PROVIDER:-}
+      # Static inbound ports on the VPN interface (Njalla). Gluetun's
+      # provider port-forward API stays unused for custom WireGuard.
+      FIREWALL_VPN_INPUT_PORTS: ${FIREWALL_VPN_INPUT_PORTS:-}
       # Must include the Docker bridge subnets, or Traefik cannot reach
       # back into the namespace and the provisioner cannot configure it.
       FIREWALL_OUTBOUND_SUBNETS: ${FIREWALL_OUTBOUND_SUBNETS}
@@ -74,6 +77,7 @@ services:
     network_mode: "service:gluetun"
     environment:
       TRANSMISSION_RPC: http://127.0.0.1:9091/transmission/rpc
+      VPN_FORWARDED_PORT: ${FIREWALL_VPN_INPUT_PORTS:-}
     volumes:
       - ../scripts/vpn-portsync.sh:/portsync.sh:ro
     entrypoint: ["/bin/sh", "/portsync.sh"]

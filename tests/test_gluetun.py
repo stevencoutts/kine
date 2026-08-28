@@ -44,6 +44,13 @@ def test_forwarded_port_rejects_zero_and_invalid_responses():
     assert gluetun.parse_forwarded_port("warning only") is None
 
 
+def test_coalesce_forwarded_port_prefers_gluetun_then_static():
+    assert gluetun.coalesce_forwarded_port(51413, 12345) == 51413
+    assert gluetun.coalesce_forwarded_port(None, 51413) == 51413
+    assert gluetun.coalesce_forwarded_port(0, 51413) == 51413
+    assert gluetun.coalesce_forwarded_port(None, None) is None
+
+
 def test_connection_label_uses_configured_tunnel_type():
     assert gluetun.connection_label("wireguard") == "WireGuard"
     assert gluetun.connection_label("openvpn") == "OpenVPN"

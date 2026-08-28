@@ -170,6 +170,21 @@ def test_vpn_portsync_follows_transmission_tunnel():
     assert "network_mode: service:gluetun" in portsync
 
 
+def test_secondary_gluetun_opens_profile_forwarded_port():
+    data = _sample_data()
+    data["profiles"][1]["forwarded_port"] = 51413
+    text = vpn_routing.render_override(
+        data,
+        enabled_apps={"dispatcharr", "gluetun"},
+        stack_root="/srv/kine",
+        kine_domain="example.com",
+        kine_local_domain="kine.local",
+    )
+    sec = text.split("gluetun-11111111:", 1)[1]
+    assert "FIREWALL_VPN_INPUT_PORTS:" in sec
+    assert "51413" in sec.split("FIREWALL_VPN_INPUT_PORTS:", 1)[1].splitlines()[0]
+
+
 def test_render_override_disabled_is_empty():
     text = vpn_routing.render_override(
         {"primary_id": None, "profiles": []},

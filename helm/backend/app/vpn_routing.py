@@ -189,7 +189,7 @@ def write_traefik_dynamic(
     return path
 
 
-def _secondary_environment(conf: str) -> dict[str, str]:
+def _secondary_environment(conf: str, profile: dict[str, Any] | None = None) -> dict[str, str]:
     fields = wireguard.parse_conf(conf)
     if not fields:
         raise ValueError("invalid WireGuard config for secondary tunnel")
@@ -212,6 +212,7 @@ def _secondary_environment(conf: str) -> dict[str, str]:
         "HTTP_CONTROL_SERVER_ADDRESS": ":8000",
         "DOT": "off",
     }
+    env.update(vpn_profiles.firewall_env(profile))
     return env
 
 
@@ -233,7 +234,7 @@ def _secondary_service(
         "restart": "unless-stopped",
         "cap_add": ["NET_ADMIN"],
         "devices": ["/dev/net/tun:/dev/net/tun"],
-        "environment": _secondary_environment(conf),
+        "environment": _secondary_environment(conf, profile),
         "volumes": [f"${{STACK_ROOT}}/config/gluetun-{sid}:/gluetun"],
         "networks": ["kine_internal", "kine_edge"],
         "healthcheck": {

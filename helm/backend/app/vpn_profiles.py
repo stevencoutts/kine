@@ -143,8 +143,48 @@ def summary(data: dict[str, Any]) -> list[dict[str, Any]]:
             "updated_at": p.get("updated_at"),
             "primary": p.get("id") == primary,
             "apps": list(p.get("apps") or []),
+            "forwarded_port": profile_forwarded_port(p),
         })
     return rows
+
+
+def profile_forwarded_port(profile: dict[str, Any] | None) -> int | None:
+    if not profile:
+        return None
+    raw = profile.get("forwarded_port")
+    if raw in (None, ""):
+        return None
+    return as_forwarded_port(raw)
+
+
+def as_forwarded_port(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        port = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("forwarded_port must be an integer") from exc
+    if not 1 <= port <= 65535:
+        raise ValueError("forwarded_port must be 1-65535")
+    return port
+
+
+def forwarded_port_for_service(data: dict[str, Any], service: str) -> int | None:
+    primary = data.get("primary_id")
+    for profile in data.get("profiles") or []:
+        if not isinstance(profile, dict) or not profile.get("id"):
+            continue
+        pid = profile["id"]
+        if pid == primary and service == "gluetun":
+            return profile_forwarded_port(profile)
+        if pid != primary and service == secondary_tunnel_service(pid):
+            return profile_forwarded_port(profile)
+    return None
+
+
+def firewall_env(profile: dict[str, Any] | None) -> dict[str, str]:
+    port = profile_forwarded_port(profile)
+    return {"FIREWALL_VPN_INPUT_PORTS": str(port) if port else ""}
 
 
 def secondary_tunnel_service(profile_id: str) -> str:
@@ -234,6 +274,7 @@ def set_primary(stack_root: str, profile_id: str) -> tuple[dict[str, Any], dict[
 
         wireguard.write_gluetun_conf(conf, stack_root)
         env_fields = wireguard.parse_conf(conf)
+    env_fields.update(firewall_env(profile))
     return data, env_fields
 
 
@@ -321,6 +362,7 @@ def update_profile(
     *,
     name: str | None = None,
     conf: str | None = None,
+    forwarded_port: Any = ...,
 ) -> dict[str, Any]:
     data = migrate_from_wg0(stack_root)
     for profile in data["profiles"]:
@@ -336,6 +378,12 @@ def update_profile(
                 raise ValueError("cannot update openvpn profile in this version")
             wireguard.parse_conf(cleaned)
             profile["conf"] = cleaned + "\n"
+        if forwarded_port is not ...:
+            port = as_forwarded_port(forwarded_port)
+            if port is None:
+                profile.pop("forwarded_port", None)
+            else:
+                profile["forwarded_port"] = port
         profile["updated_at"] = _now()
         save(stack_root, data)
         return profile
@@ -369,4 +417,5 @@ def prepare_activate(stack_root: str, profile_id: str) -> tuple[str, dict[str, s
         raise ValueError("invalid WireGuard config")
     data["primary_id"] = profile_id
     save(stack_root, data)
+    fields.update(firewall_env(profile))
     return conf + "\n", fields

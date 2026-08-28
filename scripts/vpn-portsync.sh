@@ -9,6 +9,8 @@
 set -eu
 
 CONTROL="http://127.0.0.1:8000/v1/openvpn/portforwarded"
+STATIC="${VPN_FORWARDED_PORT:-}"
+STATIC="${STATIC%%,*}"
 last=""
 
 json_field() {
@@ -21,6 +23,9 @@ log() { echo "$(date -Iseconds) portsync: $*"; }
 
 while true; do
   port=$(wget -qO- "$CONTROL" 2>/dev/null | json_field port || true)
+  if [ -z "${port:-}" ] || [ "$port" = "0" ]; then
+    port="$STATIC"
+  fi
 
   if [ -n "${port:-}" ] && [ "$port" != "0" ] && [ "$port" != "$last" ]; then
     # Transmission's RPC hands out a session id on the first 409 and

@@ -265,6 +265,16 @@ def test_beets_mounts_kine_import_worker():
     assert "kine-import:/custom-services.d/kine-import" in vols
 
 
+def test_gluetun_forwards_static_vpn_input_ports():
+    """Njalla-style ports are not in Gluetun's PF API; the firewall must allow them."""
+    _, gluetun = SERVICES["gluetun"]
+    env = gluetun.get("environment") or {}
+    assert env.get("FIREWALL_VPN_INPUT_PORTS") == "${FIREWALL_VPN_INPUT_PORTS:-}"
+    _, portsync = SERVICES["vpn-portsync"]
+    ps_env = portsync.get("environment") or {}
+    assert ps_env.get("VPN_FORWARDED_PORT") == "${FIREWALL_VPN_INPUT_PORTS:-}"
+
+
 @pytest.mark.parametrize("app", sorted(TUNNELLED))
 def test_tunnelled_apps_wait_for_a_healthy_tunnel(app):
     _, svc = SERVICES[app]
