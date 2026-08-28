@@ -16,6 +16,7 @@ services:
       - ${STACK_ROOT}/config/beets:/config
       - ${DATA_ROOT}/media/music:/music
       - ${DATA_ROOT}/downloads:/downloads
+      - ../provision/assets/beets/kine-import:/custom-services.d/kine-import:ro
     networks: [kine_internal, kine_edge]
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8337/ || exit 1"]

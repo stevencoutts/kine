@@ -1,0 +1,35 @@
+#!/usr/bin/with-contenv bash
+# Drain Lidarr's shared queue and tag albums in place. copy/move stay off in
+# config.yaml so Lidarr keeps owning folders.
+set -eu
+
+QUEUE="${KINE_BEETS_QUEUE:-/downloads/.kine-beets-queue}"
+
+log() { echo "[kine-import] $*"; }
+
+import_one() {
+  local src="$1"
+  [ -n "$src" ] || return 0
+  if [ -f "$src" ]; then
+    src="$(dirname "$src")"
+  fi
+  if [ ! -d "$src" ]; then
+    log "skip missing $src"
+    return 0
+  fi
+  log "import $src"
+  beet import -q --nocopy --nomove "$src" || log "import failed $src"
+}
+
+log "watching $QUEUE"
+while true; do
+  if [ -s "$QUEUE" ]; then
+    work="${QUEUE}.work.$$"
+    mv "$QUEUE" "$work"
+    sort -u "$work" | while IFS= read -r path; do
+      import_one "$path"
+    done
+    rm -f "$work"
+  fi
+  sleep 10
+done

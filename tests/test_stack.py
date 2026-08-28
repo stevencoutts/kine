@@ -258,6 +258,13 @@ def test_dispatcharr_mounts_kine_contrast_css():
     assert "kine-contrast.nginx.conf:/etc/nginx/conf.d/kine-contrast.conf" in vols
 
 
+def test_beets_mounts_kine_import_worker():
+    """Lidarr cannot exec beet; a beets-side worker drains the shared queue."""
+    _, svc = SERVICES["beets"]
+    vols = "\n".join(str(v) for v in (svc.get("volumes") or []))
+    assert "kine-import:/custom-services.d/kine-import" in vols
+
+
 @pytest.mark.parametrize("app", sorted(TUNNELLED))
 def test_tunnelled_apps_wait_for_a_healthy_tunnel(app):
     _, svc = SERVICES[app]

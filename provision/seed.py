@@ -28,6 +28,31 @@ ARR_DEFAULTS = {
     "prowlarr": {"Port": "9696", "UrlBase": ""},
 }
 
+ARR_AUTH_METHOD = "External"
+ARR_AUTH_REQUIRED = "DisabledForLocalAddresses"
+_ARR_AUTH_UNSET = {"", "none"}
+
+
+def _xml_set(root: ET.Element, tag: str, value: str) -> bool:
+    el = root.find(tag)
+    if el is None:
+        ET.SubElement(root, tag).text = value
+        return True
+    if (el.text or "").strip() == value:
+        return False
+    el.text = value
+    return True
+
+
+def ensure_arr_external_auth(root: ET.Element) -> bool:
+    """Stamp External auth when the *arr UI would block on method None."""
+    method = (root.findtext("AuthenticationMethod") or "").strip()
+    if method.lower() not in _ARR_AUTH_UNSET:
+        return False
+    changed = _xml_set(root, "AuthenticationMethod", ARR_AUTH_METHOD)
+    changed = _xml_set(root, "AuthenticationRequired", ARR_AUTH_REQUIRED) or changed
+    return changed
+
 
 def seed_arr(app: str) -> None:
     cfg_dir = STACK / "config" / app
@@ -39,9 +64,14 @@ def seed_arr(app: str) -> None:
         # overwriting it, because changing an existing install's key
         # silently breaks every client that holds the old one.
         tree = ET.parse(cfg)
-        existing = tree.getroot().findtext("ApiKey")
+        root = tree.getroot()
+        existing = root.findtext("ApiKey")
         if existing:
-            print(f"  {app}: existing API key retained")
+            if ensure_arr_external_auth(root):
+                tree.write(cfg, encoding="utf-8", xml_declaration=True)
+                print(f"  {app}: existing API key retained; auth -> External")
+            else:
+                print(f"  {app}: existing API key retained")
             return
 
     root = ET.Element("Config")
@@ -52,8 +82,8 @@ def seed_arr(app: str) -> None:
         "EnableSsl": "False",
         "LaunchBrowser": "False",
         "ApiKey": api_key(app),
-        "AuthenticationMethod": "External",
-        "AuthenticationRequired": "DisabledForLocalAddresses",
+        "AuthenticationMethod": ARR_AUTH_METHOD,
+        "AuthenticationRequired": ARR_AUTH_REQUIRED,
         "Branch": "master",
         "LogLevel": "info",
         "UrlBase": ARR_DEFAULTS[app]["UrlBase"],
@@ -201,23 +231,52 @@ def seed_bazarr(enabled: set[str]) -> None:
     print("  bazarr: seeded config/config.yaml with derived API key")
 
 
+BEETS_PLUGINS = ("web", "fetchart", "embedart", "lastgenre", "scrub")
+
+
+def _beets_plugins(existing) -> str:
+    if isinstance(existing, str):
+        names = existing.split()
+    elif isinstance(existing, list):
+        names = [str(p) for p in existing]
+    else:
+        names = []
+    for plugin in BEETS_PLUGINS:
+        if plugin not in names:
+            names.append(plugin)
+    return " ".join(names)
+
+
 def seed_beets() -> None:
-    """Minimal config so the web UI binds on all interfaces."""
+    """Web UI plus in-place tagging so Lidarr keeps folders and Beets writes tags."""
     cfg_dir = STACK / "config" / "beets"
     cfg_dir.mkdir(parents=True, exist_ok=True)
     cfg = cfg_dir / "config.yaml"
-    if cfg.exists():
-        print("  beets: existing config.yaml retained")
-        return
-    cfg.write_text(
-        "directory: /music\n"
-        "library: /config/library.db\n"
-        "plugins: web fetchart embedart lastgenre scrub\n"
-        "web:\n"
-        "  host: 0.0.0.0\n"
-        "  port: 8337\n"
-    )
-    print("  beets: seeded config.yaml with web UI on 0.0.0.0:8337")
+    existed = cfg.exists()
+    data = yaml.safe_load(cfg.read_text()) if existed else None
+    if not isinstance(data, dict):
+        data = {}
+    data["directory"] = "/music"
+    data["library"] = data.get("library") or "/config/library.db"
+    data["plugins"] = _beets_plugins(data.get("plugins"))
+    imported = dict(data.get("import") or {})
+    imported.update({
+        "copy": False,
+        "move": False,
+        "write": True,
+        "incremental": True,
+        "timid": False,
+    })
+    data["import"] = imported
+    web = dict(data.get("web") or {})
+    web.setdefault("host", "0.0.0.0")
+    web.setdefault("port", 8337)
+    data["web"] = web
+    cfg.write_text(yaml.safe_dump(data, sort_keys=False))
+    if existed:
+        print("  beets: stamped in-place import (copy/move no, write yes)")
+    else:
+        print("  beets: seeded config.yaml with web UI on 0.0.0.0:8337")
 
 
 def seed_all(enabled: set[str]) -> None:

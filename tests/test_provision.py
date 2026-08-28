@@ -63,6 +63,50 @@ def test_seeding_never_overwrites_an_existing_key(stack):
     assert "preexisting-key-do-not-touch" in (d / "config.xml").read_text()
 
 
+def test_seed_arr_writes_external_auth_on_first_seed(stack):
+    import seed
+    seed.seed_arr("lidarr")
+    root = ET.parse(stack / "config" / "lidarr" / "config.xml").getroot()
+    assert root.findtext("AuthenticationMethod") == "External"
+    assert root.findtext("AuthenticationRequired") == "DisabledForLocalAddresses"
+
+
+def test_seed_arr_stamps_external_auth_when_method_is_none(stack):
+    """Lidarr started before seed keeps None and then blocks the UI."""
+    import seed
+    d = stack / "config" / "lidarr"
+    d.mkdir(parents=True)
+    (d / "config.xml").write_text(
+        '<?xml version="1.0"?><Config>'
+        "<ApiKey>live-lidarr-key</ApiKey>"
+        "<AuthenticationMethod>None</AuthenticationMethod>"
+        "<AuthenticationRequired>Enabled</AuthenticationRequired>"
+        "</Config>"
+    )
+    seed.seed_arr("lidarr")
+    root = ET.parse(d / "config.xml").getroot()
+    assert root.findtext("ApiKey") == "live-lidarr-key"
+    assert root.findtext("AuthenticationMethod") == "External"
+    assert root.findtext("AuthenticationRequired") == "DisabledForLocalAddresses"
+
+
+def test_seed_arr_does_not_replace_forms_auth(stack):
+    import seed
+    d = stack / "config" / "sonarr"
+    d.mkdir(parents=True)
+    (d / "config.xml").write_text(
+        '<?xml version="1.0"?><Config>'
+        "<ApiKey>keep</ApiKey>"
+        "<AuthenticationMethod>Forms</AuthenticationMethod>"
+        "<AuthenticationRequired>Enabled</AuthenticationRequired>"
+        "</Config>"
+    )
+    seed.seed_arr("sonarr")
+    root = ET.parse(d / "config.xml").getroot()
+    assert root.findtext("AuthenticationMethod") == "Forms"
+    assert root.findtext("AuthenticationRequired") == "Enabled"
+
+
 def test_seeded_config_disables_analytics_and_browser_launch(stack):
     import seed
     seed.seed_arr("prowlarr")
@@ -114,6 +158,37 @@ def test_transmission_seed_never_overwrites_existing_settings(stack):
     (d / "settings.json").write_text(json.dumps({"download-dir": "/downloads/complete"}))
     seed.seed_transmission()
     assert json.loads((d / "settings.json").read_text())["download-dir"] == "/downloads/complete"
+
+
+def test_seed_beets_writes_inplace_import(stack):
+    import yaml
+    import seed
+    seed.seed_beets()
+    data = yaml.safe_load((stack / "config" / "beets" / "config.yaml").read_text())
+    assert data["directory"] == "/music"
+    assert data["import"]["copy"] is False
+    assert data["import"]["move"] is False
+    assert data["import"]["write"] is True
+    assert "web" in data["plugins"]
+    assert "scrub" in data["plugins"]
+    assert data["web"]["host"] == "0.0.0.0"
+
+
+def test_seed_beets_stamps_import_on_existing_stub(stack):
+    import yaml
+    import seed
+    d = stack / "config" / "beets"
+    d.mkdir(parents=True)
+    (d / "config.yaml").write_text(
+        "directory: /music\nlibrary: /config/library.db\nplugins: web fetchart\n"
+        "web:\n  host: 0.0.0.0\n  port: 8337\n"
+    )
+    seed.seed_beets()
+    data = yaml.safe_load((d / "config.yaml").read_text())
+    assert data["import"]["copy"] is False
+    assert data["import"]["write"] is True
+    assert "embedart" in data["plugins"]
+    assert "lastgenre" in data["plugins"]
 
 
 def test_seerr_seed_prepares_node_owned_config(stack, monkeypatch):
@@ -419,7 +494,7 @@ def test_arr_wiring_registers_transmission_for_sonarr_and_radarr(monkeypatch):
     posted = []
 
     class FakeClient:
-        def __init__(self, base, key):
+        def __init__(self, base, key, **kwargs):
             self.base, self.key = base, key
 
         def wait(self):
@@ -455,6 +530,124 @@ def test_arr_wiring_registers_transmission_for_sonarr_and_radarr(monkeypatch):
     assert clients.count(("downloadclient", "Transmission", "Transmission")) == 2
     assert any("sonarr: download client Transmission" in m for m in logs)
     assert any("radarr: download client Transmission" in m for m in logs)
+
+
+def test_lidarr_configure_sets_write_audio_tags_never(monkeypatch):
+    """Beets owns tags; Lidarr must not rewrite them on import/refresh."""
+    import recipes.arr as arr
+
+    puts = []
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def wait(self):
+            return True
+
+        def ensure(self, path, payload, match_on="name"):
+            return False
+
+        def upsert(self, path, payload, match_on="name"):
+            return "updated"
+
+        def remove_named(self, path, name, match_on="name"):
+            return False
+
+        def get(self, path):
+            if path in ("qualityprofile", "metadataprofile"):
+                return [{"id": 1}]
+            if path == "notification":
+                return []
+            if path == "config/metadataProvider":
+                return {
+                    "id": 1,
+                    "metadataSource": "",
+                    "writeAudioTags": "allFiles",
+                    "scrubAudioTags": True,
+                    "embedCoverArt": True,
+                }
+            return {"id": 1}
+
+        def put(self, path, payload):
+            puts.append((path, payload))
+            return payload
+
+    monkeypatch.setattr(arr, "ArrClient", FakeClient)
+    monkeypatch.setattr(arr, "resolve_key", lambda app: "k")
+    logs = []
+    arr.configure("lidarr", {"lidarr"}, logs.append)
+    meta = next(p for path, p in puts if "metadataProvider" in path)
+    assert meta["writeAudioTags"] == "no"
+    assert meta["scrubAudioTags"] is False
+    assert any("write audio tags" in m.lower() for m in logs)
+
+
+def test_beets_notification_is_lidarr_custom_script():
+    from recipes.arr import beets_notification
+
+    n = beets_notification()
+    assert n["name"] == "Beets"
+    assert n["implementation"] == "CustomScript"
+    assert n["onReleaseImport"] is True
+    assert n["onUpgrade"] is True
+    assert n["onRename"] is True
+    assert n["onTrackRetag"] is False
+    fields = {f["name"]: f["value"] for f in n["fields"]}
+    assert fields["path"] == "/config/kine-beets-hook.sh"
+
+
+def test_lidarr_configure_registers_beets_script(monkeypatch, tmp_path):
+    import recipes.arr as arr
+
+    hook = tmp_path / "kine-beets-hook.sh"
+    hook.write_text("#!/bin/sh\n")
+    upserts = []
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def wait(self):
+            return True
+
+        def ensure(self, path, payload, match_on="name"):
+            return False
+
+        def upsert(self, path, payload, match_on="name"):
+            upserts.append((path, payload.get("name"), payload.get("implementation")))
+            return "created"
+
+        def remove_named(self, path, name, match_on="name"):
+            return False
+
+        def get(self, path):
+            if path in ("qualityprofile", "metadataprofile"):
+                return [{"id": 1}]
+            return {"id": 1}
+
+        def put(self, path, payload):
+            return payload
+
+    monkeypatch.setattr(arr, "ArrClient", FakeClient)
+    monkeypatch.setattr(arr, "resolve_key", lambda app: "k")
+    monkeypatch.setattr(arr, "install_lidarr_beets_hook", lambda: hook)
+    logs = []
+    arr.configure("lidarr", {"lidarr", "beets"}, logs.append)
+    assert ("notification", "Beets", "CustomScript") in upserts
+    assert any("beets" in m.lower() for m in logs)
+
+
+def test_install_lidarr_beets_hook_is_executable(tmp_path):
+    from recipes.arr import install_lidarr_beets_hook
+
+    dest = install_lidarr_beets_hook(tmp_path)
+    assert dest == tmp_path / "config" / "lidarr" / "kine-beets-hook.sh"
+    assert dest.is_file()
+    assert dest.stat().st_mode & 0o111
+    text = dest.read_text()
+    assert "/data/downloads/.kine-beets-queue" in text
+    assert "/music" in text
 
 
 def test_plex_and_emby_notification_payloads():
@@ -560,7 +753,7 @@ def test_notification_failure_does_not_abort_other_connections(monkeypatch):
     import recipes.arr as arr
 
     class FakeClient:
-        def __init__(self, base, key):
+        def __init__(self, base, key, **kwargs):
             pass
 
         def wait(self):
@@ -620,7 +813,7 @@ def test_arr_wiring_upserts_media_server_notifications(monkeypatch):
     actions = []
 
     class FakeClient:
-        def __init__(self, base, key):
+        def __init__(self, base, key, **kwargs):
             pass
 
         def wait(self):
@@ -667,7 +860,7 @@ def test_arr_wiring_removes_media_server_notifications_when_cleared(monkeypatch)
     actions = []
 
     class FakeClient:
-        def __init__(self, base, key):
+        def __init__(self, base, key, **kwargs):
             pass
 
         def wait(self):

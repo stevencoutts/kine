@@ -9,6 +9,7 @@ and nothing else.
 from __future__ import annotations
 
 import os
+import pathlib
 
 import httpx
 
@@ -44,6 +45,11 @@ DOWNLOAD_CATEGORIES = {
     "radarr": "radarr",
     "lidarr": "lidarr",
 }
+
+BEETS_HOOK_PATH = "/config/kine-beets-hook.sh"
+_BEETS_HOOK_SRC = (
+    pathlib.Path(__file__).resolve().parents[1] / "assets" / "lidarr" / "kine-beets-hook.sh"
+)
 
 
 def transmission_client(category: str) -> dict:
@@ -181,6 +187,35 @@ def plex_notification(
             *_path_map_fields("plex", app),
         ],
     }
+
+
+def beets_notification() -> dict:
+    return {
+        "name": "Beets",
+        "implementation": "CustomScript",
+        "configContract": "CustomScriptSettings",
+        "onGrab": False,
+        "onReleaseImport": True,
+        "onUpgrade": True,
+        "onRename": True,
+        "onTrackRetag": False,
+        "onHealthIssue": False,
+        "onApplicationUpdate": False,
+        "includeHealthWarnings": False,
+        "fields": [
+            {"name": "path", "value": BEETS_HOOK_PATH},
+        ],
+    }
+
+
+def install_lidarr_beets_hook(stack: pathlib.Path | None = None) -> pathlib.Path:
+    """Lidarr Custom Script body. Beet itself runs in the beets container."""
+    root = pathlib.Path(stack) if stack is not None else pathlib.Path("/stack")
+    dest = root / "config" / "lidarr" / "kine-beets-hook.sh"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(_BEETS_HOOK_SRC.read_text())
+    dest.chmod(0o755)
+    return dest
 
 
 def emby_notification(
@@ -363,18 +398,34 @@ def configure(app: str, enabled: set[str], log) -> None:
             log(f"{app}: updated NZBGet download client")
 
     # Completed download handling on, unmonitor nothing, no analytics.
-    for cfg, patch in (
+    # Lidarr: never write/scrub audio tags — beets owns tag content.
+    host_patches: list[tuple[str, dict]] = [
         ("config/downloadclient", {"enableCompletedDownloadHandling": True}),
         ("config/host", {"analyticsEnabled": False}),
-    ):
+    ]
+    if app == "lidarr":
+        host_patches.append((
+            "config/metadataProvider",
+            {"writeAudioTags": "no", "scrubAudioTags": False},
+        ))
+    for cfg, patch in host_patches:
         try:
             current = client.get(cfg)
             current.update(patch)
             client.put(f"{cfg}/{current['id']}", current)
+            if cfg == "config/metadataProvider":
+                log("lidarr: write audio tags -> Never")
         except Exception as exc:  # noqa: BLE001 — host config schemas differ
             log(f"{app}: skipped {cfg} ({exc})")
 
     _sync_media_notifications(client, app, enabled, log)
+
+    if app == "lidarr":
+        if "beets" in enabled:
+            install_lidarr_beets_hook()
+            _sync_one_notification(client, app, log, "Beets", beets_notification())
+        else:
+            _sync_one_notification(client, app, log, "Beets", None)
 
     # Bazarr only knows Sonarr/Radarr.
     if app in ("sonarr", "radarr"):
