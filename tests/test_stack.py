@@ -343,6 +343,7 @@ def test_ecm_mcp_is_optional_tunnelled_sidecar():
     assert mcp["network_mode"] == "service:gluetun"
     assert mcp["profiles"] == ["ecm-mcp"]
     assert "ecm-mcp-secrets:/run/secrets/ecm-mcp:ro" in mcp.get("volumes", [])
+    assert "${STACK_ROOT}/config/ecm:/config:ro" in mcp.get("volumes", [])
     assert CATALOGUE["ecm-mcp"]["default"] is False
     assert CATALOGUE["ecm-mcp"]["tunnelled"] == "forced"
     assert "ecm" in CATALOGUE["ecm-mcp"]["requires"]
