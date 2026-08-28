@@ -258,6 +258,8 @@ def _rewrite_html(text: str, prefix: str, *, app_id: str = "") -> str:
     boot = _bootstrap_script(prefix)
     if app_id == "dispatcharr":
         boot += _DISPATCHARR_CONTRAST_STYLE
+    if app_id == "beets":
+        boot += _BEETS_CONTRAST_STYLE
     lower = text.lower()
     idx = lower.find("<head>")
     if idx >= 0:
@@ -345,6 +347,19 @@ _DISPATCHARR_CONTRAST_STYLE = (
     "color:#f4f4f5;"
     "border-color:#52525b;"
     "}"
+    "</style>"
+)
+
+# Beets web CSS never sets body/detail colour. Helm's embed iframe is
+# #0b0c0f, so the detail pane is black text on black.
+_BEETS_CONTRAST_STYLE = (
+    "<style data-kine-beets-contrast>"
+    "html,body{background:#f3f4f6!important;color:#1c1917!important;}"
+    "#main-detail,#extra-detail{color:#1c1917!important;}"
+    "#extra-detail dl dt{color:#44403c!important;}"
+    "#extra-detail a{color:#1d4ed8!important;}"
+    "#query{background:#fff;color:#1c1917;border:1px solid #78716c;}"
+    "#entities ul li{color:#1c1917;}"
     "</style>"
 )
 

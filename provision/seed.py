@@ -266,6 +266,7 @@ def seed_beets() -> None:
         "write": True,
         "incremental": True,
         "timid": False,
+        "quiet_fallback": "asis",
     })
     data["import"] = imported
     web = dict(data.get("web") or {})

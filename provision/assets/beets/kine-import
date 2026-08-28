@@ -18,7 +18,7 @@ import_one() {
     return 0
   fi
   log "import $src"
-  beet import -q --nocopy --nomove "$src" || log "import failed $src"
+  beet import -q --noincremental --nocopy --nomove "$src" || log "import failed $src"
 }
 
 log "watching $QUEUE"

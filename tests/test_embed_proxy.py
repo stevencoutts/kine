@@ -49,6 +49,16 @@ def test_rewrite_html_injects_bootstrap_and_prefixes_assets():
     assert "x.origin!==location.origin" in out or "x.origin===location.origin" in out
     # Contrast fix is Dispatcharr-only.
     assert "kine-dispatcharr-contrast" not in out
+    assert "kine-beets-contrast" not in out
+
+
+def test_rewrite_html_injects_beets_contrast_fix():
+    html = "<html><head><title>beets</title></head><body></body></html>"
+    out = embed_proxy._rewrite_html(html, "/view/beets", app_id="beets")
+    assert "data-kine-beets-contrast" in out
+    assert "background:#f3f4f6" in out.replace(" ", "")
+    assert "#main-detail" in out
+    assert "kine-dispatcharr-contrast" not in out
 
 
 def test_rewrite_html_injects_dispatcharr_contrast_fix():

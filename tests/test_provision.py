@@ -169,6 +169,7 @@ def test_seed_beets_writes_inplace_import(stack):
     assert data["import"]["copy"] is False
     assert data["import"]["move"] is False
     assert data["import"]["write"] is True
+    assert data["import"]["quiet_fallback"] == "asis"
     assert "web" in data["plugins"]
     assert "scrub" in data["plugins"]
     assert data["web"]["host"] == "0.0.0.0"
@@ -187,6 +188,7 @@ def test_seed_beets_stamps_import_on_existing_stub(stack):
     data = yaml.safe_load((d / "config.yaml").read_text())
     assert data["import"]["copy"] is False
     assert data["import"]["write"] is True
+    assert data["import"]["quiet_fallback"] == "asis"
     assert "embedart" in data["plugins"]
     assert "lastgenre" in data["plugins"]
 
