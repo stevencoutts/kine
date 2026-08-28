@@ -57,6 +57,20 @@ def test_rewrite_html_injects_dispatcharr_contrast_fix():
     assert "data-kine-dispatcharr-contrast" in out
     assert "mantine-Popover-dropdown" in out
     assert "--mantine-color-dark-6" in out
+    # State / Active Connections: dimmed greys and light badges are unreadable.
+    assert "--mantine-color-dimmed:#d4d4d8" in out.replace(" ", "")
+    assert "--mantine-color-text:#f4f4f5" in out.replace(" ", "")
+    assert "--mantine-color-orange-light-color:#fff" in out.replace(" ", "")
+    assert ".mantine-Badge-root" in out
+    assert ".mantine-NavLink-label" in out
+
+
+def test_dispatcharr_contrast_asset_matches_embed_proxy():
+    """tv. nginx injects the same rules Helm inlines into the embed."""
+    text = (ROOT / "provision/assets/dispatcharr/kine-contrast.css").read_text()
+    style = embed_proxy._DISPATCHARR_CONTRAST_STYLE
+    inner = style.split(">", 1)[1].rsplit("</style>", 1)[0]
+    assert "".join(text.split()) == "".join(inner.split())
 
 
 def test_rewrite_url_base_empty_string():

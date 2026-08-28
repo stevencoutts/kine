@@ -250,6 +250,14 @@ def test_tunnelled_apps_own_nothing_networkish(app):
         f"{app} carries Traefik labels; they belong on the gluetun service"
 
 
+def test_dispatcharr_mounts_kine_contrast_css():
+    """tv. serves Dispatcharr directly; Helm embed CSS never reaches it."""
+    _, svc = SERVICES["dispatcharr"]
+    vols = "\n".join(str(v) for v in (svc.get("volumes") or []))
+    assert "kine-contrast.css:/app/static/kine-contrast.css" in vols
+    assert "kine-contrast.nginx.conf:/etc/nginx/conf.d/kine-contrast.conf" in vols
+
+
 @pytest.mark.parametrize("app", sorted(TUNNELLED))
 def test_tunnelled_apps_wait_for_a_healthy_tunnel(app):
     _, svc = SERVICES[app]

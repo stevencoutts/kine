@@ -23,6 +23,8 @@ services:
     volumes:
       - ${STACK_ROOT}/config/dispatcharr:/data
       - ${DATA_ROOT}/media/recordings:/data/recordings
+      - ../provision/assets/dispatcharr/kine-contrast.css:/app/static/kine-contrast.css:ro
+      - ../provision/assets/dispatcharr/kine-contrast.nginx.conf:/etc/nginx/conf.d/kine-contrast.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:9191/ || exit 1"]
       interval: 30s
