@@ -34,6 +34,8 @@ services:
       MCP_ALLOWED_HOSTS: ${MCP_ALLOWED_HOSTS:-mcp.${KINE_DOMAIN},mcp.${KINE_LOCAL_DOMAIN}}
       MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-}
     volumes:
+      # ECM settings.json (legacy MCP images) + credential projection (.8+).
+      - ${STACK_ROOT}/config/ecm:/config:ro
       - ecm-mcp-secrets:/run/secrets/ecm-mcp:ro
 
 volumes:
