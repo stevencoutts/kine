@@ -54,6 +54,15 @@ def test_header_has_logout_button():
     assert '@app.post("/api/auth/logout")' in BACKEND
 
 
+def test_top_nav_is_dashboard_stats_vpn_settings():
+    compact = FRONTEND.replace(" ", "")
+    assert "apps:'Dashboard'" in compact
+    assert "['apps','stats','vpn','settings']" in compact
+    assert "['apps','stats','updates','vpn','status','settings']" not in compact
+    assert "{id:'status',label:'Status'}" in compact
+    assert "{id:'updates',label:'Updates'}" in compact
+
+
 def test_visible_control_labels_use_title_case():
     lower_case_labels = (
         ">First run<",
@@ -249,7 +258,7 @@ def test_settings_section_nav():
     assert "CLOUDNS_AUTH_ID" in FRONTEND
     assert "CLOUDNS_AUTH_PASSWORD" in FRONTEND
     assert "acme.env" in FRONTEND or "ClouDNS Auth" in FRONTEND
-    for label in ("Appliance", "Storage", "Media Servers", "Live TV", "Subtitles", "NZBGet"):
+    for label in ("Appliance", "Storage", "Media Servers", "Live TV", "Subtitles", "NZBGet", "Status", "Updates"):
         assert label in FRONTEND
     assert "settingsPanel(" in FRONTEND or "settingsPanel =" in FRONTEND
     # One-panel UX: inactive panels use the hidden attribute.

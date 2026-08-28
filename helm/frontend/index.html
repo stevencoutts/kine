@@ -616,11 +616,53 @@ const SETTINGS_SECTIONS = [
   {id:'subtitles', label:'Subtitles'},
   {id:'indexers', label:'Indexers'},
   {id:'nzbget', label:'NZBGet'},
+  {id:'status', label:'Status'},
+  {id:'updates', label:'Updates'},
 ];
+const NAV_TABS = ['apps','stats','vpn','settings'];
+const TAB_LABELS = {apps:'Dashboard', stats:'Stats', vpn:'VPN', settings:'Settings'};
+const SETTINGS_OPS = new Set(['status', 'updates']);
+const settingsNavHtml = (active) => SETTINGS_SECTIONS.map(sec => `
+    <button type="button" class="settings-nav-btn${active===sec.id?' active':''}"
+      data-settings-section="${sec.id}" aria-pressed="${active===sec.id}">
+      <span class="settings-nav-label">${sec.label}</span>
+    </button>`).join('');
+const wrapSettings = (sectionId, mainInner) => `
+    <div class="section settings-page">
+      <div class="settings-layout">
+        <aside class="settings-side">
+          <h2 class="settings-side-title">Settings</h2>
+          <div class="settings-nav" role="tablist" aria-label="Settings sections">${settingsNavHtml(sectionId)}</div>
+        </aside>
+        <div class="settings-main">${mainInner}</div>
+      </div>
+    </div>`;
+const bindSettingsNav = () => {
+  document.querySelectorAll('[data-settings-section]').forEach(btn => {
+    btn.onclick = () => {
+      const id = btn.dataset.settingsSection;
+      state.settingsSection = id;
+      if (id === 'status') return render.status();
+      if (id === 'updates') return render.updates();
+      if (document.querySelector('[data-settings-panel="appliance"]')) {
+        document.querySelectorAll('[data-settings-section]').forEach(b => {
+          const on = b.dataset.settingsSection === id;
+          b.classList.toggle('active', on);
+          b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        document.querySelectorAll('[data-settings-panel]').forEach(panel => {
+          panel.hidden = panel.dataset.settingsPanel !== id;
+        });
+        return;
+      }
+      state.tab = 'settings';
+      render.settings();
+    };
+  });
+};
 const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({
   '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
 }[c]));
-const TAB_LABELS = {apps:'Apps', stats:'Stats', updates:'Updates', vpn:'VPN', status:'Status', settings:'Settings'};
 
 const emptyNzbServer = () => ({
   name: '', host: '', port: 563, username: '', password: '',
@@ -1263,7 +1305,7 @@ render.shell = (body) => {
         </svg>
       </button>
       <nav id="kine-nav">
-        ${['apps','stats','updates','vpn','status','settings'].map(t =>
+        ${NAV_TABS.map(t =>
           `<button class="${state.tab===t?'active':''}" data-tab="${t}">${TAB_LABELS[t]}</button>`
         ).join('')}
         <button type="button" class="nav-logout" data-logout>Log Out</button>
@@ -2042,7 +2084,9 @@ render.stats = async () => {
 };
 
 render.updates = async (refresh=false) => {
-  render.shell(`<div class="section"><h2>Image Updates</h2>
+  state.tab = 'settings';
+  state.settingsSection = 'updates';
+  render.shell(wrapSettings('updates', `<div class="section" style="margin:0;padding:0"><h2>Image Updates</h2>
     <p style="color:var(--muted);font-size:.85rem">Nothing updates on its own.
     The overnight job only checks digests; applying an update snapshots
     config first and rolls back if the app does not come back healthy.
@@ -2056,7 +2100,8 @@ render.updates = async (refresh=false) => {
     <div id="updates-body"><p style="color:var(--muted)">${
       refresh ? 'checking registries…' : 'loading…'
     }</p></div>
-    <pre id="rep" style="margin-top:1rem;display:none"></pre></div>`);
+    <pre id="rep" style="margin-top:1rem;display:none"></pre></div>`));
+  bindSettingsNav();
   $('#refresh').onclick = () => render.updates(true);
   const r = await api('/updates' + (refresh ? '?refresh=true' : ''));
   const rows = r.containers || [];
@@ -2739,7 +2784,9 @@ render.status = async () => {
   const jobErrors = Object.keys(jobs.errors || {}).length
     ? `<div class="banner bad">Job errors: ${Object.entries(jobs.errors).map(([k,v])=>escHtml(k)+': '+escHtml(v)).join(' | ')}</div>`
     : '';
-  render.shell(`
+  state.tab = 'settings';
+  state.settingsSection = 'status';
+  render.shell(wrapSettings('status', `
     <div class="status-page">
       <div class="status-section">
         <h2>Storage</h2>
@@ -2792,7 +2839,8 @@ render.status = async () => {
       </div>
       ${jobErrors}
     </div>
-  `);
+  `));
+  bindSettingsNav();
   const msg = $('#backup-msg');
   const show = (html) => { if (msg) msg.innerHTML = html; };
   $('#backup-now')?.addEventListener('click', async () => {
@@ -2824,6 +2872,8 @@ render.status = async () => {
 };
 
 render.settings = async () => {
+  if (state.settingsSection === 'status') return render.status();
+  if (state.settingsSection === 'updates') return render.updates();
   const s = await api('/settings');
   const nfsPrimary = [
     ['NFS_MEDIA', 'Media library'],
@@ -2957,25 +3007,13 @@ render.settings = async () => {
       $('#nfs-shares').innerHTML = '<p>Could not load shares.</p>';
     }
   };
-  if (!SETTINGS_SECTIONS.some(sec => sec.id === state.settingsSection))
+  if (!SETTINGS_SECTIONS.some(sec => sec.id === state.settingsSection) || SETTINGS_OPS.has(state.settingsSection))
     state.settingsSection = 'appliance';
-  const settingsNav = SETTINGS_SECTIONS.map(sec => `
-    <button type="button" class="settings-nav-btn${state.settingsSection===sec.id?' active':''}"
-      data-settings-section="${sec.id}" aria-pressed="${state.settingsSection===sec.id}">
-      <span class="settings-nav-label">${sec.label}</span>
-    </button>`).join('');
   const settingsPanel = (id, body) => `
     <div class="settings-panel" data-settings-panel="${id}"${state.settingsSection===id?'':' hidden'}>
       ${body}
     </div>`;
-  render.shell(`
-    <div class="section settings-page">
-      <div class="settings-layout">
-        <aside class="settings-side">
-          <h2 class="settings-side-title">Settings</h2>
-          <div class="settings-nav" role="tablist" aria-label="Settings sections">${settingsNav}</div>
-        </aside>
-        <div class="settings-main">
+  render.shell(wrapSettings(state.settingsSection, `
       ${settingsPanel('appliance', `<div class="settings-glass">
       <p class="settings-lede">Domain, TLS, and appliance timezone. Saving reloads Traefik so certificates and routes pick up the change.</p>
       <div class="settings-groups">
@@ -3223,23 +3261,8 @@ render.settings = async () => {
         <div id="nzbget-msg"></div>
       </div>
     </div>`)}
-        </div>
-      </div>
-    </div>`);
-  document.querySelectorAll('[data-settings-section]').forEach(btn => {
-    btn.onclick = () => {
-      const id = btn.dataset.settingsSection;
-      state.settingsSection = id;
-      document.querySelectorAll('[data-settings-section]').forEach(b => {
-        const on = b.dataset.settingsSection === id;
-        b.classList.toggle('active', on);
-        b.setAttribute('aria-pressed', on ? 'true' : 'false');
-      });
-      document.querySelectorAll('[data-settings-panel]').forEach(panel => {
-        panel.hidden = panel.dataset.settingsPanel !== id;
-      });
-    };
-  });
+  `));
+  bindSettingsNav();
   bindNzbServerList($('#nzb-settings-list'), $('#nzb-settings-add'));
   bindNewznabList($('#newznab-settings-list'), $('#newznab-settings-add'));
   if (s.dispatcharr_enabled) {
