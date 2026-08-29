@@ -558,7 +558,8 @@ def warn_inactive_event_group_m3us(
 MANAGED_GROUP_SUFFIX = " | Sports"
 SPORTS_GROUP_PATTERN = (
     r"(?i)(epl|football|soccer|uefa|sport|ppv|dazn|tnt|sky sport|espn|"
-    r"ufc|box|nba|nfl|mlb|nhl|f1|formula|cricket|rugby|mls|liga|"
+    r"ufc|box|mma|fight|triller|pay.?per.?view|"
+    r"nba|nfl|mlb|nhl|f1|formula|cricket|rugby|mls|liga|"
     r"bundesliga|championship|premier league|bein)"
 )
 STREAM_HEADER_EXCLUDE = r"^#+"

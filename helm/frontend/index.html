@@ -79,16 +79,27 @@ nav button.nav-logout:hover{color:var(--text);
     border-left:1px solid color-mix(in srgb, var(--line) 45%, transparent);
     border-radius:12px;border-style:dashed;opacity:1;color:var(--muted)}
   main{padding:1rem;padding-bottom:4.5rem}
-  footer#vpnbar{padding:.55rem 1rem;font-size:.75rem}
+  footer#vpnbar{padding:.55rem 1rem;font-size:.75rem;justify-content:space-between}
 }
 main{padding:1.5rem;padding-bottom:4rem;max-width:1100px;margin:0 auto}
 footer#vpnbar{position:fixed;left:0;right:0;bottom:0;z-index:10;
-  display:flex;align-items:center;gap:.5rem;padding:.6rem 1.5rem;
+  display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.6rem 1.5rem;
   background:color-mix(in srgb, var(--panel) 70%, transparent);
   backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
   border-top:1px solid var(--line);font-size:.8rem;color:var(--muted)}
 footer#vpnbar b{color:var(--text)}
+footer#vpnbar .vpn-status{display:flex;align-items:center;gap:.5rem;min-width:0}
 footer#vpnbar .dot.on{animation:pulse 2s ease-in-out infinite}
+#updates-chip{appearance:none;cursor:pointer;font:inherit;font-size:.75rem;font-weight:600;
+  display:inline-flex;align-items:center;gap:.35rem;margin-left:auto;flex:none;
+  padding:.22rem .55rem;border-radius:999px;color:var(--muted);
+  background:transparent;border:1px solid transparent}
+#updates-chip:hover{border-color:color-mix(in srgb, var(--line) 80%, transparent);color:var(--text)}
+#updates-chip.pending{color:var(--warn);
+  border-color:color-mix(in srgb, var(--warn) 45%, transparent);
+  background:color-mix(in srgb, var(--warn) 12%, transparent)}
+#updates-chip svg{width:14px;height:14px;display:block}
+#updates-chip .count{font-variant-numeric:tabular-nums;line-height:1}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 .grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fill,minmax(280px,1fr))}
 .card{background:color-mix(in srgb, var(--panel) 52%, transparent);
@@ -572,6 +583,18 @@ textarea{font-family:ui-monospace,monospace;font-size:.8rem;resize:vertical}
 .updates-table th:nth-child(5),.updates-table td:nth-child(5){width:13%}
 .updates-table th:nth-child(6),.updates-table td:nth-child(6){width:12%}
 .updates-table th:nth-child(7),.updates-table td:nth-child(7){width:23%;white-space:normal}
+.snapshots-table{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:.82rem}
+.snapshots-table th,.snapshots-table td{padding:.5rem .55rem;text-align:left;border-bottom:1px solid var(--line);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
+.snapshots-table th{color:var(--muted);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
+.snapshots-table tr:last-child td{border-bottom:none}
+.snapshots-table td.mono{font-family:ui-monospace,monospace;font-size:.75rem}
+.snapshots-table th:nth-child(1),.snapshots-table td:nth-child(1){width:38%}
+.snapshots-table th:nth-child(2),.snapshots-table td:nth-child(2){width:16%}
+.snapshots-table th:nth-child(3),.snapshots-table td:nth-child(3){width:10%}
+.snapshots-table th:nth-child(4),.snapshots-table td:nth-child(4){width:12%}
+.snapshots-table th:nth-child(5),.snapshots-table td:nth-child(5){width:24%;white-space:normal}
+.snapshots-table .row{flex-wrap:wrap;gap:.35rem}
 .updates-wrap{overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);
   background:color-mix(in srgb, var(--panel) 52%, transparent)}
 .badge{display:inline-block;padding:.15rem .55rem;border-radius:999px;font-size:.72rem;font-weight:600}
@@ -635,11 +658,12 @@ const SETTINGS_SECTIONS = [
   {id:'indexers', label:'Indexers'},
   {id:'nzbget', label:'NZBGet'},
   {id:'status', label:'Status'},
+  {id:'snapshots', label:'Snapshots'},
   {id:'updates', label:'Updates'},
 ];
 const NAV_TABS = ['apps','stats','vpn','settings'];
 const TAB_LABELS = {apps:'Dashboard', stats:'Stats', vpn:'VPN', settings:'Settings'};
-const SETTINGS_OPS = new Set(['status', 'updates']);
+const SETTINGS_OPS = new Set(['status', 'snapshots', 'updates']);
 const settingsNavHtml = (active) => SETTINGS_SECTIONS.map(sec => `
     <button type="button" class="settings-nav-btn${active===sec.id?' active':''}"
       data-settings-section="${sec.id}" aria-pressed="${active===sec.id}">
@@ -661,6 +685,7 @@ const bindSettingsNav = () => {
       const id = btn.dataset.settingsSection;
       state.settingsSection = id;
       if (id === 'status') return render.status();
+      if (id === 'snapshots') return render.snapshots();
       if (id === 'updates') return render.updates();
       if (document.querySelector('[data-settings-panel="appliance"]')) {
         document.querySelectorAll('[data-settings-section]').forEach(b => {
@@ -1330,7 +1355,15 @@ render.shell = (body) => {
       </nav>
     </header>
     <main>${body}</main>
-    <footer id="vpnbar"><span class="dot off"></span>checking VPN&hellip;</footer>`;
+    <footer id="vpnbar">
+      <span class="vpn-status" id="vpn-status"><span class="dot off"></span>checking VPN&hellip;</span>
+      <button type="button" id="updates-chip" data-footer-updates title="Updates" aria-label="Updates">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 19V6M6 12l6-6 6 6"/>
+        </svg>
+      </button>
+    </footer>`;
   const header = document.querySelector('header');
   const toggle = document.querySelector('[data-nav-toggle]');
   const setNavOpen = (open) => {
@@ -1358,22 +1391,56 @@ render.shell = (body) => {
       render.login();
     };
   }
+  const updatesChip = $('#updates-chip');
+  if (updatesChip) {
+    updatesChip.onclick = () => {
+      state.tab = 'settings';
+      state.settingsSection = 'updates';
+      render.updates();
+    };
+  }
   updateVpnBar();
 };
 
 // Refreshed on every tab switch (render.shell) plus on a timer, so the
 // tunnel and public IP stay visible no matter which tab is open.
+const updateUpdatesChip = async () => {
+  const chip = $('#updates-chip');
+  if (!chip) return;
+  try {
+    const data = await api('/updates');
+    const n = (data.pending || []).length;
+    chip.classList.toggle('pending', n > 0);
+    chip.title = n ? `${n} update${n === 1 ? '' : 's'} available` : 'All images current';
+    chip.setAttribute('aria-label', n ? `${n} updates available` : 'Updates, all current');
+    let count = chip.querySelector('.count');
+    if (n) {
+      if (!count) {
+        count = document.createElement('span');
+        count.className = 'count';
+        chip.appendChild(count);
+      }
+      count.textContent = String(n);
+    } else if (count) {
+      count.remove();
+    }
+  } catch (_) { /* not signed in yet, or the request failed; leave it as-is */ }
+};
 const updateVpnBar = async () => {
-  const bar = $('#vpnbar');
-  if (!bar) return;
+  const status = $('#vpn-status');
+  if (!status) return;
   try {
     const v = await api('/vpn');
-    if (!v.enabled) { bar.innerHTML = '<span class="dot off"></span>VPN Disabled'; return; }
-    const up = !!v.public_ip;
-    bar.innerHTML = `<span class="dot ${up ? 'on' : 'off'}"></span>` +
-      (up ? `Tunnel up via ${v.connection_type || 'VPN'} &mdash; public IP <b>${v.public_ip}</b>`
-          : `Tunnel status unknown &mdash; ${v.connection_type || 'VPN'}`);
+    if (!v.enabled) {
+      status.innerHTML = '<span class="dot off"></span>VPN Disabled';
+    } else {
+      const up = !!v.public_ip;
+      status.innerHTML = `<span class="dot ${up ? 'on' : 'off'}"></span>` +
+        (up ? `Tunnel up via ${v.connection_type || 'VPN'} &mdash; public IP <b>${v.public_ip}</b>`
+            : `Tunnel status unknown &mdash; ${v.connection_type || 'VPN'}`);
+    }
   } catch (e) { /* not signed in yet, or the request failed; leave it as-is */ }
+  await updateUpdatesChip();
 };
 setInterval(updateVpnBar, 30000);
 
@@ -2849,12 +2916,22 @@ const fmtBytes = (n) => {
   const digits = v >= 100 ? 0 : 1;
   return `${v.toFixed(digits)} ${units[i]}`;
 };
+const fmtWhen = (iso) => {
+  if (!iso || iso === 'never') return 'never';
+  try {
+    const t = Date.parse(iso);
+    if (!Number.isFinite(t)) return iso;
+    const mins = Math.round((Date.now() - t) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 48) return `${hrs}h ago`;
+    return new Date(t).toLocaleString();
+  } catch (_) { return iso; }
+};
 
 render.status = async () => {
-  const [s, bak] = await Promise.all([
-    api('/status'),
-    api('/backups').catch(() => ({snapshots: []})),
-  ]);
+  const s = await api('/status');
   const ringLen = 2 * Math.PI * 45;
   const diskTone = (pct, err) => {
     if (err) return 'muted';
@@ -2892,30 +2969,6 @@ render.status = async () => {
   const pending = (jobs.updates?.pending || []);
   const updatesOk = !pending.length;
   const backupOk = jobs.backup?.ok !== false;
-  const fmtWhen = (iso) => {
-    if (!iso || iso === 'never') return 'never';
-    try {
-      const t = Date.parse(iso);
-      if (!Number.isFinite(t)) return iso;
-      const mins = Math.round((Date.now() - t) / 60000);
-      if (mins < 1) return 'just now';
-      if (mins < 60) return `${mins}m ago`;
-      const hrs = Math.round(mins / 60);
-      if (hrs < 48) return `${hrs}h ago`;
-      return new Date(t).toLocaleString();
-    } catch (_) { return iso; }
-  };
-  const snaps = (bak.snapshots || []).slice(0, 3);
-  const snapRows = snaps.length
-    ? snaps.map(row => `
-      <article class="status-backup-row" data-backup="${escAttr(row.name)}">
-        <div>
-          <h4>${escHtml(row.name)}</h4>
-          <div class="status-backup-meta">${escHtml(fmtWhen(row.created || row.mtime))} · ${fmtBytes(row.size_bytes)}</div>
-        </div>
-        <button type="button" class="act" data-backup-restore="${escAttr(row.name)}">Restore</button>
-      </article>`).join('')
-    : '<p class="status-lede">No snapshots yet. Create one with Back Up Now.</p>';
   const jobErrors = Object.keys(jobs.errors || {}).length
     ? `<div class="banner bad">Job errors: ${Object.entries(jobs.errors).map(([k,v])=>escHtml(k)+': '+escHtml(v)).join(' | ')}</div>`
     : '';
@@ -2953,28 +3006,64 @@ render.status = async () => {
             <div class="status-job-body">
               Last run: <b>${escHtml(fmtWhen(jobs.backup?.ran || 'never'))}</b><br>
               <span style="word-break:break-all">${escHtml(jobs.backup?.path || 'no snapshot recorded')}</span>
+              <div class="row" style="margin-top:.75rem">
+                <button type="button" class="act" id="goto-snapshots">Manage snapshots</button>
+              </div>
             </div>
           </article>
-        </div>
-      </div>
-      <div class="status-section">
-        <h2>Backup and Restore</h2>
-        <div class="status-glass">
-          <p class="status-lede">
-            Snapshots include enabled apps (<code>COMPOSE_PROFILES</code>) and each app's
-            config under the stack. Media files are not included. Only the latest
-            <strong>3</strong> snapshots are kept. Restore stops apps, replaces config
-            and profiles, then starts the stack again.</p>
-          <div class="row" style="margin:1rem 0 0;position:relative">
-            <button type="button" class="act primary" id="backup-now">Back Up Now</button>
-          </div>
-          <div id="backup-msg" style="position:relative;margin-top:.75rem"></div>
-          <div id="backup-list" class="status-backup-list">${snapRows}</div>
         </div>
       </div>
       ${jobErrors}
     </div>
   `));
+  bindSettingsNav();
+  $('#goto-snapshots')?.addEventListener('click', () => {
+    state.settingsSection = 'snapshots';
+    render.snapshots();
+  });
+};
+
+render.snapshots = async () => {
+  const bak = await api('/backups').catch(() => ({snapshots: []}));
+  const rows = bak.snapshots || [];
+  const kindLabel = (row) => row.kind === 'update'
+    ? `update${row.app ? ' · ' + row.app : ''}`
+    : 'scheduled';
+  const table = rows.length
+    ? `<div class="updates-wrap"><table class="snapshots-table">
+        <thead><tr><th>Name</th><th>When</th><th>Size</th><th>Kind</th><th></th></tr></thead>
+        <tbody>${rows.map(row => {
+          const name = row.name || '';
+          return `<tr>
+            <td class="mono" title="${escAttr(name)}">${escHtml(name)}</td>
+            <td>${escHtml(fmtWhen(row.created || row.mtime))}</td>
+            <td>${fmtBytes(row.size_bytes)}</td>
+            <td>${escHtml(kindLabel(row))}</td>
+            <td>
+              <div class="row">
+                <a class="act" data-backup-download="${escAttr(name)}"
+                  href="/api/backups/${encodeURIComponent(name)}/file" download>Download</a>
+                <button type="button" class="act" data-backup-restore="${escAttr(name)}">Restore</button>
+                <button type="button" class="act" data-backup-delete="${escAttr(name)}">Delete</button>
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>`
+    : '<p class="status-lede">No snapshots yet. Create one with Back Up Now.</p>';
+  state.tab = 'settings';
+  state.settingsSection = 'snapshots';
+  render.shell(wrapSettings('snapshots', `<div class="section" style="margin:0;padding:0">
+    <h2>Snapshots</h2>
+    <p style="color:var(--muted);font-size:.85rem">Config and .env only — media is not included.
+      Overnight keeps the last three scheduled snapshots. Update rollbacks stay until you delete them.
+      Restore stops apps, replaces config, then starts the stack again.</p>
+    <div class="row" style="margin-bottom:1rem;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <button type="button" class="act primary" id="backup-now"${bak.busy ? ' disabled' : ''}>Back Up Now</button>
+    </div>
+    <div id="backup-msg" style="margin-bottom:.75rem"></div>
+    ${table}
+  </div>`));
   bindSettingsNav();
   const msg = $('#backup-msg');
   const show = (html) => { if (msg) msg.innerHTML = html; };
@@ -2984,30 +3073,44 @@ render.status = async () => {
       const r = await api('/backup', {method:'POST'});
       if (!r.ok) throw new Error(r.log || 'Backup failed');
       show(`<div class="banner ok">Saved ${escHtml(r.path || 'snapshot')}</div>`);
-      await render.status();
+      await render.snapshots();
     } catch (e) {
       show(`<div class="banner bad">${escHtml(e.message || String(e))}</div>`);
     }
   });
-  $('#backup-list')?.addEventListener('click', async (e) => {
-    const btn = e.target.closest('[data-backup-restore]');
-    if (!btn) return;
-    const name = btn.dataset.backupRestore;
-    if (!confirm(`Restore ${name}?\n\nThis replaces app configs and which apps are enabled, then restarts the stack. Media is unchanged.`)) return;
-    show(`<div class="banner" style="border:1px solid var(--line)">Restoring ${escHtml(name)}… apps will restart.</div>`);
-    try {
-      const r = await api('/backups/restore', {method:'POST', body: JSON.stringify({name})});
-      if (!r.ok) throw new Error(r.log || 'Restore failed');
-      show(`<div class="banner ok">Restored ${escHtml(name)}. Reloading…</div>`);
-      setTimeout(() => location.reload(), 2500);
-    } catch (err) {
-      show(`<div class="banner bad">${escHtml(err.message || String(err))}</div>`);
-    }
+  document.querySelectorAll('[data-backup-restore]').forEach(btn => {
+    btn.onclick = async () => {
+      const name = btn.dataset.backupRestore;
+      if (!confirm(`Restore ${name}?\n\nThis replaces app configs and which apps are enabled, then restarts the stack. Media is unchanged.`)) return;
+      show(`<div class="banner" style="border:1px solid var(--line)">Restoring ${escHtml(name)}… apps will restart.</div>`);
+      try {
+        const r = await api('/backups/restore', {method:'POST', body: JSON.stringify({name})});
+        if (!r.ok) throw new Error(r.log || 'Restore failed');
+        show(`<div class="banner ok">Restored ${escHtml(name)}. Reloading…</div>`);
+        setTimeout(() => location.reload(), 2500);
+      } catch (err) {
+        show(`<div class="banner bad">${escHtml(err.message || String(err))}</div>`);
+      }
+    };
+  });
+  document.querySelectorAll('[data-backup-delete]').forEach(btn => {
+    btn.onclick = async () => {
+      const name = btn.dataset.backupDelete;
+      if (!confirm(`Delete ${name}?\n\nThis cannot be undone.`)) return;
+      show(`<div class="banner" style="border:1px solid var(--line)">Deleting ${escHtml(name)}…</div>`);
+      try {
+        await api(`/backups/${encodeURIComponent(name)}`, {method:'DELETE'});
+        await render.snapshots();
+      } catch (err) {
+        show(`<div class="banner bad">${escHtml(err.message || String(err))}</div>`);
+      }
+    };
   });
 };
 
 render.settings = async () => {
   if (state.settingsSection === 'status') return render.status();
+  if (state.settingsSection === 'snapshots') return render.snapshots();
   if (state.settingsSection === 'updates') return render.updates();
   const s = await api('/settings');
   const nfsPrimary = [

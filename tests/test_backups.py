@@ -29,6 +29,25 @@ def test_validate_name_rejects_bad_pattern():
     raise AssertionError("expected ValueError")
 
 
+def test_validate_name_accepts_per_app_update_snapshot(monkeypatch, tmp_path):
+    monkeypatch.setattr(backups.config, "read", lambda: {"STACK_ROOT": str(tmp_path)})
+    assert backups.validate_name("kine-20260829-141000-bazarr.tar.gz") == (
+        "kine-20260829-141000-bazarr.tar.gz"
+    )
+
+
+def test_list_snapshots_includes_update_kind(monkeypatch, tmp_path):
+    monkeypatch.setattr(backups.config, "read", lambda: {"STACK_ROOT": str(tmp_path)})
+    bdir = tmp_path / "backups"
+    bdir.mkdir()
+    (bdir / "kine-20260829-010000.tar.gz").write_bytes(b"sched")
+    (bdir / "kine-20260829-141000-bazarr.tar.gz").write_bytes(b"upd")
+    rows = {r["name"]: r for r in backups.list_snapshots()}
+    assert rows["kine-20260829-010000.tar.gz"]["kind"] == "scheduled"
+    assert rows["kine-20260829-141000-bazarr.tar.gz"]["kind"] == "update"
+    assert rows["kine-20260829-141000-bazarr.tar.gz"]["app"] == "bazarr"
+
+
 def test_list_snapshots_newest_first(monkeypatch, tmp_path):
     monkeypatch.setattr(backups.config, "read", lambda: {"STACK_ROOT": str(tmp_path)})
     bdir = tmp_path / "backups"
@@ -95,10 +114,48 @@ def test_prune_old_snapshots_keeps_three_newest(monkeypatch, tmp_path):
     ]
 
 
+def test_prune_old_snapshots_spares_update_tarballs(monkeypatch, tmp_path):
+    monkeypatch.setattr(backups.config, "read", lambda: {"STACK_ROOT": str(tmp_path)})
+    bdir = tmp_path / "backups"
+    bdir.mkdir()
+    scheduled = [
+        "kine-20260820-010000.tar.gz",
+        "kine-20260821-010000.tar.gz",
+        "kine-20260822-010000.tar.gz",
+        "kine-20260823-010000.tar.gz",
+    ]
+    update = "kine-20260819-010000-bazarr.tar.gz"
+    for name in scheduled + [update]:
+        (bdir / name).write_bytes(b"x")
+    removed = backups.prune_old_snapshots(keep=3)
+    assert update not in removed
+    assert (bdir / update).is_file()
+    remaining_scheduled = sorted(
+        p.name for p in bdir.glob("kine-*.tar.gz") if "-bazarr" not in p.name
+    )
+    assert remaining_scheduled == [
+        "kine-20260821-010000.tar.gz",
+        "kine-20260822-010000.tar.gz",
+        "kine-20260823-010000.tar.gz",
+    ]
+
+
+def test_delete_snapshot_unlinks_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(backups.config, "read", lambda: {"STACK_ROOT": str(tmp_path)})
+    bdir = tmp_path / "backups"
+    bdir.mkdir()
+    name = "kine-20260829-141000-bazarr.tar.gz"
+    (bdir / name).write_bytes(b"x")
+    backups.delete_snapshot(name)
+    assert not (bdir / name).exists()
+
+
 def test_backup_script_keeps_three_snapshots():
     script = (ROOT / "scripts" / "backup.sh").read_text()
     assert "tail -n +4" in script
     assert "Keep the last 3" in script or "keep 3" in script.lower()
+    # Per-app update snapshots must not match the prune glob.
+    assert "kine-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9].tar.gz" in script
 
 
 def test_backup_stamp_can_include_app_id():
@@ -106,9 +163,12 @@ def test_backup_stamp_can_include_app_id():
     assert "${1:+-$1}" in script or 'kine-${stamp}-' in script
 
 
-def test_backup_api_prunes_after_success():
+def test_backup_api_prunes_after_success_but_list_does_not():
     main = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()
     backup_fn = main.split('@app.post("/api/backup")', 1)[1].split("@app.post(", 1)[0]
     assert "prune_old_snapshots" in backup_fn
-    list_fn = main.split('@app.get("/api/backups")', 1)[1].split("@app.post(", 1)[0]
-    assert "prune_old_snapshots" in list_fn
+    list_fn = main.split('@app.get("/api/backups")', 1)[1].split("@app.", 1)[0]
+    assert "prune_old_snapshots" not in list_fn
+    assert '@app.get("/api/backups/{name}/file")' in main
+    assert '@app.delete("/api/backups/{name}")' in main
+    assert "delete_snapshot" in main

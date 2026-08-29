@@ -466,6 +466,17 @@ def test_managed_event_group_name():
     assert teamarr.managed_event_group_name("Strong8K") == "Strong8K | Sports"
 
 
+def test_sports_group_pattern_allows_fight_mma_triller_and_pay_per_view():
+    import re
+
+    pat = re.compile(teamarr.SPORTS_GROUP_PATTERN)
+    assert pat.search("|UK| ✪ FIGHT NIGHT")
+    assert pat.search("|US| ✪ TRILLER TV")
+    assert pat.search("|US| ✪ PAY PER VIEW")
+    assert pat.search("MMA | Bellator")
+    assert not pat.search("|US| ✪ WWE")
+
+
 def test_ensure_event_groups_creates_pattern_group_per_active_m3u():
     fake = _FakeClient()
     fake.m3u_accounts = _active_accounts()

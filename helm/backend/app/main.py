@@ -1752,9 +1752,35 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
 
 @app.get("/api/backups")
 async def backups_list(user: str = Depends(require_user)):
-    await asyncio.to_thread(backups.prune_old_snapshots)
     rows = await asyncio.to_thread(backups.list_snapshots)
     return {"ok": True, "snapshots": rows, "busy": provision_lock.status().get("busy")}
+
+
+@app.get("/api/backups/{name}/file")
+async def backups_download(name: str, user: str = Depends(require_user)):
+    try:
+        path = await asyncio.to_thread(backups.resolve, name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return FileResponse(
+        path,
+        filename=path.name,
+        media_type="application/gzip",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.delete("/api/backups/{name}")
+async def backups_delete(name: str, user: str = Depends(require_user)):
+    try:
+        await asyncio.to_thread(backups.delete_snapshot, name)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    return {"ok": True, "name": name}
 
 
 @app.post("/api/backup")

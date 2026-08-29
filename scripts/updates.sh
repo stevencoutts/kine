@@ -12,13 +12,19 @@ load_env .env
 var_for() { echo "$(echo "$1" | tr 'a-z-' 'A-Z_')"; }
 
 _digest() {
-  sha256_hex | cut -c1-12
+  # First 12 hex of a sha256:... value — not a hash of the blob.
+  grep -oE 'sha256:[0-9a-fA-F]{12,}' | head -1 | cut -c8-19 | tr 'A-F' 'a-f'
 }
 
 _row() {
   local svc="$1" image="$2"
-  remote=$(docker manifest inspect "$image" 2>/dev/null | _digest) || remote="?"
-  local_d=$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null | _digest) || local_d="none"
+  remote=$(IMAGE="$image" PYTHONPATH=helm/backend python3 -c \
+    'import os; from app.digests import remote_index_digest, short_digest; print(short_digest(remote_index_digest(os.environ["IMAGE"])))' \
+    2>/dev/null) || remote="?"
+  [[ -z "$remote" ]] && remote="?"
+  local_d=$(docker image inspect "$image" \
+    --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{.Id}}{{end}}' \
+    2>/dev/null | _digest) || local_d="none"
   if [[ "$remote" == "$local_d" ]]; then
     status="current"
   else
@@ -40,13 +46,10 @@ check() {
 }
 
 check_json() {
-  python3 - <<'PY'
-import hashlib, json, subprocess
+  PYTHONPATH=helm/backend python3 - <<'PY'
+import json, subprocess
 
-def digest(raw: str) -> str:
-    if not raw or not raw.strip():
-        return "none"
-    return hashlib.sha256(raw.encode()).hexdigest()[:12]
+from app.digests import remote_index_digest, short_digest, update_available
 
 def emit(obj):
     print(json.dumps(obj), flush=True)
@@ -64,22 +67,20 @@ rows = []
 for i, (svc, image) in enumerate(jobs, 1):
     emit({"type": "progress", "current": i, "total": total, "id": svc})
     try:
-        remote_raw = subprocess.check_output(
-            ["docker", "manifest", "inspect", image],
-            stderr=subprocess.DEVNULL, text=True)
-        remote = digest(remote_raw)
-    except subprocess.CalledProcessError:
+        remote = short_digest(remote_index_digest(image))
+    except Exception:
         remote = "?"
     try:
         local_raw = subprocess.check_output(
             ["docker", "image", "inspect", image,
-             "--format", "{{index .RepoDigests 0}}"],
+             "--format",
+             "{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{.Id}}{{end}}"],
             stderr=subprocess.DEVNULL, text=True)
-        local_d = digest(local_raw)
+        local_d = short_digest(local_raw)
     except subprocess.CalledProcessError:
         local_d = "none"
     tag = image.rsplit(":", 1)[-1] if ":" in image else "latest"
-    update = remote not in ("?", "none") and local_d != "none" and remote != local_d
+    update = update_available(local_d, remote)
     rows.append({
         "id": svc,
         "image": image,

@@ -11,15 +11,31 @@ BACKEND = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()
 def test_backup_restore_api_routes_exist():
     assert '@app.get("/api/backups")' in BACKEND
     assert '@app.post("/api/backups/restore")' in BACKEND
+    assert '@app.get("/api/backups/{name}/file")' in BACKEND
+    assert '@app.delete("/api/backups/{name}")' in BACKEND
     assert "backups.resolve" in BACKEND
     assert "restore.sh" in BACKEND
 
 
-def test_status_page_has_backup_restore_ui():
-    assert "Backup and Restore" in FRONTEND
-    assert "/backups/restore" in FRONTEND
-    assert "data-backup-restore" in FRONTEND
+def test_snapshots_admin_is_a_settings_section():
+    assert "{id:'snapshots', label:'Snapshots'}" in FRONTEND
+    assert "render.snapshots" in FRONTEND
     assert "id=\"backup-now\"" in FRONTEND
+    assert "data-backup-download" in FRONTEND or "/backups/" in FRONTEND and "/file" in FRONTEND
+    assert "data-backup-delete" in FRONTEND
+    assert "data-backup-restore" in FRONTEND
+    snaps = FRONTEND.split("render.snapshots = async", 1)[1].split("render.settings", 1)[0]
+    assert "kind" in snaps
+    assert "scheduled" in snaps or "update" in snaps
+
+
+def test_status_page_links_to_snapshots_instead_of_restore_ui():
+    status = FRONTEND.split("render.status = async () => {", 1)[1].split("render.snapshots = async", 1)[0]
+    assert "snapshots" in status
+    assert "id=\"goto-snapshots\"" in status or "data-settings-section=\"snapshots\"" in status
+    assert "id=\"backup-now\"" not in status
+    assert "id=\"backup-list\"" not in status
+    assert "Backup and Restore" not in status
 
 
 def test_status_page_has_disk_rings_and_glass():
@@ -52,6 +68,22 @@ def test_header_has_logout_button():
     assert 'nav button.nav-logout' in FRONTEND
     assert "/api/auth/logout" in FRONTEND
     assert '@app.post("/api/auth/logout")' in BACKEND
+
+
+def test_footer_has_updates_chip_that_opens_updates():
+    assert 'id="updates-chip"' in FRONTEND
+    assert "data-footer-updates" in FRONTEND
+    footer_css = FRONTEND.split("footer#vpnbar{", 1)[1].split("}", 1)[0]
+    assert "space-between" in footer_css
+    shell = FRONTEND.split("render.shell = (body) => {", 1)[1].split("updateVpnBar();", 1)[0]
+    assert 'id="vpn-status"' in shell
+    assert 'id="updates-chip"' in shell
+    vpn = FRONTEND.split("const updateVpnBar = async () => {", 1)[1].split("setInterval", 1)[0]
+    assert "bar.innerHTML" not in vpn
+    assert "vpn-status" in vpn
+    assert "updateUpdatesChip" in vpn or "updates-chip" in vpn
+    assert "render.updates()" in FRONTEND
+    assert "settingsSection = 'updates'" in FRONTEND or 'settingsSection="updates"' in FRONTEND
 
 
 def test_top_nav_is_dashboard_stats_vpn_settings():

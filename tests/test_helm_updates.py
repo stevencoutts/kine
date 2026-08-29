@@ -1,4 +1,5 @@
 """Helm updates parsing and provision lock."""
+import hashlib
 import json
 import pathlib
 import sys
@@ -9,6 +10,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "helm" / "backend"))
 
 from app import provision_lock, updates_info  # noqa: E402
+from app.digests import (  # noqa: E402
+    parse_image_ref,
+    remote_index_digest,
+    short_digest,
+    update_available,
+)
 
 
 SAMPLE_REPORT = """\
@@ -16,6 +23,85 @@ APP            STATUS       IMAGE
 sonarr         current      lscr.io/linuxserver/sonarr:latest
 radarr         UPDATE       lscr.io/linuxserver/radarr:latest
 """
+
+
+# Lidarr's real OCI index digest on 2026-08-29. Local RepoDigests and
+# `imagetools inspect` Digest are this same value; hashing inspect JSON
+# or the RepoDigest *string* is not.
+_LIDARR_INDEX = (
+    "sha256:c74c32408fdf6e7926ad62641fc1a5544206ee65c33f2188bb179edb30e28f5a"
+)
+_LIDARR_REPO = (
+    "lscr.io/linuxserver/lidarr@" + _LIDARR_INDEX
+)
+
+
+def test_short_digest_uses_registry_id_not_hash_of_blob():
+    """Current vs latest must compare Docker's digest, not sha256(blob)."""
+    assert short_digest(_LIDARR_INDEX) == "c74c32408fdf"
+    assert short_digest(_LIDARR_REPO) == "c74c32408fdf"
+    assert short_digest(_LIDARR_INDEX) == short_digest(_LIDARR_REPO)
+    assert update_available(_LIDARR_REPO, _LIDARR_INDEX) is False
+    hashed_string = hashlib.sha256(_LIDARR_REPO.encode()).hexdigest()[:12]
+    hashed_id = hashlib.sha256(_LIDARR_INDEX.encode()).hexdigest()[:12]
+    assert hashed_string != hashed_id
+    assert short_digest(_LIDARR_REPO) not in (hashed_string, hashed_id)
+
+
+def test_short_digest_empty_is_none():
+    assert short_digest("") == "none"
+    assert short_digest(None) == "none"
+    assert update_available("", _LIDARR_INDEX) is False
+    assert update_available(_LIDARR_REPO, "?") is False
+
+
+def test_update_available_when_index_moved():
+    newer = "sha256:" + "ab" * 32
+    assert update_available(_LIDARR_REPO, newer) is True
+
+
+def test_parse_image_ref_dockerhub_and_explicit_registries():
+    assert parse_image_ref("traefik:v3.6") == (
+        "registry-1.docker.io", "library/traefik", "v3.6")
+    assert parse_image_ref("grafana/grafana:latest") == (
+        "registry-1.docker.io", "grafana/grafana", "latest")
+    assert parse_image_ref("lscr.io/linuxserver/lidarr:latest") == (
+        "lscr.io", "linuxserver/lidarr", "latest")
+    assert parse_image_ref("ghcr.io/seerr-team/seerr:develop") == (
+        "ghcr.io", "seerr-team/seerr", "develop")
+    assert parse_image_ref("gcr.io/cadvisor/cadvisor:v0.49.1") == (
+        "gcr.io", "cadvisor/cadvisor", "v0.49.1")
+
+
+def test_remote_index_digest_reads_content_digest_header():
+    class _Resp:
+        def __init__(self):
+            self.headers = {"Docker-Content-Digest": _LIDARR_INDEX}
+
+        def read(self):
+            return b"{}"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def opener(req, timeout=None):
+        assert "linuxserver/lidarr/manifests/latest" in req.full_url
+        return _Resp()
+
+    assert short_digest(
+        remote_index_digest("lscr.io/linuxserver/lidarr:latest", opener=opener)
+    ) == "c74c32408fdf"
+
+
+def test_updates_sh_does_not_hash_manifest_inspect_json():
+    src = (ROOT / "scripts" / "updates.sh").read_text()
+    assert "hashlib.sha256(raw.encode())" not in src
+    assert "short_digest" in src
+    assert "remote_index_digest" in src
+    assert "docker manifest inspect" not in src.split("check_json()", 1)[1].split("apply()", 1)[0]
 
 
 def test_parse_report():

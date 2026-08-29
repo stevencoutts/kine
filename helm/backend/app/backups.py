@@ -8,7 +8,10 @@ from datetime import datetime, timezone
 
 from . import config
 
-NAME_RE = re.compile(r"^kine-\d{8}-\d{6}\.tar\.gz$")
+# Overnight / Back Up Now: kine-YYYYMMDD-HHMMSS.tar.gz
+# Per-app update rollback:  kine-YYYYMMDD-HHMMSS-<app>.tar.gz
+NAME_RE = re.compile(r"^kine-\d{8}-\d{6}(?:-[a-z0-9][a-z0-9-]*)?\.tar\.gz$")
+SCHEDULED_RE = re.compile(r"^kine-\d{8}-\d{6}\.tar\.gz$")
 KEEP_SNAPSHOTS = 3
 
 
@@ -27,6 +30,15 @@ def validate_name(name: str) -> str:
     return name
 
 
+def snapshot_kind(name: str) -> str:
+    return "scheduled" if SCHEDULED_RE.match(name) else "update"
+
+
+def snapshot_app(name: str) -> str | None:
+    match = re.match(r"^kine-\d{8}-\d{6}-([a-z0-9][a-z0-9-]*)\.tar\.gz$", name)
+    return match.group(1) if match else None
+
+
 def resolve(name: str) -> pathlib.Path:
     """Return an existing snapshot path under backups/, or raise."""
     safe = validate_name(name)
@@ -39,8 +51,14 @@ def resolve(name: str) -> pathlib.Path:
     return path
 
 
+def delete_snapshot(name: str) -> str:
+    path = resolve(name)
+    path.unlink()
+    return name
+
+
 def list_snapshots() -> list[dict]:
-    """Newest-first list of local snapshots."""
+    """Newest-first list of local snapshots (scheduled and per-app)."""
     root = backups_dir()
     if not root.is_dir():
         return []
@@ -54,11 +72,11 @@ def list_snapshots() -> list[dict]:
             continue
         mtime = datetime.fromtimestamp(st.st_mtime, tz=timezone.utc)
         created = None
-        m = re.match(r"^kine-(\d{8})-(\d{6})\.tar\.gz$", path.name)
-        if m:
+        stamp = re.match(r"^kine-(\d{8})-(\d{6})", path.name)
+        if stamp:
             try:
                 created = datetime.strptime(
-                    m.group(1) + m.group(2), "%Y%m%d%H%M%S"
+                    stamp.group(1) + stamp.group(2), "%Y%m%d%H%M%S"
                 ).replace(tzinfo=timezone.utc).isoformat(timespec="seconds")
             except ValueError:
                 created = None
@@ -68,18 +86,20 @@ def list_snapshots() -> list[dict]:
             "size_bytes": st.st_size,
             "mtime": mtime.isoformat(timespec="seconds"),
             "created": created or mtime.isoformat(timespec="seconds"),
+            "kind": snapshot_kind(path.name),
+            "app": snapshot_app(path.name),
         })
     rows.sort(key=lambda r: r["name"], reverse=True)
     return rows
 
 
 def prune_old_snapshots(keep: int = KEEP_SNAPSHOTS) -> list[str]:
-    """Delete snapshots beyond *keep* newest. Returns removed filenames."""
+    """Delete scheduled snapshots beyond *keep* newest. Update snaps stay."""
     if keep < 1:
         keep = 1
-    rows = list_snapshots()
+    scheduled = [row for row in list_snapshots() if row.get("kind") == "scheduled"]
     removed: list[str] = []
-    for row in rows[keep:]:
+    for row in scheduled[keep:]:
         path = pathlib.Path(row["path"])
         try:
             path.unlink(missing_ok=True)

@@ -16,6 +16,9 @@ services:
       RATE_LIMIT_PER_MINUTE: "120"
       IMAGE_CACHE_HOURS: "24"
       SHOW_TIMESTAMP: "true"
+      # UFC/PFL/Bellator athlete lookup is off unless this is set. Soccer
+      # leagues work without it; MMA covers 400 with "Failed to resolve team".
+      LEAGUES_ENABLE_MMA: "true"
     volumes:
       - ${STACK_ROOT}/config/game-thumbs/cache:/app/.cache
     networks: [kine_internal, kine_edge]

@@ -355,6 +355,8 @@ def test_game_thumbs_is_untunnelled_for_teamarr_art():
     assert thumbs.get("network_mode") != "service:gluetun"
     assert "kine_internal" in thumbs.get("networks", [])
     assert "${STACK_ROOT}/config/game-thumbs/cache:/app/.cache" in thumbs.get("volumes", [])
+    env = thumbs.get("environment") or {}
+    assert env.get("LEAGUES_ENABLE_MMA") == "true"
     labels = " ".join(str(label) for label in thumbs.get("labels", []))
     assert "Host(`thumbs.${KINE_DOMAIN}`)" in labels
     assert "services.game-thumbs.loadbalancer.server.port=3000" in labels
