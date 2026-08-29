@@ -54,7 +54,9 @@ def test_apply_runtime_defaults_sets_password_and_paths(tmp_path: Path):
     nzbget.apply_runtime_defaults(conf)
     text = conf.read_text()
     assert "DestDir=/data/downloads/complete" in text
-    assert "InterDir=/data/downloads/incomplete" in text
+    assert "InterDir=/data/incomplete" in text
+    assert "DirectUnpack=yes" in text
+    assert "DirectRename=yes" in text
     assert "ControlUsername=nzbget" in text
     assert "ControlPassword=nzbget" in text
     assert "WriteBuffer=1024" in text

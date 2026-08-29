@@ -17,6 +17,8 @@ services:
     volumes:
       - ${STACK_ROOT}/config/nzbget:/config
       - ${DATA_ROOT}/downloads:/data/downloads
+      # Local scratch for unrar/par2. DestDir stays on NFS so *arr hardlinks.
+      - ${STACK_ROOT}/nzbget-incomplete:/data/incomplete
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:6789/ || exit 1"]
       interval: 30s

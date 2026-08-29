@@ -271,6 +271,18 @@ def test_dispatcharr_pins_game_thumbs_host_at_start():
     assert "/app/docker/entrypoint.sh" in script
 
 
+def test_nzbget_unpacks_on_local_disk():
+    """Unrar over NFS is the post-processing stall; InterDir must be local."""
+    _, svc = SERVICES["nzbget"]
+    vols = "\n".join(str(v) for v in (svc.get("volumes") or []))
+    assert "${DATA_ROOT}/downloads:/data/downloads" in vols
+    assert "${STACK_ROOT}/nzbget-incomplete:/data/incomplete" in vols
+    recipe = (ROOT / "provision" / "recipes" / "nzbget.py").read_text()
+    assert 'INTER_DIR = "/data/incomplete"' in recipe
+    assert '"DirectUnpack": "yes"' in recipe
+    assert '"DirectRename": "yes"' in recipe
+
+
 def test_beets_mounts_kine_import_worker():
     """Lidarr cannot exec beet; a beets-side worker drains the shared queue."""
     _, svc = SERVICES["beets"]

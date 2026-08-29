@@ -90,7 +90,7 @@ EXTENSIONS_VALUE = ", ".join(ext["name"] for ext in DEFAULT_EXTENSIONS)
 CONTROL_USER = "nzbget"
 CONTROL_PASSWORD = "nzbget"
 DEST_DIR = "/data/downloads/complete"
-INTER_DIR = "/data/downloads/incomplete"
+INTER_DIR = "/data/incomplete"
 
 # Quiet the stock-image warnings; values match the previous kore appliance.
 RUNTIME_DEFAULTS = {
@@ -102,6 +102,8 @@ RUNTIME_DEFAULTS = {
     "ArticleCache": "500",
     "WriteLog": "reset",
     "RotateLog": "3",
+    "DirectUnpack": "yes",
+    "DirectRename": "yes",
 }
 
 # Match Sonarr/Radarr/Lidarr download-client categories (and ensure_data_tree dirs).
