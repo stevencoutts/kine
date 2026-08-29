@@ -559,12 +559,20 @@ textarea{font-family:ui-monospace,monospace;font-size:.8rem;resize:vertical}
 .nfs-shares ul{margin:0;padding:0;list-style:none;font-size:.8rem}
 .nfs-shares li{padding:.2rem 0;color:var(--text);word-break:break-all}
 .nfs-shares li span{color:var(--muted)}
-.updates-table{width:100%;border-collapse:separate;border-spacing:0;font-size:.82rem}
-.updates-table th,.updates-table td{padding:.55rem .65rem;text-align:left;border-bottom:1px solid var(--line)}
+.updates-table{width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0;font-size:.82rem}
+.updates-table th,.updates-table td{padding:.5rem .55rem;text-align:left;border-bottom:1px solid var(--line);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .updates-table th{color:var(--muted);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
 .updates-table tr:last-child td{border-bottom:none}
-.updates-table td.mono{font-family:ui-monospace,monospace;font-size:.78rem}
-.updates-wrap{overflow:auto;border:1px solid var(--line);border-radius:var(--radius);
+.updates-table td.mono{font-family:ui-monospace,monospace;font-size:.75rem}
+.updates-table th:nth-child(1),.updates-table td:nth-child(1){width:18%}
+.updates-table th:nth-child(2),.updates-table td:nth-child(2){width:9%}
+.updates-table th:nth-child(3),.updates-table td:nth-child(3){width:12%}
+.updates-table th:nth-child(4),.updates-table td:nth-child(4),
+.updates-table th:nth-child(5),.updates-table td:nth-child(5){width:13%}
+.updates-table th:nth-child(6),.updates-table td:nth-child(6){width:12%}
+.updates-table th:nth-child(7),.updates-table td:nth-child(7){width:23%;white-space:normal}
+.updates-wrap{overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);
   background:color-mix(in srgb, var(--panel) 52%, transparent)}
 .badge{display:inline-block;padding:.15rem .55rem;border-radius:999px;font-size:.72rem;font-weight:600}
 .badge.ok{background:rgba(63,185,80,.15);color:var(--ok)}
@@ -575,6 +583,15 @@ textarea{font-family:ui-monospace,monospace;font-size:.8rem;resize:vertical}
 .badge.dev{background:rgba(100,149,237,.15);color:#7eb6ff}
 @media (prefers-color-scheme: light){.badge.dev,.badge.busy{color:#2563eb}}
 #updates-progress{position:sticky;top:.5rem;z-index:2;margin-bottom:.75rem}
+.up-meter{height:6px;border-radius:999px;
+  background:color-mix(in srgb, var(--line) 65%, transparent);overflow:hidden}
+.up-meter > i{display:block;height:100%;border-radius:999px;width:0;
+  background:linear-gradient(90deg, color-mix(in srgb, var(--ok) 75%, #7dd3a0), var(--ok));
+  transition:width .35s ease}
+.up-meter-wrap{min-width:0;max-width:100%}
+.up-meter-wrap > span{display:block;color:var(--muted);font-size:.75rem;margin-bottom:.3rem;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#updates-check-meter{flex:1;min-width:10rem;max-width:28rem}
 .modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:40;
   display:flex;align-items:center;justify-content:center;padding:1rem}
 .modal{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
@@ -607,7 +624,8 @@ const api = async (path, opts={}) => {
 };
 
 const state = { tab:'apps', apps:[], tiers:{}, activeTier:'watching', watchTimer:null,
-  updatesLog:'', updatesProgress:null, settingsSection:'appliance' };
+  updatesLog:'', updatesProgress:null, updatesBusy:new Set(), updatesPoll:null,
+  settingsSection:'appliance' };
 const SETTINGS_SECTIONS = [
   {id:'appliance', label:'Appliance'},
   {id:'storage', label:'Storage'},
@@ -2083,31 +2101,131 @@ render.stats = async () => {
   window.__statsHeroTimer = setInterval(refreshHero, 15000);
 };
 
-render.updates = async (refresh=false) => {
+render.updates = async (opts={}) => {
   state.tab = 'settings';
   state.settingsSection = 'updates';
+  const keep = !!(opts.keep && $('#updates-body') && $('#refresh'));
+  if (!keep) {
   render.shell(wrapSettings('updates', `<div class="section" style="margin:0;padding:0"><h2>Image Updates</h2>
     <p style="color:var(--muted);font-size:.85rem">Nothing updates on its own.
     The overnight job only checks digests; applying an update snapshots
     config first and rolls back if the app does not come back healthy.
     Update All runs one at a time. Core stack containers (Traefik, VPN,
     dockerproxy) are updated on the host, not from here.</p>
-    <div class="row" style="margin-bottom:1rem">
+    <div class="row" style="margin-bottom:1rem;align-items:center;gap:.75rem;flex-wrap:wrap">
       <button class="act" id="refresh">Check Now</button>
+      <div id="updates-check-meter" class="up-meter-wrap" style="display:none">
+        <span id="updates-check-label"></span>
+        <div class="up-meter"><i id="updates-check-bar"></i></div>
+      </div>
       <span id="age" style="color:var(--muted);font-size:.8rem"></span>
     </div>
     <div id="updates-progress" class="banner" style="display:none"></div>
-    <div id="updates-body"><p style="color:var(--muted)">${
-      refresh ? 'checking registries…' : 'loading…'
-    }</p></div>
+    <div id="updates-body"><p style="color:var(--muted)">loading…</p></div>
     <pre id="rep" style="margin-top:1rem;display:none"></pre></div>`));
   bindSettingsNav();
-  $('#refresh').onclick = () => render.updates(true);
-  const r = await api('/updates' + (refresh ? '?refresh=true' : ''));
+  }
+  const shortApply = (msg) => {
+    const m = (msg || '').toLowerCase();
+    if (m.includes('snapshot')) return 'Snapshotting…';
+    if (m.includes('pull')) return 'Pulling…';
+    if (m.includes('heal')) return 'Healing…';
+    if (m.includes('tunnel')) return 'Retunneling…';
+    if (m.includes('recreat')) return 'Recreating…';
+    if (m.includes('wait')) return 'Waiting…';
+    if (m.includes('start')) return 'Starting…';
+    return 'Updating…';
+  };
+  const paintLiveProgress = (p) => {
+    const wrap = $('#updates-check-meter');
+    const label = $('#updates-check-label');
+    const bar = $('#updates-check-bar');
+    const check = p && p.check;
+    if (wrap && label && bar) {
+      if (check) {
+        wrap.style.display = 'block';
+        label.textContent = check.total
+          ? `Checking ${check.current}/${check.total} · ${check.id || 'registries'}`
+          : 'Checking registries…';
+        bar.style.width = `${Math.max(0, Math.min(100, check.pct || 0))}%`;
+      } else {
+        wrap.style.display = 'none';
+        bar.style.width = '0%';
+      }
+    }
+    const apps = (p && p.apps) || {};
+    Object.keys(apps).forEach(id => {
+      const job = apps[id];
+      const meter = document.querySelector(`[data-row-meter="${id}"]`);
+      if (!meter || !job) return;
+      meter.style.display = 'block';
+      const pct = Math.max(0, Math.min(100, job.pct || 0));
+      const btn = meter.parentElement && meter.parentElement.querySelector('button');
+      if (btn) btn.style.display = 'none';
+      meter.innerHTML = `<span>${shortApply(job.message)}</span>
+        <div class="up-meter"><i style="width:${pct}%"></i></div>`;
+    });
+  };
+  const startProgressPoll = () => {
+    if (state.updatesPoll) return;
+    const tick = async () => {
+      try { paintLiveProgress(await api('/updates/progress')); }
+      catch (_) { /* keep last paint */ }
+    };
+    state.updatesPoll = setInterval(tick, 400);
+    tick();
+  };
+  const stopProgressPollIfIdle = async () => {
+    if (state.updatesBusy.size) return;
+    try {
+      const p = await api('/updates/progress');
+      if (p.busy) return;
+    } catch (_) { /* treat as idle */ }
+    if (state.updatesPoll) {
+      clearInterval(state.updatesPoll);
+      state.updatesPoll = null;
+    }
+  };
+  const watchProgress = async (job) => {
+    startProgressPoll();
+    try { return await job; }
+    finally { await stopProgressPollIfIdle(); }
+  };
+  const markBusy = (id) => {
+    state.updatesBusy.add(id);
+    const refresh = $('#refresh');
+    if (refresh) refresh.disabled = true;
+  };
+  const markIdle = (id) => {
+    state.updatesBusy.delete(id);
+    const refresh = $('#refresh');
+    if (refresh && !state.updatesBusy.size) refresh.disabled = false;
+  };
+  if (!keep) {
+  $('#refresh').onclick = async () => {
+    const btn = $('#refresh');
+    if (state.updatesBusy.size) return;
+    btn.disabled = true;
+    try {
+      const payload = await watchProgress(api('/updates?refresh=true'));
+      await render.updates({keep: true, payload});
+    } catch (e) {
+      const banner = $('#updates-progress');
+      if (banner) {
+        banner.style.display = 'block';
+        banner.className = 'banner bad';
+        banner.textContent = `Check failed: ${e.message || e}`;
+      }
+    } finally {
+      if (!state.updatesBusy.size) btn.disabled = false;
+    }
+  };
+  }
+  const r = opts.payload || await api('/updates');
   const rows = r.containers || [];
   $('#age').textContent = r.cached ? `cached, checked ${r.checked || 'unknown'}` : 'just checked';
   const fmtDigest = d => (!d || d === 'none' || d === '?') ? '—' : d;
-  const rowHtml = (list) => list.map(c => {
+  const rowHtml = (list, key) => list.map(c => {
     const ch = c.channel === 'dev'
       ? `<span class="badge dev">dev</span>`
       : `<span class="badge muted">prod</span>`;
@@ -2125,14 +2243,14 @@ render.updates = async (refresh=false) => {
     } else if (c.update_available) {
       btn = `<button class="act primary" data-up="${c.id}">Update</button>`;
     }
-    return `<tr data-row="${c.id}">
+    return `<tr data-row="${c.id}" data-up-section="${key}">
       <td><strong>${c.name || c.id}</strong><span style="color:var(--muted)">${run}</span></td>
       <td>${ch}</td>
       <td class="mono">${tag}${stable}</td>
       <td class="mono" data-local-digest="${c.id}">${fmtDigest(c.local_digest)}</td>
       <td class="mono">${fmtDigest(c.remote_digest)}</td>
       <td data-row-status="${c.id}">${st}</td>
-      <td data-row-action="${c.id}">${btn}</td>
+      <td data-row-action="${c.id}">${btn}<div data-row-meter="${c.id}" class="up-meter-wrap" style="display:none"></div></td>
     </tr>`;
   }).join('');
   const section = (title, list, key) => {
@@ -2148,7 +2266,7 @@ render.updates = async (refresh=false) => {
             <th>Container</th><th>Channel</th><th>Tag</th>
             <th>Current digest</th><th>Latest digest</th><th>Status</th><th></th>
           </tr></thead>
-          <tbody>${rowHtml(list)}</tbody>
+          <tbody>${rowHtml(list, key)}</tbody>
         </table></div>`
       : `<p style="color:var(--muted);font-size:.85rem">None in this group.</p>`;
     return `<div class="section" style="margin-top:1.25rem">
@@ -2157,8 +2275,16 @@ render.updates = async (refresh=false) => {
       </div>${body}</div>`;
   };
   const apps = rows.filter(c => !c.core);
-  $('#updates-body').innerHTML = apps.length
-    ? section('Apps', apps, 'apps')
+  const acquisition = apps.filter(c => c.tier === 'acquisition');
+  const live = apps.filter(c => c.tier === 'live');
+  const other = apps.filter(c => c.tier !== 'acquisition' && c.tier !== 'live');
+  const groups = {acquisition, live, other};
+  const parts = [];
+  if (acquisition.length) parts.push(section('Acquisition', acquisition, 'acquisition'));
+  if (live.length) parts.push(section('Live TV', live, 'live'));
+  if (other.length) parts.push(section('Other', other, 'other'));
+  $('#updates-body').innerHTML = parts.length
+    ? parts.join('')
     : `<p style="color:var(--muted)">No updatable images in the active compose project.</p>`;
 
   if (state.updatesLog) {
@@ -2193,26 +2319,30 @@ render.updates = async (refresh=false) => {
     const cls = ({ok:'ok', warn:'warn', bad:'bad', busy:'busy'})[kind] || 'muted';
     if (cell) cell.innerHTML = `<span class="badge ${cls}">${label}</span>`;
     if (action) {
-      if (kind === 'busy') action.innerHTML = '<span style="color:var(--muted);font-size:.8rem">working…</span>';
-      else if (kind === 'ok') action.innerHTML = '';
-      else if (kind === 'bad') action.innerHTML = `<button class="act primary" data-up="${id}">Retry</button>`;
+      if (kind === 'busy') {
+        action.querySelectorAll('button').forEach(el => { el.disabled = true; });
+      } else if (kind === 'ok') {
+        action.querySelectorAll('button').forEach(el => el.remove());
+        const meter = action.querySelector('[data-row-meter]');
+        if (meter) { meter.style.display = 'none'; meter.innerHTML = ''; }
+      } else if (kind === 'bad') {
+        const meter = action.querySelector('[data-row-meter]');
+        if (meter) { meter.style.display = 'none'; meter.innerHTML = ''; }
+        action.innerHTML = `<button class="act primary" data-up="${id}">Retry</button>` +
+          `<div data-row-meter="${id}" class="up-meter-wrap" style="display:none"></div>`;
+      }
     }
     if (kind === 'ok' && remoteDigest && local) local.textContent = fmtDigest(remoteDigest);
   };
 
   const applyOne = async (id, log) => {
     const started = Date.now();
-    const tick = setInterval(() => {
-      const secs = Math.round((Date.now() - started) / 1000);
-      const action = document.querySelector(`[data-row-action="${id}"]`);
-      if (action) action.innerHTML =
-        `<span style="color:var(--muted);font-size:.8rem">working… ${secs}s</span>`;
-    }, 1000);
+    markBusy(id);
     log.textContent += (log.textContent ? '\n' : '') +
       `→ ${id}: snapshotting, pulling and recreating…\n`;
     log.scrollTop = log.scrollHeight;
     try {
-      const res = await api('/updates/' + id, {method:'POST'});
+      const res = await watchProgress(api('/updates/' + id, {method:'POST'}));
       log.textContent += res.rolled_back
         ? `ROLLED BACK ${id}\n${res.log}\n`
         : `OK ${id} (${Math.round((Date.now() - started) / 1000)}s)\n${res.log}\n`;
@@ -2224,7 +2354,7 @@ render.updates = async (refresh=false) => {
       log.scrollTop = log.scrollHeight;
       throw e;
     } finally {
-      clearInterval(tick);
+      markIdle(id);
     }
   };
 
@@ -2269,20 +2399,22 @@ render.updates = async (refresh=false) => {
   bindUpdateButtons();
 
   document.querySelectorAll('[data-up-all]').forEach(b => b.onclick = async () => {
-    const group = apps;
+    const key = b.dataset.upAll;
+    const group = groups[key] || [];
     const pending = group.filter(applyable).map(c => c.id);
     if (!pending.length) return;
-    document.querySelectorAll('[data-up], [data-up-all], #refresh').forEach(el => el.disabled = true);
+    document.querySelectorAll(
+      `[data-up-section="${key}"] [data-up], [data-up-all="${key}"]`
+    ).forEach(el => el.disabled = true);
     const rep = $('#rep');
     rep.style.display = 'block';
-    rep.textContent = '';
+    if (!state.updatesBusy.size) rep.textContent = '';
     let done = 0;
     let failed = null;
     for (let i = 0; i < pending.length; i++) {
       const id = pending[i];
       const label = `${i + 1}/${pending.length}`;
       b.textContent = `Updating ${label}…`;
-      setProgress(`Updating ${label}: ${id}…`, 'warn');
       setRowStatus(id, 'busy', 'updating…');
       try {
         const row = rows.find(c => c.id === id);
@@ -2303,15 +2435,18 @@ render.updates = async (refresh=false) => {
     if (!failed) {
       b.textContent = `Done (${done}/${pending.length})`;
       const skipped = group.filter(c => c.update_available && c.host_only).map(c => c.id);
-      setProgress(
-        skipped.length
-          ? `Finished ${done}/${pending.length} updates. Skipped host-only: ${skipped.join(', ')}.`
-          : `Finished ${done}/${pending.length} updates.`,
-        'ok'
-      );
+      if (!state.updatesBusy.size) {
+        setProgress(
+          skipped.length
+            ? `Finished ${done}/${pending.length} updates. Skipped host-only: ${skipped.join(', ')}.`
+            : `Finished ${done}/${pending.length} updates.`,
+          'ok'
+        );
+        await render.updates({keep: true});
+      }
+    } else {
+      bindUpdateButtons();
     }
-    // Refresh from cache so digests/pending match disk, but keep the log.
-    await render.updates(false);
   });
 };
 

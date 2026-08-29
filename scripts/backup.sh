@@ -8,7 +8,8 @@ set -Eeuo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 load_env .env
 stamp=$(date +%Y%m%d-%H%M%S)
-out="${STACK_ROOT}/backups/kine-${stamp}.tar.gz"
+suffix="${1:+-$1}"
+out="${STACK_ROOT}/backups/kine-${stamp}${suffix}.tar.gz"
 mkdir -p "${STACK_ROOT}/backups"
 echo "Snapshotting config to ${out}..." >&2
 # GNU tar exits 1 when a file changes while reading (common for live *arr DBs).

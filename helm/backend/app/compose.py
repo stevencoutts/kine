@@ -71,6 +71,43 @@ async def script(name: str, *args: str, timeout: int = 900) -> tuple[int, str]:
     return proc.returncode or 0, out.decode(errors="replace")
 
 
+async def script_with_callback(
+    name: str, *args: str, timeout: int = 900, on_line=None,
+) -> tuple[int, str]:
+    """Run a repo script, forwarding each stdout line to `on_line`."""
+    proc = await asyncio.create_subprocess_exec(
+        str(REPO / "scripts" / name), *args,
+        cwd=REPO,
+        env=compose_env(),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    chunks: list[str] = []
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    assert proc.stdout
+    try:
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                raise asyncio.TimeoutError()
+            raw = await asyncio.wait_for(proc.stdout.readline(), timeout=remaining)
+            if not raw:
+                break
+            text = raw.decode(errors="replace")
+            chunks.append(text)
+            if on_line:
+                on_line(text.rstrip("\n"))
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            raise asyncio.TimeoutError()
+        await asyncio.wait_for(proc.wait(), timeout=remaining)
+    except asyncio.TimeoutError:
+        proc.kill()
+        return 124, "".join(chunks) + "timed out"
+    return proc.returncode or 0, "".join(chunks)
+
+
 async def stream_logs(service: str, tail: int = 200):
     proc = await asyncio.create_subprocess_exec(
         "docker", "compose", "logs", "-f", f"--tail={tail}", service,

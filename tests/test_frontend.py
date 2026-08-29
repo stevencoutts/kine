@@ -372,13 +372,44 @@ def test_helm_uses_grey_brand_and_favicon():
 # ── stats page ──────────────────────────────────────────────────
 def test_updates_page_lists_apps_not_core_containers():
     assert "Core containers" not in FRONTEND
-    assert "section('Apps', apps, 'apps')" in FRONTEND
     assert "section('Core containers'" not in FRONTEND
     assert "catalogue_apps" in (ROOT / "helm" / "backend" / "app" / "updates_info.py").read_text()
     assert "is a core container" in BACKEND
 
     assert "stats:'Stats'" in FRONTEND.replace(" ", "")
     assert "render.stats" in FRONTEND
+
+
+def test_updates_page_splits_acquisition_live_tv_and_other():
+    assert "section('Acquisition'" in FRONTEND
+    assert "section('Live TV'" in FRONTEND
+    assert "section('Other'" in FRONTEND
+    assert "section('Apps', apps, 'apps')" not in FRONTEND
+    assert "b.dataset.upAll" in FRONTEND
+    assert "const group = apps;" not in FRONTEND
+
+
+def test_updates_shows_check_and_per_row_progress_bars():
+    assert "/updates/progress" in FRONTEND
+    assert '@app.get("/api/updates/progress")' in BACKEND
+    assert 'id="updates-check-meter"' in FRONTEND
+    assert "data-row-meter" in FRONTEND
+    assert ".up-meter" in FRONTEND
+    assert "$('#refresh').onclick = () => render.updates(true);" not in FRONTEND
+
+
+def test_updates_table_fits_without_horizontal_scroll():
+    wrap = FRONTEND.split(".updates-wrap", 1)[1].split("}", 1)[0]
+    assert "overflow:auto" not in wrap
+    assert "table-layout:fixed" in FRONTEND
+    assert "Snapshotting…" in FRONTEND
+
+
+def test_updates_all_runs_sections_in_parallel():
+    assert "data-up-section" in FRONTEND
+    assert "document.querySelectorAll('[data-up], [data-up-all], #refresh')" not in FRONTEND
+    assert "updatesBusy" in FRONTEND
+    assert "backup.sh \"$svc\"" in (ROOT / "scripts" / "updates.sh").read_text()
 
 
 def test_stats_embeds_solo_panels_from_the_overview_dashboard():

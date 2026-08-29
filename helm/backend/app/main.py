@@ -977,6 +977,12 @@ async def updates(refresh: bool = False, user: str = Depends(require_user)):
     return await updates_info.fetch(compose, refresh=refresh)
 
 
+@app.get("/api/updates/progress")
+async def updates_progress(user: str = Depends(require_user)):
+    """Live check/apply progress for the Updates page meters."""
+    return updates_info.progress()
+
+
 # Helm reaches Docker only through dockerproxy. Recreating that container
 # from here stops the proxy mid-apply and leaves it (and often Traefik)
 # down. Update it on the host instead.
@@ -1017,20 +1023,36 @@ async def apply_update(app_id: str, user: str = Depends(require_user)):
             detail=f"{app_id} is disabled — enable it before updating, "
                    "or Update All will skip it",
         )
-    code, out = await compose.script("updates.sh", "apply", app_id, timeout=1200)
-    if code == 0:
-        # Clear the badge from the overnight cache immediately so the page
-        # does not still say "update" until the next full registry check.
-        scheduler.mark_container_current(app_id)
-        # updates.sh also heals; run again here so a partial script log
-        # still cannot leave Sonarr/Radarr on a dead Gluetun namespace.
-        heal = await asyncio.to_thread(tunnel_heal.heal_orphans)
-        if heal.get("healed"):
-            out = (out or "") + f"\n[tunnel-heal] recreated {', '.join(heal['healed'])}"
-        stray = await reconcile_disabled_running()
-        if stray:
-            out = (out or "") + f"\n[profile-reconcile] stopped {', '.join(stray)}"
-    return {"ok": code == 0, "rolled_back": code != 0, "log": out}
+    def on_line(line: str) -> None:
+        parsed = updates_info.parse_apply_line(line)
+        if parsed:
+            updates_info.set_apply_progress(
+                app_id=app_id,
+                step=parsed["step"],
+                steps=parsed["steps"],
+                message=parsed["message"],
+            )
+
+    updates_info.set_apply_progress(
+        app_id=app_id, step=0, steps=4, message=f"Starting {app_id}…")
+    try:
+        code, out = await compose.script_with_callback(
+            "updates.sh", "apply", app_id, timeout=1200, on_line=on_line)
+        if code == 0:
+            # Clear the badge from the overnight cache immediately so the page
+            # does not still say "update" until the next full registry check.
+            scheduler.mark_container_current(app_id)
+            # updates.sh also heals; run again here so a partial script log
+            # still cannot leave Sonarr/Radarr on a dead Gluetun namespace.
+            heal = await asyncio.to_thread(tunnel_heal.heal_orphans)
+            if heal.get("healed"):
+                out = (out or "") + f"\n[tunnel-heal] recreated {', '.join(heal['healed'])}"
+            stray = await reconcile_disabled_running()
+            if stray:
+                out = (out or "") + f"\n[profile-reconcile] stopped {', '.join(stray)}"
+        return {"ok": code == 0, "rolled_back": code != 0, "log": out}
+    finally:
+        updates_info.clear_progress(app_id)
 
 
 # ── VPN ─────────────────────────────────────────────────────────

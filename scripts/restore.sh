@@ -2,11 +2,10 @@
 # ./scripts/restore.sh <tarball> [app]
 #
 # Restores app config (and for a full restore: .env with COMPOSE_PROFILES,
-# compose files, catalogue). Does not run `compose down` — that would kill
-# Helm mid-request when restore is triggered from the UI. Instead it stops
-# non-core services, extracts, then brings the stack back up and force-
-# recreates the VPN tunnel group so network_mode:service:gluetun apps
-# attach to the live gluetun container.
+# compose files, catalogue). A single-app restore must not stop Gluetun or
+# the rest of the stack — that is how a failed Bazarr update took the
+# tunnel down. Full restore still stops non-core services, extracts, then
+# brings the stack back and recreates the VPN tunnel group.
 set -Eeuo pipefail
 tarball="${1:?usage: restore.sh <tarball> [app]}"
 app="${2:-}"
@@ -48,22 +47,19 @@ heal_tunnel_group() {
   fi
 }
 
-echo "Stopping non-core services…" >&2
-stop_non_core
-
 if [[ -n "$app" ]]; then
   case "$app" in
     *..*|*/*|*\\*) echo "invalid app name" >&2; exit 1 ;;
   esac
+  echo "Stopping ${app}…" >&2
+  docker compose stop "$app" 2>/dev/null || true
   tar xzf "$tarball" -C "${STACK_ROOT}" "config/${app}"
   echo "restored config for ${app}"
   load_env .env
-  if [[ ",${VPN_TUNNELLED_APPS:-}," == *",$app,"* ]]; then
-    heal_tunnel_group
-  else
-    docker compose up -d --force-recreate "$app" || docker compose up -d "$app"
-  fi
+  docker compose up -d --no-deps "$app"
 else
+  echo "Stopping non-core services…" >&2
+  stop_non_core
   tar xzf "$tarball" -C "${STACK_ROOT}" config
   tar xzf "$tarball" -C . .env docker-compose.yml compose catalogue.yml 2>/dev/null \
     || tar xzf "$tarball" -C . .env

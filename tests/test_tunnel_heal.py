@@ -153,6 +153,27 @@ def test_updates_script_heals_after_every_apply():
     assert "heal" in script.lower()
 
 
+def test_apply_recreates_only_the_named_service():
+    """Bazarr depends_on gluetun. `compose up -d bazarr` without --no-deps
+    recreates the tunnel, then heal orphans every peer — the whole stack."""
+    script = (ROOT / "scripts" / "updates.sh").read_text()
+    assert 'compose up -d --no-deps "$svc"' in script
+    assert "compose up -d --force-recreate --no-deps" in script
+    # Bare `up -d "$svc"` would recreate depends_on (gluetun).
+    assert 'compose up -d "$svc"' not in script
+
+
+def test_single_app_restore_does_not_stop_the_stack():
+    """Failed apply calls restore.sh <snap> <app>. Stopping every non-core
+    service is how a Bazarr rollback took Gluetun (and the tunnel) down."""
+    script = (ROOT / "scripts" / "restore.sh").read_text()
+    assert 'compose stop "$app"' in script
+    assert 'compose up -d --no-deps "$app"' in script
+    single = script.split('if [[ -n "$app" ]]', 1)[1].split("else", 1)[0]
+    assert "stop_non_core" not in single
+    assert "heal_tunnel_group" not in single
+
+
 def test_apply_update_heals_tunnel_orphans():
     main = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()
     apply = main.split("@app.post(\"/api/updates/{app_id}\")", 1)[1].split(

@@ -101,6 +101,11 @@ def test_backup_script_keeps_three_snapshots():
     assert "Keep the last 3" in script or "keep 3" in script.lower()
 
 
+def test_backup_stamp_can_include_app_id():
+    script = (ROOT / "scripts" / "backup.sh").read_text()
+    assert "${1:+-$1}" in script or 'kine-${stamp}-' in script
+
+
 def test_backup_api_prunes_after_success():
     main = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()
     backup_fn = main.split('@app.post("/api/backup")', 1)[1].split("@app.post(", 1)[0]

@@ -48,13 +48,21 @@ def digest(raw: str) -> str:
         return "none"
     return hashlib.sha256(raw.encode()).hexdigest()[:12]
 
+def emit(obj):
+    print(json.dumps(obj), flush=True)
+
 cfg = json.loads(subprocess.check_output(
     ["docker", "compose", "config", "--format", "json"], text=True))
-rows = []
+jobs = []
 for svc, meta in sorted(cfg.get("services", {}).items()):
     image = (meta or {}).get("image") or ""
     if not image or "local" in image:
         continue
+    jobs.append((svc, image))
+total = len(jobs)
+rows = []
+for i, (svc, image) in enumerate(jobs, 1):
+    emit({"type": "progress", "current": i, "total": total, "id": svc})
     try:
         remote_raw = subprocess.check_output(
             ["docker", "manifest", "inspect", image],
@@ -81,14 +89,14 @@ for svc, meta in sorted(cfg.get("services", {}).items()):
         "update_available": update,
         "status": "update" if update else "current",
     })
-print(json.dumps(rows))
+emit({"type": "result", "rows": rows})
 PY
 }
 
 apply() {
   svc="$1"
   echo "1/4 Snapshotting config before updating ${svc}..."
-  snap=$(./scripts/backup.sh)
+  snap=$(./scripts/backup.sh "$svc")
   echo "  ${snap}"
 
   prev=$(docker image inspect "$(docker compose config --format json \
@@ -98,7 +106,7 @@ apply() {
   echo "2/4 Pulling ${svc} image..."
   docker compose pull "$svc"
   echo "3/4 Recreating ${svc}..."
-  docker compose up -d "$svc"
+  docker compose up -d --no-deps "$svc"
 
   # Gluetun owns the network namespace for every tunnelled app. Recreating
   # it alone leaves those containers pinned to the old namespace — Seerr
@@ -122,7 +130,7 @@ PY
 )
     if ((${#tunnelled[@]})); then
       echo "3b/4 Recreating tunnelled apps onto the new gluetun: ${tunnelled[*]}"
-      docker compose up -d --force-recreate "${tunnelled[@]}"
+      docker compose up -d --force-recreate --no-deps "${tunnelled[@]}"
     fi
   fi
 
@@ -148,7 +156,7 @@ PY
   if [[ -n "$prev" ]]; then
     var="$(var_for "$svc")_DIGEST"
     sedi "s|^${var}=.*|${var}=${prev#*@}|" .env
-    docker compose up -d "$svc"
+    docker compose up -d --no-deps "$svc"
   fi
   ./scripts/restore.sh "$snap" "$svc"
   exit 1

@@ -67,6 +67,29 @@ def test_enrich_marks_hidden_and_unknown_as_core(monkeypatch):
     assert [r["id"] for r in updates_info.catalogue_apps(rows)] == ["sonarr"]
 
 
+def test_enrich_includes_catalogue_tier(monkeypatch):
+    monkeypatch.setattr(updates_info.config, "read", lambda: {})
+    monkeypatch.setattr(updates_info.config, "profiles", lambda: ["sonarr", "dispatcharr", "grafana"])
+    monkeypatch.setattr(updates_info.channels, "channels", lambda: [])
+    monkeypatch.setattr(
+        updates_info.catalogue, "load",
+        lambda: {
+            "sonarr": {"name": "Sonarr", "tier": "acquisition"},
+            "dispatcharr": {"name": "Dispatcharr", "tier": "live"},
+            "grafana": {"name": "Grafana", "tier": "metrics"},
+        },
+    )
+    rows = updates_info.enrich([
+        {"id": "sonarr", "tag": "latest", "update_available": False},
+        {"id": "dispatcharr", "tag": "dev", "update_available": False},
+        {"id": "grafana", "tag": "latest", "update_available": False},
+    ])
+    by_id = {r["id"]: r for r in rows}
+    assert by_id["sonarr"]["tier"] == "acquisition"
+    assert by_id["dispatcharr"]["tier"] == "live"
+    assert by_id["grafana"]["tier"] == "metrics"
+
+
 def test_mark_container_current_clears_pending(tmp_path, monkeypatch):
     import types
     sys.modules.setdefault(
@@ -96,6 +119,86 @@ def test_mark_container_current_clears_pending(tmp_path, monkeypatch):
     assert by_id["cadvisor"]["update_available"] is False
     assert by_id["cadvisor"]["local_digest"] == "bbb"
     assert data["updates"]["pending"] == ["sonarr"]
+
+
+def test_parse_check_output_reads_ndjson_result_and_ignores_progress():
+    blob = "\n".join([
+        json.dumps({"type": "progress", "current": 1, "total": 2, "id": "sonarr"}),
+        json.dumps({"type": "progress", "current": 2, "total": 2, "id": "radarr"}),
+        json.dumps({
+            "type": "result",
+            "rows": [
+                {"id": "sonarr", "update_available": False},
+                {"id": "radarr", "update_available": True},
+            ],
+        }),
+    ])
+    rows = updates_info.parse_check_output(blob)
+    assert [r["id"] for r in rows] == ["sonarr", "radarr"]
+    assert rows[1]["update_available"] is True
+
+
+def test_parse_check_output_still_accepts_legacy_json_array():
+    blob = json.dumps([
+        {"id": "sonarr", "update_available": False},
+        {"id": "radarr", "update_available": True},
+    ])
+    rows = updates_info.parse_check_output(blob)
+    assert [r["id"] for r in rows] == ["sonarr", "radarr"]
+
+
+def test_parse_apply_line_reads_step_fractions():
+    snap = updates_info.parse_apply_line("1/4 Snapshotting config before updating sonarr...")
+    assert snap == {"step": 1, "steps": 4, "pct": 25, "message": "Snapshotting config before updating sonarr..."}
+    pull = updates_info.parse_apply_line("2/4 Pulling sonarr image...")
+    assert pull["step"] == 2 and pull["pct"] == 50
+    heal = updates_info.parse_apply_line("3c/4 Healing tunnel orphans (if any)...")
+    assert heal["step"] == 3 and heal["pct"] == 75
+    wait = updates_info.parse_apply_line("4/4 Waiting up to 90s for sonarr to come back healthy...")
+    assert wait["step"] == 4 and wait["pct"] == 90
+    assert updates_info.parse_apply_line("OK: sonarr healthy on the new image") is None
+
+
+def test_progress_snapshot_tracks_check_and_apply():
+    updates_info.clear_progress()
+    assert updates_info.progress()["busy"] is False
+    updates_info.set_check_progress(current=3, total=12, app_id="prowlarr")
+    snap = updates_info.progress()
+    assert snap["busy"] is True
+    assert snap["kind"] == "check"
+    assert snap["current"] == 3
+    assert snap["total"] == 12
+    assert snap["id"] == "prowlarr"
+    assert snap["pct"] == 25
+    updates_info.clear_progress()
+    updates_info.set_apply_progress(app_id="sonarr", step=2, steps=4, message="Pulling sonarr image...")
+    snap = updates_info.progress()
+    assert snap["kind"] == "apply"
+    assert snap["id"] == "sonarr"
+    assert snap["pct"] == 50
+    assert "Pulling" in snap["message"]
+    updates_info.clear_progress()
+    assert updates_info.progress()["busy"] is False
+
+
+def test_progress_tracks_parallel_applies():
+    updates_info.clear_progress()
+    updates_info.set_apply_progress(app_id="sonarr", step=1, steps=4, message="Snapshotting...")
+    updates_info.set_apply_progress(app_id="dispatcharr", step=2, steps=4, message="Pulling...")
+    snap = updates_info.progress()
+    assert snap["busy"] is True
+    assert set(snap["apps"]) == {"sonarr", "dispatcharr"}
+    assert snap["apps"]["sonarr"]["pct"] == 25
+    assert snap["apps"]["dispatcharr"]["pct"] == 50
+    updates_info.clear_progress("sonarr")
+    snap = updates_info.progress()
+    assert "sonarr" not in snap["apps"]
+    assert "dispatcharr" in snap["apps"]
+    assert snap["busy"] is True
+    updates_info.clear_progress("dispatcharr")
+    idle = updates_info.progress()
+    assert idle["busy"] is False
+    assert idle["apps"] == {}
 
 
 def test_parse_running_json_lines():
