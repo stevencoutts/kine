@@ -103,6 +103,20 @@ EMBY_SAMPLE = [
         "PlayState": {"IsPaused": False},
     },
     {
+        "Id": "sess-boxing",
+        "UserName": "stevec",
+        "Client": "Emby for Apple TV",
+        "DeviceName": "Conservatory Apple TV",
+        "NowPlayingItem": {
+            "Id": "2277124",
+            "Name": "Moses Itauma vs Filip Hrgovic",
+            "Type": "TvChannel",
+            "ChannelNumber": "3000",
+            "ImageTags": {},
+        },
+        "PlayState": {"IsPaused": False},
+    },
+    {
         "UserName": "idle",
         "Client": "Emby Web",
         "NowPlayingItem": None,
@@ -258,7 +272,7 @@ def test_parse_plex_estimates_bitrate_when_lan_session_bandwidth_is_a_cap():
 
 def test_parse_emby_skips_idle_and_enriches():
     rows = parse_emby_sessions(EMBY_SAMPLE)
-    assert len(rows) == 2
+    assert len(rows) == 3
     assert rows[0]["server"] == "emby"
     assert rows[0]["kind"] == "episode"
     assert rows[0]["title"] == "Friends — S01E01 The One Where Monica Gets a Roommate"
@@ -282,6 +296,11 @@ def test_parse_emby_skips_idle_and_enriches():
     assert "COMEDY CENTRAL" in rows[1]["title"]
     assert "item_id=ch-1" in rows[1]["art_url"]
     assert "image=Logo" in rows[1]["art_url"]
+    boxing = next(r for r in rows if r.get("session_id") == "sess-boxing")
+    assert boxing["kind"] == "channel"
+    assert "image=Primary" in boxing["art_url"]
+    assert "item_id=2277124" in boxing["art_url"]
+    assert "image=Logo" not in boxing["art_url"]
 
 
 def test_art_proxy_path_builds_safe_query():

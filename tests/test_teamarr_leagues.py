@@ -84,6 +84,52 @@ def test_default_template_assignments_cover_kore_set():
     assert ufc["leagues"] == ["ufc"]
 
 
+def test_boxing_template_seed_uses_game_thumbs_boxing_paths():
+    seeds = {s["name"]: s["seed"] for s in teamarr._template_seeds()}
+    boxing = seeds["Boxing"]
+    cover = "/boxing/{fighter1}/{fighter2}/cover"
+    thumb = "/boxing/{fighter1}/{fighter2}/thumb"
+    assert boxing["program_art_url"] == cover
+    assert boxing["pregame_fallback"]["art_url"] == cover
+    assert boxing["event_channel_logo_url"] == thumb
+    assert "/ufc/" not in (boxing["program_art_url"] or "")
+    assert "/ufc/" not in (boxing["pregame_fallback"]["art_url"] or "")
+
+
+def test_ensure_template_art_urls_patches_stale_boxing():
+    fake = _FakeClient(assignments=[
+        {"id": 1, "template_id": 14, "template_name": "Boxing", "leagues": ["boxing"]},
+    ])
+    fake.templates = [
+        {
+            "id": 14,
+            "name": "Boxing",
+            "template_type": "event",
+            "program_art_url": None,
+            "event_channel_logo_url": "{league_code}/{home_team|pascal}/{away_team|pascal}/thumb",
+            "pregame_fallback": {"art_url": "/ufc/{fighter1}/{fighter2}/cover"},
+        },
+        {
+            "id": 15,
+            "name": "UFC",
+            "template_type": "event",
+            "program_art_url": "/ufc/{fighter1}/{fighter2}/cover",
+            "event_channel_logo_url": "/ufc/{fighter1}/{fighter2}/thumb",
+            "pregame_fallback": {"art_url": "/ufc/{fighter1}/{fighter2}/cover"},
+        },
+    ]
+    logs = []
+    assert teamarr.ensure_template_art_urls(fake, logs.append) is True
+    boxing_puts = [body for p, body in fake.puts if p.endswith("/templates/14")]
+    assert boxing_puts[-1]["program_art_url"] == "/boxing/{fighter1}/{fighter2}/cover"
+    assert boxing_puts[-1]["event_channel_logo_url"] == "/boxing/{fighter1}/{fighter2}/thumb"
+    assert boxing_puts[-1]["pregame_fallback"]["art_url"] == "/boxing/{fighter1}/{fighter2}/cover"
+    assert [p for p, _ in fake.puts if p.endswith("/templates/15")] == []
+    fake.puts.clear()
+    assert teamarr.ensure_template_art_urls(fake, logs.append) is False
+    assert fake.puts == []
+
+
 def test_resolve_stream_profile_id_prefers_stable():
     rows = [
         {"id": 1, "name": "ffmpeg"},
@@ -149,6 +195,7 @@ class _FakeClient:
         self.m3u_accounts = []
         self.epg_sources = []
         self.next_group_id = 100
+        self.emby_settings = {"enabled": False, "servers": []}
 
     def __enter__(self):
         return self
@@ -172,6 +219,13 @@ class _FakeClient:
             })
         if path.endswith("/templates"):
             return _FakeResp(200, self.templates)
+        tmpl = path.split("?", 1)[0]
+        if "/templates/" in tmpl:
+            tid = int(tmpl.rstrip("/").split("/")[-1])
+            for row in self.templates:
+                if row.get("id") == tid:
+                    return _FakeResp(200, dict(row))
+            return _FakeResp(404, {})
         if path.endswith("/settings/epg"):
             return _FakeResp(200, {
                 "team_schedule_days_ahead": 30,
@@ -179,6 +233,8 @@ class _FakeClient:
                 "art_base_url": "",
                 "epg_timezone": "America/New_York",
             })
+        if path.endswith("/settings/emby"):
+            return _FakeResp(200, dict(self.emby_settings))
         if path.endswith("/settings/dispatcharr"):
             return _FakeResp(200, dict(self.dispatcharr))
         if path.endswith("/dispatcharr/stream-profiles"):
@@ -201,8 +257,24 @@ class _FakeClient:
     def put(self, path, **kwargs):
         body = kwargs.get("json") or {}
         self.puts.append((path, body))
+        tmpl = path.split("?", 1)[0]
+        if "/templates/" in tmpl and not tmpl.endswith("/templates"):
+            tid = int(tmpl.rstrip("/").split("/")[-1])
+            for row in self.templates:
+                if row.get("id") == tid:
+                    row.update(body)
+                    if isinstance(body.get("pregame_fallback"), dict):
+                        cur = row.get("pregame_fallback")
+                        if isinstance(cur, dict):
+                            merged = dict(cur)
+                            merged.update(body["pregame_fallback"])
+                            row["pregame_fallback"] = merged
+                    return _FakeResp(200, dict(row))
         if path.endswith("/settings/dispatcharr"):
             self.dispatcharr.update(body)
+        if path.endswith("/settings/emby"):
+            self.emby_settings.update(body)
+            return _FakeResp(200, dict(self.emby_settings))
         if path.endswith("/sports-subscription"):
             self.subscription.update(body)
         if "/api/v1/groups/" in path and not path.endswith("/disable") and not path.endswith("/enable"):
@@ -313,6 +385,27 @@ def test_configure_puts_subscription_and_numbering(monkeypatch):
     assert created == [a["name"] for a in teamarr.DEFAULT_TEMPLATE_ASSIGNMENTS]
 
 
+def test_configure_wires_emby_from_settings(monkeypatch):
+    fake = _FakeClient()
+    monkeypatch.setattr(teamarr.httpx, "Client", lambda **kw: fake)
+    monkeypatch.setenv("EMBY_HOST", "emby.example.test")
+    monkeypatch.setenv("EMBY_PORT", "443")
+    monkeypatch.setenv("EMBY_USE_SSL", "true")
+    monkeypatch.setenv("EMBY_API_KEY", "emby-key")
+    monkeypatch.setenv("KINE_DOMAIN", "example.test")
+    monkeypatch.setenv("KINE_TIMEZONE", "Europe/London")
+    monkeypatch.setenv("TRAEFIK_HTTPS_PORT", "8443")
+    out = teamarr.configure(
+        [{"id": "eng.1", "name": "EPL"}],
+        log=lambda *_: None,
+    )
+    assert out["ok"] is True
+    emby = next(body for p, body in fake.puts if p.endswith("/settings/emby"))
+    assert emby["enabled"] is True
+    assert emby["servers"][0]["url"] == "https://emby.example.test"
+    assert emby["servers"][0]["api_key"] == "emby-key"
+
+
 def test_art_base_url_from_env_prefers_explicit(monkeypatch):
     monkeypatch.setenv("GAME_THUMBS_PUBLIC_URL", "http://thumbs.lan:3000/")
     monkeypatch.setenv("KINE_DOMAIN", "ignored.example")
@@ -326,6 +419,46 @@ def test_art_base_url_from_env_includes_nonstandard_https_port(monkeypatch):
     assert teamarr.art_base_url_from_env() == "https://thumbs.example.test:8443"
     monkeypatch.setenv("TRAEFIK_HTTPS_PORT", "443")
     assert teamarr.art_base_url_from_env() == "https://thumbs.example.test"
+
+
+def test_emby_url_from_env_uses_settings_host(monkeypatch):
+    monkeypatch.setenv("EMBY_HOST", "emby.couttsnet.com")
+    monkeypatch.setenv("EMBY_PORT", "443")
+    monkeypatch.setenv("EMBY_USE_SSL", "true")
+    monkeypatch.setenv("EMBY_API_KEY", "emby-secret")
+    url, key = teamarr.emby_target_from_env()
+    assert url == "https://emby.couttsnet.com"
+    assert key == "emby-secret"
+    monkeypatch.setenv("EMBY_PORT", "8920")
+    url, key = teamarr.emby_target_from_env()
+    assert url == "https://emby.couttsnet.com:8920"
+    monkeypatch.delenv("EMBY_API_KEY", raising=False)
+    assert teamarr.emby_target_from_env() is None
+
+
+def test_ensure_emby_settings_enables_helm_server():
+    fake = _FakeClient()
+    logs = []
+    assert teamarr.ensure_emby_settings(
+        fake, logs.append,
+        url="https://emby.example.test",
+        api_key="k",
+    ) is True
+    body = next(b for p, b in fake.puts if p.endswith("/settings/emby"))
+    assert body["enabled"] is True
+    assert body["servers"][0]["url"] == "https://emby.example.test"
+    assert body["servers"][0]["api_key"] == "k"
+    fake.puts.clear()
+    fake.emby_settings = {
+        "enabled": True,
+        "servers": [{"name": "Helm", "url": "https://emby.example.test", "api_key": "****"}],
+    }
+    assert teamarr.ensure_emby_settings(
+        fake, logs.append,
+        url="https://emby.example.test",
+        api_key="k",
+    ) is False
+    assert fake.puts == []
 
 
 def test_epg_timezone_from_env(monkeypatch):

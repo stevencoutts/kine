@@ -471,8 +471,9 @@ def _emby_art_url(now: dict, kind: str) -> str | None:
         tags = now.get("ImageTags") if isinstance(now.get("ImageTags"), dict) else {}
         logo_tag = (tags.get("Logo") or "").strip() or None
         primary = (tags.get("Primary") or "").strip() or None
-        # Proxy tries Logo then Primary for live TV.
-        return emby_art_proxy_url(channel_id, logo_tag or primary, image="Logo")
+        if logo_tag:
+            return emby_art_proxy_url(channel_id, logo_tag, image="Logo")
+        return emby_art_proxy_url(channel_id, primary, image="Primary")
     item_id = (now.get("Id") or "").strip()
     tags = now.get("ImageTags") if isinstance(now.get("ImageTags"), dict) else {}
     tag = (tags.get("Primary") or "").strip() or None

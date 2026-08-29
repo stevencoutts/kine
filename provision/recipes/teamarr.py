@@ -99,6 +99,72 @@ def epg_timezone_from_env() -> str:
     )
 
 
+def _env_bool(key: str) -> bool:
+    return (os.environ.get(key) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def emby_target_from_env() -> tuple[str, str] | None:
+    """Helm Settings Emby (remote or bundled) as Teamarr's artwork target."""
+    key = (os.environ.get("EMBY_API_KEY") or "").strip()
+    host = (os.environ.get("EMBY_HOST") or "").strip().rstrip("/")
+    if not key or not host:
+        return None
+    use_ssl = _env_bool("EMBY_USE_SSL")
+    raw_port = (os.environ.get("EMBY_PORT") or "").strip()
+    try:
+        port = int(raw_port) if raw_port else (443 if use_ssl else 8096)
+    except ValueError:
+        port = 443 if use_ssl else 8096
+    if use_ssl and port == 8096:
+        port = 443
+    scheme = "https" if use_ssl else "http"
+    if (use_ssl and port == 443) or (not use_ssl and port == 80):
+        url = f"{scheme}://{host}"
+    else:
+        url = f"{scheme}://{host}:{port}"
+    return url, key
+
+
+def ensure_emby_settings(
+    http: httpx.Client,
+    log: Callable[[str], None],
+    *,
+    url: str = "",
+    api_key: str = "",
+) -> bool:
+    """Point Teamarr at the Emby from Helm Settings when host + API key are set."""
+    if not url or not api_key:
+        target = emby_target_from_env()
+        if not target:
+            log("teamarr: no Helm Emby host/API key, skipping Emby integration")
+            return False
+        url, api_key = target
+    url = url.strip().rstrip("/")
+    resp = http.get("/api/v1/settings/emby")
+    resp.raise_for_status()
+    current = resp.json() if resp.content else {}
+    if not isinstance(current, dict):
+        current = {}
+    servers = current.get("servers") if isinstance(current.get("servers"), list) else []
+    first = servers[0] if servers and isinstance(servers[0], dict) else {}
+    current_url = str(first.get("url") or "").strip().rstrip("/")
+    if current.get("enabled") is True and current_url == url:
+        log(f"teamarr: Emby already {url}")
+        return False
+    body = {
+        "enabled": True,
+        "servers": [{
+            "name": str(first.get("name") or "").strip() or "Helm",
+            "url": url,
+            "api_key": api_key,
+        }],
+    }
+    resp = http.put("/api/v1/settings/emby", json=body)
+    resp.raise_for_status()
+    log(f"teamarr: Emby -> {url}")
+    return True
+
+
 def resolve_stream_profile_id(profiles: list[Any]) -> int | None:
     """Prefer Stable (kore), else ffmpeg — first match by case-insensitive name."""
     by_name: dict[str, int] = {}
@@ -234,6 +300,48 @@ def ensure_default_templates(http: httpx.Client, log: Callable[[str], None]) -> 
         )
         resp.raise_for_status()
         log(f"teamarr: assigned template {name!r} ({tid})")
+        changed = True
+    return changed
+
+
+def _wanted_template_art(seed: dict[str, Any]) -> tuple[Any, Any, Any]:
+    pre = seed.get("pregame_fallback") if isinstance(seed.get("pregame_fallback"), dict) else {}
+    return seed.get("program_art_url"), seed.get("event_channel_logo_url"), pre.get("art_url")
+
+
+def ensure_template_art_urls(http: httpx.Client, log: Callable[[str], None]) -> bool:
+    """Keep Boxing/UFC Game-Thumbs paths in sync after first-run seeding."""
+    seeds = {s["name"].lower(): s["seed"] for s in _template_seeds()}
+    changed = False
+    for row in _list_templates(http):
+        name = str(row.get("name") or "").strip()
+        seed = seeds.get(name.lower())
+        tid = row.get("id")
+        if not seed or tid is None or name.lower() not in {"boxing", "ufc"}:
+            continue
+        want_program, want_logo, want_pre = _wanted_template_art(seed)
+        resp = http.get(f"/api/v1/templates/{int(tid)}")
+        resp.raise_for_status()
+        body = resp.json() if resp.content else {}
+        if not isinstance(body, dict):
+            body = dict(row)
+        cur_pre = body.get("pregame_fallback") if isinstance(body.get("pregame_fallback"), dict) else {}
+        if (
+            body.get("program_art_url") == want_program
+            and body.get("event_channel_logo_url") == want_logo
+            and cur_pre.get("art_url") == want_pre
+        ):
+            continue
+        body["program_art_url"] = want_program
+        body["event_channel_logo_url"] = want_logo
+        if isinstance(body.get("pregame_fallback"), dict):
+            body["pregame_fallback"] = dict(body["pregame_fallback"])
+            body["pregame_fallback"]["art_url"] = want_pre
+        elif isinstance(seed.get("pregame_fallback"), dict):
+            body["pregame_fallback"] = dict(seed["pregame_fallback"])
+        resp = http.put(f"/api/v1/templates/{int(tid)}", json=body)
+        resp.raise_for_status()
+        log(f"teamarr: {name} art URLs -> {want_program}")
         changed = True
     return changed
 
@@ -814,6 +922,7 @@ def configure(
         log("teamarr: channel numbering set (manual blocks)")
 
         ensure_default_templates(http, log)
+        ensure_template_art_urls(http, log)
         ensure_epg_settings(http, log, art_base_url=art_base_url)
 
         resp = http.get("/api/v1/settings/dispatcharr")
@@ -853,6 +962,7 @@ def configure(
         resp = http.put("/api/v1/settings/dispatcharr", json=disp)
         resp.raise_for_status()
         log("teamarr: Dispatcharr URL set to loopback")
+        ensure_emby_settings(http, log)
         ensure_event_groups(http, log)
         warn_inactive_event_group_m3us(http, log)
         return {"ok": True, "leagues": rows}

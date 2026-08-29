@@ -525,7 +525,7 @@
       "league": null,
       "title_format": "{event_title}",
       "subtitle_template": "{event_title}",
-      "program_art_url": null,
+      "program_art_url": "/boxing/{fighter1}/{fighter2}/cover",
       "game_duration_mode": "sport",
       "game_duration_override": null,
       "pregame_enabled": true,
@@ -569,7 +569,7 @@
         "title": "Coming up: {event_title}- starting at {game_time}",
         "subtitle": "{event_title}",
         "description": "{fighter1} vs {fighter2} to fight  today at {game_time}.",
-        "art_url": "/ufc/{fighter1}/{fighter2}/cover"
+        "art_url": "/boxing/{fighter1}/{fighter2}/cover"
       },
       "postgame_periods": [
         {
@@ -641,7 +641,7 @@
       "idle_conditional_rows": [],
       "conditional_descriptions": [],
       "event_channel_name": "{event_title}",
-      "event_channel_logo_url": "{league_code}/{home_team|pascal}/{away_team|pascal}/thumb"
+      "event_channel_logo_url": "/boxing/{fighter1}/{fighter2}/thumb"
     }
   }
 ]

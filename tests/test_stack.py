@@ -258,6 +258,19 @@ def test_dispatcharr_mounts_kine_contrast_css():
     assert "kine-contrast.nginx.conf:/etc/nginx/conf.d/kine-contrast.conf" in vols
 
 
+def test_dispatcharr_pins_game_thumbs_host_at_start():
+    """extra_hosts is illegal with network_mode: service:gluetun; entrypoint writes /etc/hosts."""
+    _, svc = SERVICES["dispatcharr"]
+    vols = "\n".join(str(v) for v in (svc.get("volumes") or []))
+    assert "kine-thumbs-hosts.sh:/kine/kine-thumbs-hosts.sh" in vols
+    assert svc.get("entrypoint") == ["/bin/bash", "/kine/kine-thumbs-hosts.sh"]
+    env = svc.get("environment") or {}
+    assert env.get("KINE_LAN_IP") == "${KINE_LAN_IP:-}"
+    script = (ROOT / "provision" / "assets" / "dispatcharr" / "kine-thumbs-hosts.sh").read_text()
+    assert "thumbs.${KINE_DOMAIN}" in script or "thumbs." in script
+    assert "/app/docker/entrypoint.sh" in script
+
+
 def test_beets_mounts_kine_import_worker():
     """Lidarr cannot exec beet; a beets-side worker drains the shared queue."""
     _, svc = SERVICES["beets"]
