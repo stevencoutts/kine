@@ -10,7 +10,7 @@ services:
     environment:
       TZ: ${KINE_TIMEZONE}
       KINE_ROOT: /stack
-      KINE_REPO: /repo
+      KINE_REPO: ${KINE_CHECKOUT}
       KINE_DOMAIN: ${KINE_DOMAIN}
       TRAEFIK_HTTPS_PORT: ${TRAEFIK_HTTPS_PORT:-443}
       GAME_THUMBS_PUBLIC_URL: ${GAME_THUMBS_PUBLIC_URL:-}
@@ -26,6 +26,9 @@ services:
     volumes:
       # The repo itself: Helm edits .env and runs docker compose here.
       - ../:/repo
+      # Same-path remount so relative bind sources resolve for dockerd
+      # (without this they become /repo/... stubs on the host).
+      - ${KINE_CHECKOUT}:${KINE_CHECKOUT}
       - ${STACK_ROOT}:/stack
       # Compose validates env_file paths in this container before it
       # sends their host-absolute paths to Docker.

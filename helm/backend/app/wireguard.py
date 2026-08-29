@@ -38,6 +38,57 @@ def _is_ip(host: str) -> bool:
         return False
 
 
+def _is_ipv6_cidr(token: str) -> bool:
+    """True for IPv6 addresses/prefixes (``::/0``, ``2a07:b944::2:2/128``)."""
+    raw = token.strip()
+    if not raw:
+        return False
+    host = raw.split("/", 1)[0].strip()
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1]
+    try:
+        return ipaddress.ip_address(host).version == 6
+    except ValueError:
+        pass
+    try:
+        return ipaddress.ip_network(raw, strict=False).version == 6
+    except ValueError:
+        return False
+
+
+def _ipv4_csv(value: str) -> str:
+    parts = [p.strip() for p in value.split(",") if p.strip()]
+    return ", ".join(p for p in parts if not _is_ipv6_cidr(p))
+
+
+def sanitize_conf_for_gluetun(text: str) -> str:
+    """Drop IPv6 Address/AllowedIPs entries. Gluetun custom mode rejects them."""
+    lines: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith(";"):
+            lines.append(line)
+            continue
+        if "=" not in stripped:
+            lines.append(line)
+            continue
+        key, value = stripped.split("=", 1)
+        key_l = key.strip().lower()
+        if key_l not in {"address", "allowedips"}:
+            lines.append(line)
+            continue
+        kept = _ipv4_csv(value)
+        if not kept:
+            if key_l == "address":
+                raise ValueError(
+                    "WireGuard Address has no IPv4; Gluetun does not support IPv6-only"
+                )
+            continue
+        indent = line[: len(line) - len(line.lstrip())]
+        lines.append(f"{indent}{key.strip()} = {kept}")
+    return "\n".join(lines) + ("\n" if text else "")
+
+
 def parse_conf(text: str) -> dict[str, str]:
     """Validate a pasted WireGuard ``.conf`` and map it to gluetun env keys.
 
@@ -63,7 +114,12 @@ def parse_conf(text: str) -> dict[str, str]:
             if key_l == "privatekey":
                 interface["privatekey"] = value
             elif key_l == "address":
-                interface["address"] = value.split(",")[0].strip()
+                ipv4 = _ipv4_csv(value)
+                if not ipv4:
+                    raise ValueError(
+                        "WireGuard Address has no IPv4; Gluetun does not support IPv6-only"
+                    )
+                interface["address"] = ipv4.split(",")[0].strip()
         elif section == "peer":
             if key_l == "publickey":
                 peer["publickey"] = value
@@ -115,7 +171,7 @@ def write_gluetun_conf_at(text: str, conf_dir: pathlib.Path) -> None:
     """Persist ``wg0.conf`` under ``conf_dir/wireguard/``."""
     root = pathlib.Path(conf_dir) / "wireguard"
     root.mkdir(parents=True, exist_ok=True)
-    (root / "wg0.conf").write_text(text.strip() + "\n")
+    (root / "wg0.conf").write_text(sanitize_conf_for_gluetun(text).strip() + "\n")
 
 
 def write_gluetun_conf(text: str, stack_root: str) -> None:

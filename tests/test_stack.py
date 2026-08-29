@@ -620,6 +620,26 @@ def test_helm_can_resolve_host_absolute_env_files():
     assert "${STACK_ROOT}:${STACK_ROOT}" in helm.get("volumes", [])
 
 
+def test_helm_remounts_checkout_so_compose_binds_reach_the_daemon():
+    """Relative binds resolve inside Helm then go to dockerd as host paths.
+
+    Without a same-path remount, ``../provision/...`` becomes ``/repo/...``
+    on the host and Docker creates empty directories. Dispatcharr's nginx
+    then dies because kine-contrast.conf is a directory.
+    """
+    _, helm = SERVICES["helm"]
+    env = helm.get("environment") or {}
+    assert env.get("KINE_REPO") == "${KINE_CHECKOUT}"
+    assert "${KINE_CHECKOUT}:${KINE_CHECKOUT}" in helm.get("volumes", [])
+
+
+def test_install_writes_kine_checkout_to_the_host_path():
+    text = (ROOT / "install.sh").read_text()
+    assert "KINE_CHECKOUT=${REPO}" in text
+    example = (ROOT / ".env.example").read_text()
+    assert "KINE_CHECKOUT=" in example
+
+
 def test_helm_mounts_data_root_media_for_status_disk():
     """Status disk usage needs the NFS media bind; parent DATA_ROOT alone hides it."""
     _, helm = SERVICES["helm"]

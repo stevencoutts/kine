@@ -11,6 +11,7 @@ from wireguard import (  # noqa: E402
     empty_vpn_env,
     parse_conf,
     remove_gluetun_conf,
+    sanitize_conf_for_gluetun,
     write_gluetun_conf,
 )
 
@@ -98,3 +99,35 @@ def test_peer_only_is_not_enough():
 
 def test_empty_input():
     assert parse_conf("") == {}
+
+
+SAMPLE_PROTON_IPV6 = """\
+[Interface]
+PrivateKey = cHJpdmF0ZS1rZXktdmFsdWU=
+Address = 10.2.0.2/32, 2a07:b944::2:2/128
+DNS = 10.2.0.1
+
+[Peer]
+PublicKey = cHVibGljLWtleS12YWx1ZQ==
+Endpoint = 169.150.208.246:51820
+AllowedIPs = 0.0.0.0/0, ::/0
+"""
+
+
+def test_parse_conf_keeps_ipv4_when_proton_lists_ipv6():
+    found = parse_conf(SAMPLE_PROTON_IPV6)
+    assert found["WIREGUARD_ADDRESSES"] == "10.2.0.2/32"
+
+
+def test_write_gluetun_conf_strips_ipv6_so_gluetun_can_start(tmp_path):
+    cleaned = sanitize_conf_for_gluetun(SAMPLE_PROTON_IPV6)
+    assert "2a07:b944::2:2/128" not in cleaned
+    assert "::/0" not in cleaned
+    assert "Address = 10.2.0.2/32" in cleaned
+    assert "AllowedIPs = 0.0.0.0/0" in cleaned
+
+    stack = tmp_path / "stack"
+    write_gluetun_conf(SAMPLE_PROTON_IPV6, str(stack))
+    text = (stack / "config" / "gluetun" / "wireguard" / "wg0.conf").read_text()
+    assert "2a07:b944::2:2/128" not in text
+    assert "Address = 10.2.0.2/32" in text

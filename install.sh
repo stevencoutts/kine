@@ -35,6 +35,13 @@ fi
 if merge_missing_env_keys .env .env.example; then
   ok "merged missing keys from .env.example into .env"
 fi
+# Helm runs compose inside its container; relative binds are resolved
+# there then sent to dockerd. The checkout must exist at this path.
+if grep -q '^KINE_CHECKOUT=' .env; then
+  sedi "s|^KINE_CHECKOUT=.*|KINE_CHECKOUT=${REPO}|" .env
+else
+  printf 'KINE_CHECKOUT=%s\n' "$REPO" >> .env
+fi
 if ! is_darwin; then
   agent=$(grep '^NFS_BROWSE_AGENT=' .env 2>/dev/null | cut -d= -f2- || true)
   if [[ -z "$agent" ]]; then
