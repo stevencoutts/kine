@@ -963,6 +963,8 @@ def configure(
         resp.raise_for_status()
         log("teamarr: Dispatcharr URL set to loopback")
         ensure_emby_settings(http, log)
+        from recipes import emby as emby_recipe
+        emby_recipe.sync_from_teamarr(http, log)
         ensure_event_groups(http, log)
         warn_inactive_event_group_m3us(http, log)
         return {"ok": True, "leagues": rows}

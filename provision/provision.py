@@ -153,6 +153,24 @@ def wire(enabled: set[str]) -> None:
     log("Provisioning complete")
 
 
+def emby_livetv_art() -> None:
+    """Push current Teamarr event logos onto Emby Live TV channels."""
+    if "teamarr" not in enabled_apps():
+        log("emby-livetv-art: teamarr is not enabled")
+        return
+    import tunnel_hosts
+    import httpx
+    from recipes import emby as emby_recipe
+
+    base = tunnel_hosts.internal_base_for_app("teamarr", 9195)
+    http = httpx.Client(base_url=base, timeout=30.0)
+    try:
+        n = emby_recipe.sync_from_teamarr(http, log)
+        log(f"emby-livetv-art: updated {n} channel(s)")
+    finally:
+        http.close()
+
+
 def main() -> int:
     mode = sys.argv[1] if len(sys.argv) > 1 else "wire"
     enabled = enabled_apps()
@@ -161,6 +179,8 @@ def main() -> int:
         seed_all(enabled)
     if mode in ("wire", "all"):
         wire(enabled)
+    if mode == "emby-livetv-art":
+        emby_livetv_art()
     return 0
 
 

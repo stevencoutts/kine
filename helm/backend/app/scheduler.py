@@ -18,6 +18,11 @@ Two of them, and both are deliberately conservative:
   dispatcharr-wire
                  auto-generates a Dispatcharr admin API key when missing,
                  then links Emby HDHomeRun and fills ECM/Teamarr env tokens.
+
+  emby-event-art
+                 copies Teamarr's current Game-Thumbs URL onto Emby Live TV
+                 channels. Emby caches Primary art by channel number, so a
+                 reused EPL slot (2000) otherwise keeps yesterday's matchup.
 """
 import asyncio
 import contextlib
@@ -309,6 +314,42 @@ async def _dispatcharr_wire_loop() -> None:
         await asyncio.sleep(120)
 
 
+async def sync_emby_event_channel_art() -> None:
+    """Refresh Emby channel Primary images from Teamarr's current logos."""
+    profiles = set(config.profiles())
+    if "teamarr" not in profiles:
+        return
+    if provision_lock.status().get("busy"):
+        return
+    try:
+        async with provision_lock.acquire(reason="emby event art"):
+            code, out = await compose.run(
+                "run", "-T", "--rm", "--no-deps", "provision", "emby-livetv-art",
+                timeout=180,
+            )
+    except provision_lock.ProvisionBusy:
+        return
+    data = _load()
+    data["emby_event_art"] = {
+        "ran": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "ok": code == 0,
+        "log": out[-500:] if out else "",
+    }
+    _save(data)
+
+
+async def _emby_event_art_loop() -> None:
+    await asyncio.sleep(90)
+    while True:
+        try:
+            await sync_emby_event_channel_art()
+        except Exception as exc:  # noqa: BLE001
+            data = _load()
+            data.setdefault("errors", {})["emby_event_art"] = str(exc)
+            _save(data)
+        await asyncio.sleep(900)
+
+
 async def _loop(name: str, cron_key: str, default: str, job) -> None:
     while True:
         expr = (config.read().get(cron_key, default) or default).strip()
@@ -347,6 +388,7 @@ def start(app) -> None:
         ),
         asyncio.create_task(_seerr_wire_loop()),
         asyncio.create_task(_dispatcharr_wire_loop()),
+        asyncio.create_task(_emby_event_art_loop()),
         asyncio.create_task(metrics.collector_loop()),
     ]
 

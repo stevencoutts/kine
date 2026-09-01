@@ -18,3 +18,11 @@ def test_scheduler_polls_dispatcharr_wire():
     assert "_dispatcharr_wire_loop" in SCHEDULER
     assert 'asyncio.create_task(_dispatcharr_wire_loop())' in SCHEDULER
     assert "/api/v1/settings/{path}" in SCHEDULER
+
+
+def test_scheduler_refreshes_emby_event_channel_art():
+    """Emby keeps yesterday's logo on reused Teamarr channel numbers."""
+    assert "sync_emby_event_channel_art" in SCHEDULER
+    assert "_emby_event_art_loop" in SCHEDULER
+    assert 'asyncio.create_task(_emby_event_art_loop())' in SCHEDULER
+    assert "emby-livetv-art" in SCHEDULER
