@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import acme_env, appkeys, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, media_servers, metrics, nfs_exports, nzbget_news, profile_reconcile, prowlarr_newznab, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, tunnel_hosts, updates_info, vpn_profiles, vpn_routing, watching
+from . import acme_env, appkeys, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, mdns_policy, media_servers, metrics, nfs_exports, nzbget_news, profile_reconcile, prowlarr_newznab, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, tunnel_hosts, updates_info, vpn_profiles, vpn_routing, watching
 import sys
 from .gluetun import connection_label as _connection_label
 from .gluetun import coalesce_forwarded_port as _coalesce_forwarded_port
@@ -69,8 +69,14 @@ async def _sync_recyclarr() -> None:
 
 
 async def _refresh_mdns() -> None:
-    """Recreate mdns so it re-reads COMPOSE_PROFILES and advertises new names."""
-    if "mdns" not in config.profiles():
+    """Advertise .local names, or stop Avahi when a real DNS domain is in use."""
+    env = config.read()
+    profiles = config.profiles()
+    if not mdns_policy.should_run(env.get("KINE_DOMAIN", ""), profiles):
+        if "mdns" in profiles:
+            await compose.run("--profile", "mdns", "stop", "mdns", timeout=60)
+            await compose.run("--profile", "mdns", "rm", "-f", "mdns", timeout=60)
+            config.set_profiles([p for p in profiles if p != "mdns"])
         return
     await compose.run("up", "-d", "--force-recreate", "mdns", timeout=60)
 

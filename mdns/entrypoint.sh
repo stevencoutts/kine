@@ -11,7 +11,10 @@ set -e
 
 HOST_IP=$(python3 /pick_ip.py)
 
-mkdir -p /var/run/dbus
+mkdir -p /var/run/dbus /run/dbus
+# unless-stopped reuses the same writable layer; a previous crash leaves
+# dbus.pid behind and every restart then fails in a tight loop.
+rm -f /run/dbus/dbus.pid /var/run/dbus/dbus.pid /var/run/dbus/pid
 dbus-daemon --system --fork
 avahi-daemon --no-drop-root &
 

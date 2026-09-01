@@ -17,6 +17,9 @@ import yaml
 
 
 def build_names(domain: str, profiles: set[str], catalogue: dict) -> list[str]:
+    domain = (domain or "").strip().rstrip(".")
+    if not domain.lower().endswith(".local"):
+        return []
     names = [domain]
     for key, meta in catalogue.items():
         sub = meta.get("subdomain")
