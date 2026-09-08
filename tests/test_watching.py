@@ -270,6 +270,33 @@ def test_parse_plex_estimates_bitrate_when_lan_session_bandwidth_is_a_cap():
     assert "5 Mbps" in (row.get("quality") or "")
 
 
+def test_parse_plex_ignores_int32_max_bitrate_sentinel():
+    """Live/TV often reports 2147483647 kbps (INT32_MAX); that is not 2147484 Mbps."""
+    payload = {
+        "MediaContainer": {
+            "Metadata": [{
+                "type": "live",
+                "title": "UCL Soccer",
+                "channelTitle": "UCL Soccer",
+                "User": {"title": "a"},
+                "Player": {"title": "TV", "state": "playing"},
+                "Media": [{
+                    "bitrate": 2147483647,
+                    "videoResolution": "1080",
+                    "videoCodec": "h264",
+                    "Part": [{"Stream": [
+                        {"streamType": 1, "bitrate": 2147483647, "decision": "transcode"},
+                    ]}],
+                }],
+            }]
+        }
+    }
+    row = parse_plex_sessions(payload)[0]
+    assert row["bitrate_bps"] == 8_000_000
+    assert "8 Mbps" in row["formats"]
+    assert all("2147484" not in str(x) for x in row["formats"])
+
+
 def test_parse_emby_skips_idle_and_enriches():
     rows = parse_emby_sessions(EMBY_SAMPLE)
     assert len(rows) == 3

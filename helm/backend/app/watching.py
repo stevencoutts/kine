@@ -148,6 +148,15 @@ _PLEX_BANDWIDTH_CAPS_KBPS = frozenset({
     1000, 1500, 2000, 3000, 4000, 6000, 8000, 10000, 12000, 15000,
     20000, 25000, 30000, 40000, 60000, 100000, 200000, 300000, 400000,
 })
+# Home playback never needs a 2 Gbps badge. INT32_MAX (2147483647) kbps is a
+# live-TV sentinel that otherwise renders as "2147484 Mbps".
+_MAX_PLAUSIBLE_BPS = 400_000_000
+
+
+def _sane_bps(bps: int | None) -> int | None:
+    if bps is None or bps <= 0 or bps > _MAX_PLAUSIBLE_BPS:
+        return None
+    return bps
 
 
 def _kbps_to_bps(value: Any) -> int | None:
@@ -159,7 +168,7 @@ def _kbps_to_bps(value: Any) -> int | None:
         return None
     if kbps <= 0:
         return None
-    return kbps * 1000
+    return _sane_bps(kbps * 1000)
 
 
 def _bitrate_label(bps: int | None) -> str | None:
@@ -234,7 +243,9 @@ def _plex_resolve_bitrate_bps(item: dict, media: dict, parts: list) -> int | Non
         except (TypeError, ValueError):
             session_kbps = None
     if session_kbps and session_kbps > 0 and not _plex_looks_like_bandwidth_cap(session_kbps):
-        return session_kbps * 1000
+        bps = _kbps_to_bps(session_kbps)
+        if bps:
+            return bps
 
     return _estimate_bitrate_bps_from_resolution(media)
 
@@ -434,9 +445,14 @@ def _emby_media_bits(now: dict, session: dict) -> dict[str, Any]:
             audio_codec = str(stream["Codec"]).upper()
             break
 
-    bitrate_label = None
-    if bitrate_bps:
-        bitrate_label = f"{round(bitrate_bps / 1_000_000)} Mbps"
+    bitrate_bps = _sane_bps(bitrate_bps)
+    if bitrate_bps is None:
+        bitrate_bps = _estimate_bitrate_bps_from_resolution({
+            "height": height,
+            "videoResolution": str(height) if height else "",
+        })
+
+    bitrate_label = _bitrate_label(bitrate_bps)
 
     if isinstance(transcode, dict) and (transcode.get("IsVideoDirect") is False or transcode.get("VideoCodec")):
         stream = "transcode"

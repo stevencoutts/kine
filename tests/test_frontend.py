@@ -249,6 +249,12 @@ def test_media_overview_uses_settings_servers():
     assert "art_proxy_path" in (ROOT / "helm" / "backend" / "app" / "watching.py").read_text()
 
 
+def test_bitrate_badge_keeps_mbps_casing():
+    """Mbps is a unit; uppercase on every watch-badge made it MBPS."""
+    css = FRONTEND.split(".watch-badge.format-bitrate{", 1)[1].split("}", 1)[0]
+    assert "text-transform:none" in css.replace(" ", "")
+
+
 def test_dev_version_checkbox_only_when_supported():
     assert "a.dev_supported" in FRONTEND
     assert 'data-dev="${a.id}"' in FRONTEND
