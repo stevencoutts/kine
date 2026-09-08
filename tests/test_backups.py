@@ -1,11 +1,45 @@
 """Backup listing helpers."""
 import pathlib
+import subprocess
 import sys
+import tarfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "helm" / "backend"))
 
 from app import backups  # noqa: E402
+
+
+def _prepare_stack(tmp_path: pathlib.Path) -> pathlib.Path:
+    stack = tmp_path / "stack"
+    (stack / "config" / "sonarr").mkdir(parents=True)
+    (stack / "config" / "radarr").mkdir(parents=True)
+    (stack / "config" / "sonarr" / "config.xml").write_text("sonarr-cfg")
+    (stack / "config" / "radarr" / "config.xml").write_text("radarr-cfg")
+    (stack / "backups").mkdir(parents=True)
+    # A scheduled tarball so the prune glob matches; otherwise `ls` of the
+    # empty pattern fails the script before we can inspect the new snapshot.
+    (stack / "backups" / "kine-20200101-000000.tar.gz").write_bytes(b"old")
+    (tmp_path / ".env").write_text(f"STACK_ROOT={stack}\n")
+    (tmp_path / "docker-compose.yml").write_text("services: {}\n")
+    (tmp_path / "catalogue.yml").write_text("apps: []\n")
+    (tmp_path / "compose").mkdir()
+    (tmp_path / "compose" / "acq.sonarr.yml").write_text("x: 1\n")
+    return stack
+
+
+def _run_backup(cwd: pathlib.Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(ROOT / "scripts" / "backup.sh"), *args],
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+    )
+
+
+def _tarball_names(path: pathlib.Path) -> set[str]:
+    with tarfile.open(path) as tf:
+        return set(tf.getnames())
 
 
 def test_validate_name_accepts_stamp(monkeypatch, tmp_path):
@@ -158,11 +192,6 @@ def test_backup_script_keeps_three_snapshots():
     assert "kine-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9].tar.gz" in script
 
 
-def test_backup_stamp_can_include_app_id():
-    script = (ROOT / "scripts" / "backup.sh").read_text()
-    assert "${1:+-$1}" in script or 'kine-${stamp}-' in script
-
-
 def test_backup_api_prunes_after_success_but_list_does_not():
     main = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()
     backup_fn = main.split('@app.post("/api/backup")', 1)[1].split("@app.post(", 1)[0]
@@ -172,3 +201,37 @@ def test_backup_api_prunes_after_success_but_list_does_not():
     assert '@app.get("/api/backups/{name}/file")' in main
     assert '@app.delete("/api/backups/{name}")' in main
     assert "delete_snapshot" in main
+
+
+def test_per_app_backup_only_includes_that_app_config(tmp_path):
+    """Update snapshots must not pack every app's config — rollback only
+    restores config/<app>, and the full tree is what made apply look hung."""
+    _prepare_stack(tmp_path)
+    result = _run_backup(tmp_path, "sonarr")
+    assert result.returncode == 0, result.stderr
+    snap = pathlib.Path(result.stdout.strip().splitlines()[-1])
+    assert snap.name.endswith("-sonarr.tar.gz")
+    names = _tarball_names(snap)
+    assert "config/sonarr/config.xml" in names
+    assert "config/radarr/config.xml" not in names
+    assert ".env" not in names
+    assert "docker-compose.yml" not in names
+
+
+def test_scheduled_backup_still_includes_full_config(tmp_path):
+    _prepare_stack(tmp_path)
+    result = _run_backup(tmp_path)
+    assert result.returncode == 0, result.stderr
+    snap = pathlib.Path(result.stdout.strip().splitlines()[-1])
+    names = _tarball_names(snap)
+    assert "config/sonarr/config.xml" in names
+    assert "config/radarr/config.xml" in names
+    assert ".env" in names
+
+
+def test_per_app_backup_rejects_path_traversal(tmp_path):
+    _prepare_stack(tmp_path)
+    result = _run_backup(tmp_path, "../etc")
+    assert result.returncode != 0
+    assert "invalid" in result.stderr.lower()
+    assert not (tmp_path / "stack" / "etc.tar.gz").exists()
