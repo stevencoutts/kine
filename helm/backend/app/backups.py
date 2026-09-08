@@ -13,6 +13,7 @@ from . import config
 NAME_RE = re.compile(r"^kine-\d{8}-\d{6}(?:-[a-z0-9][a-z0-9-]*)?\.tar\.gz$")
 SCHEDULED_RE = re.compile(r"^kine-\d{8}-\d{6}\.tar\.gz$")
 KEEP_SNAPSHOTS = 3
+KEEP_UPDATE_PER_APP = 1
 
 
 def backups_dir() -> pathlib.Path:
@@ -57,6 +58,17 @@ def delete_snapshot(name: str) -> str:
     return name
 
 
+def delete_snapshots(names: list[str]) -> list[str]:
+    """Delete each named snapshot. Invalid names raise; missing files skip."""
+    deleted: list[str] = []
+    for raw in names:
+        try:
+            deleted.append(delete_snapshot(str(raw)))
+        except FileNotFoundError:
+            continue
+    return deleted
+
+
 def list_snapshots() -> list[dict]:
     """Newest-first list of local snapshots (scheduled and per-app)."""
     root = backups_dir()
@@ -93,13 +105,36 @@ def list_snapshots() -> list[dict]:
     return rows
 
 
-def prune_old_snapshots(keep: int = KEEP_SNAPSHOTS) -> list[str]:
-    """Delete scheduled snapshots beyond *keep* newest. Update snaps stay."""
+def prune_old_snapshots(
+    keep: int = KEEP_SNAPSHOTS,
+    keep_update: int = KEEP_UPDATE_PER_APP,
+) -> list[str]:
+    """Delete scheduled snaps beyond *keep* newest, and extra update snaps per app."""
     if keep < 1:
         keep = 1
-    scheduled = [row for row in list_snapshots() if row.get("kind") == "scheduled"]
+    if keep_update < 1:
+        keep_update = 1
+    rows = list_snapshots()
     removed: list[str] = []
+
+    scheduled = [row for row in rows if row.get("kind") == "scheduled"]
     for row in scheduled[keep:]:
+        path = pathlib.Path(row["path"])
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            continue
+        removed.append(row["name"])
+
+    seen: dict[str, int] = {}
+    for row in rows:
+        if row.get("kind") != "update":
+            continue
+        app = row.get("app") or ""
+        n = seen.get(app, 0)
+        seen[app] = n + 1
+        if n < keep_update:
+            continue
         path = pathlib.Path(row["path"])
         try:
             path.unlink(missing_ok=True)

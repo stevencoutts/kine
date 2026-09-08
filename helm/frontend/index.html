@@ -589,12 +589,16 @@ textarea{font-family:ui-monospace,monospace;font-size:.8rem;resize:vertical}
 .snapshots-table th{color:var(--muted);font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.05em}
 .snapshots-table tr:last-child td{border-bottom:none}
 .snapshots-table td.mono{font-family:ui-monospace,monospace;font-size:.75rem}
-.snapshots-table th:nth-child(1),.snapshots-table td:nth-child(1){width:38%}
-.snapshots-table th:nth-child(2),.snapshots-table td:nth-child(2){width:16%}
-.snapshots-table th:nth-child(3),.snapshots-table td:nth-child(3){width:10%}
-.snapshots-table th:nth-child(4),.snapshots-table td:nth-child(4){width:12%}
-.snapshots-table th:nth-child(5),.snapshots-table td:nth-child(5){width:24%;white-space:normal}
+.snapshots-table th:nth-child(1),.snapshots-table td:nth-child(1){width:2.4rem;overflow:visible;white-space:nowrap}
+.snapshots-table th:nth-child(3),.snapshots-table td:nth-child(3){width:16%}
+.snapshots-table th:nth-child(4),.snapshots-table td:nth-child(4){width:10%}
+.snapshots-table.has-app th:nth-child(5),.snapshots-table.has-app td:nth-child(5){width:12%}
+.snapshots-table th:last-child,.snapshots-table td:last-child{width:24%;white-space:normal}
 .snapshots-table .row{flex-wrap:wrap;gap:.35rem}
+.snapshots-table input[type=checkbox]{width:auto;margin:0;accent-color:var(--accent);display:block}
+.snapshots-block{margin-top:1.35rem}
+.snapshots-block h3{margin:0 0 .35rem;font-size:.92rem;font-weight:650}
+.snapshots-block .snapshots-lede{color:var(--muted);font-size:.82rem;margin:0 0 .65rem}
 .updates-wrap{overflow:hidden;border:1px solid var(--line);border-radius:var(--radius);
   background:color-mix(in srgb, var(--panel) 52%, transparent)}
 .badge{display:inline-block;padding:.15rem .55rem;border-radius:999px;font-size:.72rem;font-weight:600}
@@ -3026,47 +3030,82 @@ render.status = async () => {
 render.snapshots = async () => {
   const bak = await api('/backups').catch(() => ({snapshots: []}));
   const rows = bak.snapshots || [];
-  const kindLabel = (row) => row.kind === 'update'
-    ? `update${row.app ? ' · ' + row.app : ''}`
-    : 'scheduled';
-  const table = rows.length
-    ? `<div class="updates-wrap"><table class="snapshots-table">
-        <thead><tr><th>Name</th><th>When</th><th>Size</th><th>Kind</th><th></th></tr></thead>
-        <tbody>${rows.map(row => {
+  const scheduled = rows.filter(row => row.kind !== 'update');
+  const updates = rows.filter(row => row.kind === 'update');
+  const snapTable = (list, {showApp} = {}) => {
+    if (!list.length) {
+      return '<p class="snapshots-lede">None yet.</p>';
+    }
+    return `<div class="updates-wrap"><table class="snapshots-table${showApp ? ' has-app' : ''}">
+        <thead><tr>
+          <th><input type="checkbox" data-backup-select-all aria-label="Select all"></th>
+          <th>Name</th><th>When</th><th>Size</th>
+          ${showApp ? '<th>App</th>' : ''}
+          <th></th>
+        </tr></thead>
+        <tbody>${list.map(row => {
           const name = row.name || '';
           return `<tr>
+            <td><input type="checkbox" data-backup-pick="${escAttr(name)}" aria-label="Select ${escAttr(name)}"></td>
             <td class="mono" title="${escAttr(name)}">${escHtml(name)}</td>
             <td>${escHtml(fmtWhen(row.created || row.mtime))}</td>
             <td>${fmtBytes(row.size_bytes)}</td>
-            <td>${escHtml(kindLabel(row))}</td>
+            ${showApp ? `<td>${escHtml(row.app || '')}</td>` : ''}
             <td>
               <div class="row">
                 <a class="act" data-backup-download="${escAttr(name)}"
                   href="/api/backups/${encodeURIComponent(name)}/file" download>Download</a>
-                <button type="button" class="act" data-backup-restore="${escAttr(name)}">Restore</button>
+                <button type="button" class="act" data-backup-restore="${escAttr(name)}"
+                  data-backup-app="${escAttr(row.app || '')}">Restore</button>
                 <button type="button" class="act" data-backup-delete="${escAttr(name)}">Delete</button>
               </div>
             </td>
           </tr>`;
         }).join('')}</tbody>
-      </table></div>`
-    : '<p class="status-lede">No snapshots yet. Create one with Back Up Now.</p>';
+      </table></div>`;
+  };
   state.tab = 'settings';
   state.settingsSection = 'snapshots';
   render.shell(wrapSettings('snapshots', `<div class="section" style="margin:0;padding:0">
     <h2>Snapshots</h2>
     <p style="color:var(--muted);font-size:.85rem">Config and .env only — media is not included.
-      Overnight keeps the last three scheduled snapshots. Update rollbacks stay until you delete them.
+      Overnight keeps the last three scheduled backups. Updates keep the latest snapshot per app.
       Restore stops apps, replaces config, then starts the stack again.</p>
     <div class="row" style="margin-bottom:1rem;align-items:center;gap:.75rem;flex-wrap:wrap">
       <button type="button" class="act primary" id="backup-now"${bak.busy ? ' disabled' : ''}>Back Up Now</button>
+      <button type="button" class="act" id="backup-delete-selected" disabled>Delete selected</button>
     </div>
     <div id="backup-msg" style="margin-bottom:.75rem"></div>
-    ${table}
+    <div class="snapshots-block">
+      <h3>Scheduled backups</h3>
+      <p class="snapshots-lede">Overnight and Back Up Now. Keeps the last three.</p>
+      ${snapTable(scheduled)}
+    </div>
+    <div class="snapshots-block">
+      <h3>Update snapshots</h3>
+      <p class="snapshots-lede">Taken before an image update. Keeps the latest one per app.</p>
+      ${snapTable(updates, {showApp: true})}
+    </div>
   </div>`));
   bindSettingsNav();
   const msg = $('#backup-msg');
   const show = (html) => { if (msg) msg.innerHTML = html; };
+  const picked = () => [...document.querySelectorAll('[data-backup-pick]:checked')]
+    .map(el => el.dataset.backupPick).filter(Boolean);
+  const syncDeleteBtn = () => {
+    const btn = $('#backup-delete-selected');
+    if (btn) btn.disabled = !picked().length;
+  };
+  document.querySelectorAll('[data-backup-select-all]').forEach(box => {
+    box.onchange = () => {
+      const table = box.closest('table');
+      table?.querySelectorAll('[data-backup-pick]').forEach(c => { c.checked = box.checked; });
+      syncDeleteBtn();
+    };
+  });
+  document.querySelectorAll('[data-backup-pick]').forEach(c => {
+    c.onchange = syncDeleteBtn;
+  });
   $('#backup-now')?.addEventListener('click', async () => {
     show('<div class="banner" style="border:1px solid var(--line)">Creating snapshot…</div>');
     try {
@@ -3078,11 +3117,28 @@ render.snapshots = async () => {
       show(`<div class="banner bad">${escHtml(e.message || String(e))}</div>`);
     }
   });
+  $('#backup-delete-selected')?.addEventListener('click', async () => {
+    const names = picked();
+    if (!names.length) return;
+    const n = names.length;
+    if (!confirm(`Delete ${n} snapshot${n === 1 ? '' : 's'}?\n\nThis cannot be undone.`)) return;
+    show(`<div class="banner" style="border:1px solid var(--line)">Deleting ${n} snapshot${n === 1 ? '' : 's'}…</div>`);
+    try {
+      await api('/backups/delete', {method:'POST', body: JSON.stringify({names})});
+      await render.snapshots();
+    } catch (err) {
+      show(`<div class="banner bad">${escHtml(err.message || String(err))}</div>`);
+    }
+  });
   document.querySelectorAll('[data-backup-restore]').forEach(btn => {
     btn.onclick = async () => {
       const name = btn.dataset.backupRestore;
-      if (!confirm(`Restore ${name}?\n\nThis replaces app configs and which apps are enabled, then restarts the stack. Media is unchanged.`)) return;
-      show(`<div class="banner" style="border:1px solid var(--line)">Restoring ${escHtml(name)}… apps will restart.</div>`);
+      const app = btn.dataset.backupApp;
+      const warn = app
+        ? `Restore ${app} from this update snapshot?\n\nThis replaces ${app}'s config only. Media is unchanged.`
+        : `Restore ${name}?\n\nThis replaces app configs and which apps are enabled, then restarts the stack. Media is unchanged.`;
+      if (!confirm(warn)) return;
+      show(`<div class="banner" style="border:1px solid var(--line)">Restoring ${escHtml(name)}…${app ? '' : ' apps will restart.'}</div>`);
       try {
         const r = await api('/backups/restore', {method:'POST', body: JSON.stringify({name})});
         if (!r.ok) throw new Error(r.log || 'Restore failed');

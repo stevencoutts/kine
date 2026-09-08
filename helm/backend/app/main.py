@@ -1044,6 +1044,7 @@ async def apply_update(app_id: str, user: str = Depends(require_user)):
     try:
         code, out = await compose.script_with_callback(
             "updates.sh", "apply", app_id, timeout=1200, on_line=on_line)
+        await asyncio.to_thread(backups.prune_old_snapshots)
         if code == 0:
             # Clear the badge from the overnight cache immediately so the page
             # does not still say "update" until the next full registry check.
@@ -1758,6 +1759,7 @@ async def set_settings(request: Request, user: str = Depends(require_user)):
 
 @app.get("/api/backups")
 async def backups_list(user: str = Depends(require_user)):
+    await asyncio.to_thread(backups.prune_old_snapshots)
     rows = await asyncio.to_thread(backups.list_snapshots)
     return {"ok": True, "snapshots": rows, "busy": provision_lock.status().get("busy")}
 
@@ -1789,6 +1791,20 @@ async def backups_delete(name: str, user: str = Depends(require_user)):
     return {"ok": True, "name": name}
 
 
+@app.post("/api/backups/delete")
+async def backups_delete_many(request: Request, user: str = Depends(require_user)):
+    body = await request.json()
+    names = body.get("names") or []
+    if not isinstance(names, list):
+        raise HTTPException(400, "names must be a list")
+    try:
+        deleted = await asyncio.to_thread(
+            backups.delete_snapshots, [str(n) for n in names])
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"ok": True, "deleted": deleted}
+
+
 @app.post("/api/backup")
 async def backup(user: str = Depends(require_user)):
     if provision_lock.status().get("busy"):
@@ -1813,7 +1829,7 @@ async def backup(user: str = Depends(require_user)):
 
 @app.post("/api/backups/restore")
 async def backups_restore(request: Request, user: str = Depends(require_user)):
-    """Restore a local snapshot: app configs + .env (enabled apps) then up -d."""
+    """Restore a local snapshot. Update tarballs restore one app; scheduled restore the stack."""
     body = await request.json()
     name = str(body.get("name") or "").strip()
     try:
@@ -1824,10 +1840,14 @@ async def backups_restore(request: Request, user: str = Depends(require_user)):
         raise HTTPException(404, str(exc)) from exc
     if provision_lock.status().get("busy"):
         raise HTTPException(409, "Another stack operation is in progress")
+    restore_args = [str(path)]
+    app = backups.snapshot_app(name)
+    if app:
+        restore_args.append(app)
     try:
         async with provision_lock.acquire(reason="restore"):
             code, out = await compose.script(
-                "restore.sh", str(path), timeout=1800,
+                "restore.sh", *restore_args, timeout=1800,
             )
     except provision_lock.ProvisionBusy as exc:
         raise HTTPException(409, exc.detail) from exc

@@ -48,8 +48,11 @@ if (( tar_rc >= 2 )); then
 fi
 echo "Snapshot complete ($(du -h "$out" | cut -f1))." >&2
 echo "$out"
-# Keep the last 3 scheduled snapshots. Per-app update tarballs
-# (kine-YYYYMMDD-HHMMSS-<app>.tar.gz) stay until deleted in Helm.
+# Keep the last 3 scheduled snapshots. Per-app update tarballs keep the
+# newest one for this app; Helm also prunes other apps on the Snapshots page.
 # `-r`/`--no-run-if-empty` is GNU-only; `rm -f` with no args is a no-op
 # on BSD/macOS xargs too, so it's portable without the flag.
 ls -1t "${STACK_ROOT}"/backups/kine-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9].tar.gz 2>/dev/null | tail -n +4 | xargs rm -f --
+if [[ -n "$app" ]]; then
+  ls -1t "${STACK_ROOT}"/backups/kine-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]-"${app}".tar.gz 2>/dev/null | tail -n +2 | xargs rm -f --
+fi

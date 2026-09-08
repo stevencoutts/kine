@@ -13,6 +13,7 @@ def test_backup_restore_api_routes_exist():
     assert '@app.post("/api/backups/restore")' in BACKEND
     assert '@app.get("/api/backups/{name}/file")' in BACKEND
     assert '@app.delete("/api/backups/{name}")' in BACKEND
+    assert '@app.post("/api/backups/delete")' in BACKEND
     assert "backups.resolve" in BACKEND
     assert "restore.sh" in BACKEND
 
@@ -27,6 +28,13 @@ def test_snapshots_admin_is_a_settings_section():
     snaps = FRONTEND.split("render.snapshots = async", 1)[1].split("render.settings", 1)[0]
     assert "kind" in snaps
     assert "scheduled" in snaps or "update" in snaps
+    assert "Scheduled backups" in snaps
+    assert "Update snapshots" in snaps
+    assert "data-backup-pick" in snaps
+    assert "data-backup-select-all" in snaps
+    assert "id=\"backup-delete-selected\"" in snaps
+    assert "/backups/delete" in snaps
+    assert "data-backup-app" in snaps
 
 
 def test_status_page_links_to_snapshots_instead_of_restore_ui():

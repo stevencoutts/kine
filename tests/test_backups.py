@@ -148,6 +148,34 @@ def test_prune_old_snapshots_keeps_three_newest(monkeypatch, tmp_path):
     ]
 
 
+def test_prune_old_snapshots_keeps_one_update_per_app(monkeypatch, tmp_path):
+    monkeypatch.setattr(backups.config, "read", lambda: {"STACK_ROOT": str(tmp_path)})
+    bdir = tmp_path / "backups"
+    bdir.mkdir()
+    names = [
+        "kine-20260901-010000-bazarr.tar.gz",
+        "kine-20260902-010000-bazarr.tar.gz",
+        "kine-20260903-010000-sonarr.tar.gz",
+        "kine-20260904-010000-sonarr.tar.gz",
+        "kine-20260905-010000-sonarr.tar.gz",
+        "kine-20260906-010000.tar.gz",
+    ]
+    for name in names:
+        (bdir / name).write_bytes(b"x")
+    removed = backups.prune_old_snapshots(keep=3)
+    assert set(removed) == {
+        "kine-20260901-010000-bazarr.tar.gz",
+        "kine-20260903-010000-sonarr.tar.gz",
+        "kine-20260904-010000-sonarr.tar.gz",
+    }
+    remaining = sorted(p.name for p in bdir.glob("kine-*.tar.gz"))
+    assert remaining == [
+        "kine-20260902-010000-bazarr.tar.gz",
+        "kine-20260905-010000-sonarr.tar.gz",
+        "kine-20260906-010000.tar.gz",
+    ]
+
+
 def test_prune_old_snapshots_spares_update_tarballs(monkeypatch, tmp_path):
     monkeypatch.setattr(backups.config, "read", lambda: {"STACK_ROOT": str(tmp_path)})
     bdir = tmp_path / "backups"
@@ -174,6 +202,24 @@ def test_prune_old_snapshots_spares_update_tarballs(monkeypatch, tmp_path):
     ]
 
 
+def test_delete_snapshots_unlinks_each_named_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(backups.config, "read", lambda: {"STACK_ROOT": str(tmp_path)})
+    bdir = tmp_path / "backups"
+    bdir.mkdir()
+    names = [
+        "kine-20260908-141000-bazarr.tar.gz",
+        "kine-20260908-150000.tar.gz",
+    ]
+    for name in names:
+        (bdir / name).write_bytes(b"x")
+    (bdir / "kine-20260908-160000-sonarr.tar.gz").write_bytes(b"keep")
+    deleted = backups.delete_snapshots(names)
+    assert deleted == names
+    assert not (bdir / names[0]).exists()
+    assert not (bdir / names[1]).exists()
+    assert (bdir / "kine-20260908-160000-sonarr.tar.gz").is_file()
+
+
 def test_delete_snapshot_unlinks_file(monkeypatch, tmp_path):
     monkeypatch.setattr(backups.config, "read", lambda: {"STACK_ROOT": str(tmp_path)})
     bdir = tmp_path / "backups"
@@ -192,15 +238,36 @@ def test_backup_script_keeps_three_snapshots():
     assert "kine-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9].tar.gz" in script
 
 
-def test_backup_api_prunes_after_success_but_list_does_not():
+def test_backup_api_prunes_after_success_and_list():
     main = (ROOT / "helm" / "backend" / "app" / "main.py").read_text()
     backup_fn = main.split('@app.post("/api/backup")', 1)[1].split("@app.post(", 1)[0]
     assert "prune_old_snapshots" in backup_fn
     list_fn = main.split('@app.get("/api/backups")', 1)[1].split("@app.", 1)[0]
-    assert "prune_old_snapshots" not in list_fn
+    assert "prune_old_snapshots" in list_fn
+    apply_fn = main.split('@app.post("/api/updates/{app_id}")', 1)[1].split("@app.", 1)[0]
+    assert "prune_old_snapshots" in apply_fn
     assert '@app.get("/api/backups/{name}/file")' in main
     assert '@app.delete("/api/backups/{name}")' in main
+    assert '@app.post("/api/backups/delete")' in main
+    assert "delete_snapshots" in main
     assert "delete_snapshot" in main
+    restore_fn = main.split('@app.post("/api/backups/restore")', 1)[1].split("@app.", 1)[0]
+    assert "snapshot_app" in restore_fn
+
+
+def test_per_app_backup_prunes_older_snaps_of_that_app(tmp_path):
+    _prepare_stack(tmp_path)
+    bdir = tmp_path / "stack" / "backups"
+    (bdir / "kine-20200101-000000-sonarr.tar.gz").write_bytes(b"old1")
+    (bdir / "kine-20200102-000000-sonarr.tar.gz").write_bytes(b"old2")
+    (bdir / "kine-20200103-000000-radarr.tar.gz").write_bytes(b"other")
+    result = _run_backup(tmp_path, "sonarr")
+    assert result.returncode == 0, result.stderr
+    sonarr = sorted(p.name for p in bdir.glob("kine-*-sonarr.tar.gz"))
+    assert len(sonarr) == 1
+    assert sonarr[0].endswith("-sonarr.tar.gz")
+    assert sonarr[0] != "kine-20200101-000000-sonarr.tar.gz"
+    assert (bdir / "kine-20200103-000000-radarr.tar.gz").is_file()
 
 
 def test_per_app_backup_only_includes_that_app_config(tmp_path):
