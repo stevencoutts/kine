@@ -1,4 +1,5 @@
 """Backup listing helpers."""
+import os
 import pathlib
 import subprocess
 import sys
@@ -302,3 +303,64 @@ def test_per_app_backup_rejects_path_traversal(tmp_path):
     assert result.returncode != 0
     assert "invalid" in result.stderr.lower()
     assert not (tmp_path / "stack" / "etc.tar.gz").exists()
+
+
+def test_per_app_backup_succeeds_when_config_dir_missing(tmp_path):
+    """Sidecars like ecm-mcp share another app's config (or have none).
+    GNU tar exits 2 if config/<app> is missing, which aborted updates."""
+    _prepare_stack(tmp_path)
+    result = _run_backup(tmp_path, "ecm-mcp")
+    assert result.returncode == 0, result.stderr
+    # BSD tar exits 1 (treated as a warning); GNU tar exits 2 (fatal).
+    # Either way, a missing sidecar dir must not be passed to tar.
+    assert "Cannot stat" not in result.stderr
+    snap = pathlib.Path(result.stdout.strip().splitlines()[-1])
+    assert snap.is_file()
+    assert snap.name.endswith("-ecm-mcp.tar.gz")
+    names = _tarball_names(snap)
+    assert "config/sonarr/config.xml" not in names
+    assert "config/radarr/config.xml" not in names
+    assert not any(n == "config/ecm-mcp" or n.startswith("config/ecm-mcp/") for n in names)
+
+
+def _run_restore(cwd: pathlib.Path, *args: str) -> subprocess.CompletedProcess[str]:
+    fake_bin = cwd / "bin"
+    fake_bin.mkdir(exist_ok=True)
+    docker = fake_bin / "docker"
+    docker.write_text("#!/usr/bin/env bash\nexit 0\n")
+    docker.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env.get('PATH', '')}"
+    return subprocess.run(
+        ["bash", str(ROOT / "scripts" / "restore.sh"), *args],
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        env=env,
+    )
+
+
+def test_per_app_restore_skips_extract_when_snapshot_has_no_config(tmp_path):
+    """A sidecar update snapshot is empty; rollback must not fail tar extract."""
+    stack = _prepare_stack(tmp_path)
+    snap_result = _run_backup(tmp_path, "ecm-mcp")
+    assert snap_result.returncode == 0, snap_result.stderr
+    snap = pathlib.Path(snap_result.stdout.strip().splitlines()[-1])
+    before = (stack / "config" / "sonarr" / "config.xml").read_text()
+    result = _run_restore(tmp_path, str(snap), "ecm-mcp")
+    assert result.returncode == 0, result.stderr
+    assert (stack / "config" / "sonarr" / "config.xml").read_text() == before
+    assert not (stack / "config" / "ecm-mcp").exists()
+
+
+def test_per_app_restore_extracts_that_app_config_only(tmp_path):
+    stack = _prepare_stack(tmp_path)
+    snap_result = _run_backup(tmp_path, "sonarr")
+    assert snap_result.returncode == 0, snap_result.stderr
+    snap = pathlib.Path(snap_result.stdout.strip().splitlines()[-1])
+    (stack / "config" / "sonarr" / "config.xml").write_text("changed")
+    (stack / "config" / "radarr" / "config.xml").write_text("radarr-changed")
+    result = _run_restore(tmp_path, str(snap), "sonarr")
+    assert result.returncode == 0, result.stderr
+    assert (stack / "config" / "sonarr" / "config.xml").read_text() == "sonarr-cfg"
+    assert (stack / "config" / "radarr" / "config.xml").read_text() == "radarr-changed"

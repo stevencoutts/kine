@@ -53,7 +53,17 @@ if [[ -n "$app" ]]; then
   esac
   echo "Stopping ${app}…" >&2
   docker compose stop "$app" 2>/dev/null || true
-  tar xzf "$tarball" -C "${STACK_ROOT}" "config/${app}"
+  has_cfg=0
+  while IFS= read -r member; do
+    case "$member" in
+      "config/${app}"|"config/${app}/"*) has_cfg=1; break ;;
+    esac
+  done < <(tar tzf "$tarball")
+  if (( has_cfg )); then
+    tar xzf "$tarball" -C "${STACK_ROOT}" "config/${app}"
+  else
+    echo "snapshot has no config/${app}; skipping extract" >&2
+  fi
   echo "restored config for ${app}"
   load_env .env
   docker compose up -d --no-deps "$app"

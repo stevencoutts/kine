@@ -33,7 +33,15 @@ excludes=(
 # That is a warning, not a failed backup — only treat exit >= 2 as fatal.
 set +e
 if [[ -n "$app" ]]; then
-  tar czf "$out" "${excludes[@]}" -C "${STACK_ROOT}" "config/${app}"
+  cfg="config/${app}"
+  if [[ -d "${STACK_ROOT}/${cfg}" ]]; then
+    tar czf "$out" "${excludes[@]}" -C "${STACK_ROOT}" "$cfg"
+  else
+    # Sidecars like ecm-mcp share another app's config (or have none).
+    # GNU tar exits 2 if the path is missing, which aborted image updates.
+    echo "No ${cfg} to snapshot (stateless); writing empty archive." >&2
+    tar czf "$out" -T /dev/null
+  fi
 else
   tar czf "$out" "${excludes[@]}" \
     -C "${STACK_ROOT}" config \
