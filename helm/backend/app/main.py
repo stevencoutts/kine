@@ -432,6 +432,12 @@ async def status(user: str = Depends(require_user)):
     }
 
 
+@app.post("/api/arr-hunt")
+async def arr_hunt_now(user: str = Depends(require_user)):
+    """Run one missing-search batch now and persist the result on the status card."""
+    return await scheduler.run_arr_hunt()
+
+
 @app.get("/api/auth/verify")
 async def auth_verify(request: Request):
     """Called by Traefik's forwardAuth for every app request."""

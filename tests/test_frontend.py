@@ -59,6 +59,16 @@ def test_status_page_has_disk_rings_and_glass():
     assert "pending.length" in status
 
 
+def test_status_page_shows_missing_search_job():
+    status = FRONTEND.split("render.status = async () => {", 1)[1].split("render.snapshots = async", 1)[0]
+    assert "Missing Search" in status
+    assert "arr_hunt" in status
+    assert 'id="arr-hunt-now"' in status
+    assert "/arr-hunt" in FRONTEND
+    assert '@app.post("/api/arr-hunt")' in BACKEND
+    assert "run_arr_hunt" in BACKEND
+
+
 def test_status_api_stats_media_via_data_root_media():
     assert "nfs_media_mountpoint" in BACKEND or 'f"{data_root}/media"' in BACKEND or "/media" in BACKEND.split("@app.get(\"/api/status\")", 1)[1].split("@app.get(", 1)[0]
     status = BACKEND.split('@app.get("/api/status")', 1)[1].split("@app.get(", 1)[0]

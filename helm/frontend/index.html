@@ -2973,6 +2973,26 @@ render.status = async () => {
   const pending = (jobs.updates?.pending || []);
   const updatesOk = !pending.length;
   const backupOk = jobs.backup?.ok !== false;
+  const hunt = jobs.arr_hunt || {};
+  const huntLine = (app, label) => {
+    const row = hunt[app] || {};
+    if (row.error) return `${label}: failed (${row.error})`;
+    if (row.skipped === 'queue') {
+      return `${label}: waiting — download queue is ${row.queue} (limit 25)`;
+    }
+    if (row.skipped === 'disabled') return `${label}: not enabled`;
+    if (row.skipped === 'no api') return `${label}: no API key`;
+    if (row.skipped) return `${label}: skipped (${row.skipped})`;
+    if (typeof row.searched === 'number') {
+      return `${label}: searched ${row.searched} · ${row.missing ?? 0} missing · queue ${row.queue ?? 0}`;
+    }
+    return `${label}: not run yet`;
+  };
+  const huntRan = Boolean(hunt.ran);
+  const huntWaiting = hunt.sonarr?.skipped === 'queue' || hunt.radarr?.skipped === 'queue';
+  const huntOk = huntRan && hunt.ok !== false && !hunt.sonarr?.error && !hunt.radarr?.error;
+  const huntBadge = !huntRan ? 'Never' : (!huntOk ? 'Attention' : (huntWaiting ? 'Waiting' : 'OK'));
+  const huntBadgeState = huntOk && !huntWaiting ? '' : 'paused';
   const jobErrors = Object.keys(jobs.errors || {}).length
     ? `<div class="banner bad">Job errors: ${Object.entries(jobs.errors).map(([k,v])=>escHtml(k)+': '+escHtml(v)).join(' | ')}</div>`
     : '';
@@ -3015,6 +3035,21 @@ render.status = async () => {
               </div>
             </div>
           </article>
+          <article class="status-glass">
+            <div class="status-job-top">
+              <h3>Missing Search</h3>
+              <span class="watch-badge state ${huntBadgeState}">${escHtml(huntBadge)}</span>
+            </div>
+            <div class="status-job-body">
+              Last run: <b>${escHtml(fmtWhen(hunt.ran || 'never'))}</b><br>
+              ${escHtml(huntLine('sonarr', 'Sonarr'))}<br>
+              ${escHtml(huntLine('radarr', 'Radarr'))}
+              <div id="arr-hunt-msg"></div>
+              <div class="row" style="margin-top:.75rem">
+                <button type="button" class="act" id="arr-hunt-now">Search now</button>
+              </div>
+            </div>
+          </article>
         </div>
       </div>
       ${jobErrors}
@@ -3024,6 +3059,19 @@ render.status = async () => {
   $('#goto-snapshots')?.addEventListener('click', () => {
     state.settingsSection = 'snapshots';
     render.snapshots();
+  });
+  $('#arr-hunt-now')?.addEventListener('click', async () => {
+    const btn = $('#arr-hunt-now');
+    const msg = $('#arr-hunt-msg');
+    if (btn) btn.disabled = true;
+    if (msg) msg.innerHTML = '<p class="status-sub">Searching…</p>';
+    try {
+      await api('/arr-hunt', {method:'POST'});
+      await render.status();
+    } catch (e) {
+      if (btn) btn.disabled = false;
+      if (msg) msg.innerHTML = `<p class="status-sub" style="color:var(--bad)">${escHtml(e.message || String(e))}</p>`;
+    }
   });
 };
 

@@ -35,3 +35,4 @@ def test_scheduler_hunts_missing_arr_items():
     assert 'HELM_ARR_HUNT_CRON' in SCHEDULER
     assert 'asyncio.create_task(' in SCHEDULER
     assert "_arr_hunt" in SCHEDULER
+    assert "run_arr_hunt" in SCHEDULER

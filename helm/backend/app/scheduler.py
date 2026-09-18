@@ -351,11 +351,16 @@ async def _emby_event_art_loop() -> None:
         await asyncio.sleep(900)
 
 
-async def _arr_hunt() -> None:
+async def run_arr_hunt() -> dict:
     result = await arr_hunt.hunt_missing()
     data = _load()
     data["arr_hunt"] = result
     _save(data)
+    return result
+
+
+async def _arr_hunt() -> None:
+    await run_arr_hunt()
 
 
 async def _loop(name: str, cron_key: str, default: str, job) -> None:
