@@ -47,11 +47,11 @@ def ensure_data_tree() -> None:
         "/data/media/music",
         "/data/media/sports",
         "/data/media/recordings",
-        "/data/downloads/incomplete",
-        "/data/downloads/complete",
-        "/data/downloads/complete/tv-sonarr",
-        "/data/downloads/complete/radarr",
-        "/data/downloads/complete/lidarr",
+        "/data/media/downloads/incomplete",
+        "/data/media/downloads/complete",
+        "/data/media/downloads/complete/tv-sonarr",
+        "/data/media/downloads/complete/radarr",
+        "/data/media/downloads/complete/lidarr",
     ):
         pathlib.Path(path).mkdir(parents=True, exist_ok=True)
 

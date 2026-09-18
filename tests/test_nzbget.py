@@ -53,7 +53,7 @@ def test_apply_runtime_defaults_sets_password_and_paths(tmp_path: Path):
     )
     nzbget.apply_runtime_defaults(conf)
     text = conf.read_text()
-    assert "DestDir=/data/downloads/complete" in text
+    assert "DestDir=/data/media/downloads/complete" in text
     assert "InterDir=/data/incomplete" in text
     assert "DirectUnpack=yes" in text
     assert "DirectRename=yes" in text
@@ -76,7 +76,7 @@ def test_apply_categories_matches_arr_clients(tmp_path: Path):
     nzbget.apply_categories(conf)
     text = conf.read_text()
     assert "Category1.Name=tv-sonarr" in text
-    assert "Category1.DestDir=/data/downloads/complete/tv-sonarr" in text
+    assert "Category1.DestDir=/data/media/downloads/complete/tv-sonarr" in text
     assert "Category2.Name=radarr" in text
     assert "Movies" not in text
     assert "Series" not in text

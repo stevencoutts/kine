@@ -151,8 +151,8 @@ def seed_transmission() -> None:
         return
 
     settings = {
-        "download-dir": "/data/downloads/complete",
-        "incomplete-dir": "/data/downloads/incomplete",
+        "download-dir": "/data/media/downloads/complete",
+        "incomplete-dir": "/data/media/downloads/incomplete",
         "incomplete-dir-enabled": True,
         "rpc-enabled": True,
         "rpc-port": 9091,

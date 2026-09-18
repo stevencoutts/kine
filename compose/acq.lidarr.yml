@@ -21,11 +21,10 @@ services:
       TZ: ${KINE_TIMEZONE}
     volumes:
       - ${STACK_ROOT}/config/lidarr:/config
-      # Bind media and downloads directly so host NFS submounts are
-      # visible (a single DATA_ROOT bind hides them behind rprivate).
-      # Both paths sit on one host filesystem, so hardlinks still work.
+      # One NFS bind. A second downloads bind becomes a nested NFS
+      # export (cross-device), so *arr copies instead of hardlinking.
       - ${DATA_ROOT}/media:/data/media
-      - ${DATA_ROOT}/downloads:/data/downloads
+      - ../provision/assets/container-init/10-downloads-link:/custom-cont-init.d/10-downloads-link:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:8686/ping || exit 1"]
       interval: 30s

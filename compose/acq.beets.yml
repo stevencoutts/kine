@@ -14,8 +14,8 @@ services:
       TZ: ${KINE_TIMEZONE}
     volumes:
       - ${STACK_ROOT}/config/beets:/config
-      - ${DATA_ROOT}/media/music:/music
-      - ${DATA_ROOT}/downloads:/downloads
+      - ${DATA_ROOT}/media:/data/media
+      - ../provision/assets/container-init/10-downloads-link:/custom-cont-init.d/10-downloads-link:ro
       - ../provision/assets/beets/kine-import:/custom-services.d/kine-import:ro
     networks: [kine_internal, kine_edge]
     healthcheck:

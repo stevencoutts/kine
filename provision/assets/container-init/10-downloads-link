@@ -1,0 +1,30 @@
+#!/bin/sh
+# Bind only /data/media. A second Docker bind of downloads becomes a
+# nested NFS export, so *arr hardlinks fail (cross-device) and imports copy.
+# Keep /data/downloads (and Beets /music, /downloads) as symlinks into that
+# one mount so in-flight NZBGet/Transmission jobs still resolve.
+set -eu
+
+link_into() {
+  dest="$1"
+  link="$2"
+  [ -d "$dest" ] || return 0
+  if [ -L "$link" ]; then
+    ln -sfn "$dest" "$link"
+    return 0
+  fi
+  if [ -e "$link" ]; then
+    if [ -d "$link" ] && [ -z "$(ls -A "$link" 2>/dev/null || true)" ]; then
+      rmdir "$link"
+    else
+      echo "kine: refusing to replace non-empty $link" >&2
+      return 1
+    fi
+  fi
+  ln -sfn "$dest" "$link"
+}
+
+mkdir -p /data/media/downloads
+link_into /data/media/downloads /data/downloads
+link_into /data/media/music /music
+link_into /data/media/downloads /downloads

@@ -89,7 +89,7 @@ EXTENSIONS_VALUE = ", ".join(ext["name"] for ext in DEFAULT_EXTENSIONS)
 
 CONTROL_USER = "nzbget"
 CONTROL_PASSWORD = "nzbget"
-DEST_DIR = "/data/downloads/complete"
+DEST_DIR = "/data/media/downloads/complete"
 INTER_DIR = "/data/incomplete"
 
 # Quiet the stock-image warnings; values match the previous kore appliance.

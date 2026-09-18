@@ -22,7 +22,7 @@ services:
     volumes:
       - ${STACK_ROOT}/config/prowlarr:/config
       - ${DATA_ROOT}/media:/data/media
-      - ${DATA_ROOT}/downloads:/data/downloads
+      - ../provision/assets/container-init/10-downloads-link:/custom-cont-init.d/10-downloads-link:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:9696/ping || exit 1"]
       interval: 30s

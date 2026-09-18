@@ -137,8 +137,8 @@ def test_transmission_client_directory_matches_shared_data_mount():
     directory = [f for f in transmission_client("tv-sonarr")["fields"]
                  if f["name"] == "directory"][0]["value"]
     assert directory == DOWNLOAD_DIR
-    assert DOWNLOAD_DIR.startswith("/data/downloads/")
-    assert INCOMPLETE_DIR.startswith("/data/downloads/")
+    assert DOWNLOAD_DIR.startswith("/data/media/downloads/")
+    assert INCOMPLETE_DIR.startswith("/data/media/downloads/")
 
 
 def test_transmission_seed_uses_data_download_paths(stack):
@@ -146,8 +146,8 @@ def test_transmission_seed_uses_data_download_paths(stack):
     import seed
     seed.seed_transmission()
     settings = json.loads((stack / "config" / "transmission" / "settings.json").read_text())
-    assert settings["download-dir"] == "/data/downloads/complete"
-    assert settings["incomplete-dir"] == "/data/downloads/incomplete"
+    assert settings["download-dir"] == "/data/media/downloads/complete"
+    assert settings["incomplete-dir"] == "/data/media/downloads/incomplete"
 
 
 def test_transmission_seed_never_overwrites_existing_settings(stack):
@@ -323,11 +323,11 @@ def test_transmission_configure_sets_paths_via_rpc(monkeypatch):
     logs = []
     transmission.configure(logs.append)
     assert ("session-set", {
-        "download-dir": "/data/downloads/complete",
-        "incomplete-dir": "/data/downloads/incomplete",
+        "download-dir": "/data/media/downloads/complete",
+        "incomplete-dir": "/data/media/downloads/incomplete",
         "incomplete-dir-enabled": True,
     }) in calls
-    assert any("download-dir -> /data/downloads/complete" in m for m in logs)
+    assert any("download-dir -> /data/media/downloads/complete" in m for m in logs)
 
 
 def test_ensure_data_tree_creates_category_directories(monkeypatch):
@@ -340,9 +340,9 @@ def test_ensure_data_tree_creates_category_directories(monkeypatch):
     from provision import ensure_data_tree
 
     ensure_data_tree()
-    assert "/data/downloads/complete/tv-sonarr" in created
-    assert "/data/downloads/complete/radarr" in created
-    assert "/data/downloads/complete/lidarr" in created
+    assert "/data/media/downloads/complete/tv-sonarr" in created
+    assert "/data/media/downloads/complete/radarr" in created
+    assert "/data/media/downloads/complete/lidarr" in created
     assert "/data/media/music" in created
 
 
@@ -648,7 +648,7 @@ def test_install_lidarr_beets_hook_is_executable(tmp_path):
     assert dest.is_file()
     assert dest.stat().st_mode & 0o111
     text = dest.read_text()
-    assert "/data/downloads/.kine-beets-queue" in text
+    assert "/data/media/downloads/.kine-beets-queue" in text
     assert "/music" in text
 
 

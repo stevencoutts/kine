@@ -45,5 +45,4 @@ services:
       - ../:/repo:ro
       - ${STACK_ROOT}:/stack
       - ${DATA_ROOT}/media:/data/media
-      - ${DATA_ROOT}/downloads:/data/downloads
     networks: [kine_internal]

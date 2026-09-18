@@ -17,11 +17,8 @@ import tunnel_hosts
 from arrclient import ArrClient
 from keys import resolve_key
 
-# The *arr apps see the shared volume as /data. Transmission and NZBGet
-# see the same files at /data/downloads. Because both mounts come from
-# the same DATA_ROOT on one filesystem, the paths line up exactly and no
-# remote path mapping is needed. This is the whole reason for the single
-# /data mount convention: get it wrong and every import becomes a copy.
+# The *arr apps see libraries at /data/media and completed downloads at
+# /data/media/downloads. Both sit on one container mount so hardlinks work.
 ROOT_FOLDERS = {
     "sonarr": "/data/media/tv",
     "radarr": "/data/media/movies",
@@ -70,7 +67,7 @@ def transmission_client(category: str) -> dict:
             {"name": "useSsl", "value": False},
             {"name": "urlBase", "value": "/transmission/"},
             {"name": "category", "value": category},
-            {"name": "directory", "value": "/data/downloads/complete"},
+            {"name": "directory", "value": "/data/media/downloads/complete"},
         ],
     }
 
@@ -387,8 +384,11 @@ def configure(app: str, enabled: set[str], log) -> None:
         log(f"{app}: root folder {ROOT_FOLDERS[app]}")
 
     if "transmission" in enabled:
-        if client.ensure("downloadclient", transmission_client(category)):
+        action = client.upsert("downloadclient", transmission_client(category))
+        if action == "created":
             log(f"{app}: download client Transmission")
+        elif action == "updated":
+            log(f"{app}: updated Transmission download client")
 
     if "nzbget" in enabled:
         action = client.upsert("downloadclient", nzbget_client(category))

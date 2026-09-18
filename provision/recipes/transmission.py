@@ -1,7 +1,7 @@
-"""Align Transmission download paths with the shared /data mount.
+"""Align Transmission download paths with the shared media mount.
 
 Linuxserver's image ships with /downloads/* defaults, but Sonarr and
-Radarr see the same files at /data/downloads/*. Both must agree or
+Radarr see the same files at /data/media/downloads/*. Both must agree or
 Sonarr's health check fails and imports copy instead of hardlink.
 """
 import json
@@ -12,8 +12,8 @@ import httpx
 import tunnel_hosts
 
 SETTINGS = pathlib.Path("/stack/config/transmission/settings.json")
-DOWNLOAD_DIR = "/data/downloads/complete"
-INCOMPLETE_DIR = "/data/downloads/incomplete"
+DOWNLOAD_DIR = "/data/media/downloads/complete"
+INCOMPLETE_DIR = "/data/media/downloads/incomplete"
 WANTED = {
     "download-dir": DOWNLOAD_DIR,
     "incomplete-dir": INCOMPLETE_DIR,

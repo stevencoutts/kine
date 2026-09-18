@@ -3,7 +3,7 @@
 # Lidarr is tunnelled and has no beet binary; beets is a separate container.
 set -eu
 
-QUEUE="${KINE_BEETS_QUEUE:-/data/downloads/.kine-beets-queue}"
+QUEUE="${KINE_BEETS_QUEUE:-/data/media/downloads/.kine-beets-queue}"
 MUSIC="${KINE_LIDARR_MUSIC:-/data/media/music}"
 
 event="${lidarr_eventtype:-}"

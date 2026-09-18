@@ -275,10 +275,12 @@ def test_nzbget_unpacks_on_local_disk():
     """Unrar over NFS is the post-processing stall; InterDir must be local."""
     _, svc = SERVICES["nzbget"]
     vols = "\n".join(str(v) for v in (svc.get("volumes") or []))
-    assert "${DATA_ROOT}/downloads:/data/downloads" in vols
+    assert "${DATA_ROOT}/media:/data/media" in vols
+    assert "${DATA_ROOT}/downloads:/data/downloads" not in vols
     assert "${STACK_ROOT}/nzbget-incomplete:/data/incomplete" in vols
     recipe = (ROOT / "provision" / "recipes" / "nzbget.py").read_text()
     assert 'INTER_DIR = "/data/incomplete"' in recipe
+    assert 'DEST_DIR = "/data/media/downloads/complete"' in recipe
     assert '"DirectUnpack": "yes"' in recipe
     assert '"DirectRename": "yes"' in recipe
 
@@ -493,15 +495,39 @@ def test_traefik_supports_modern_docker_api_negotiation():
     assert version >= (3, 6, 14)
 
 
-def test_arr_apps_mount_media_and_downloads_directly():
-    """Bind media and downloads paths directly so host NFS submounts
-    are visible inside containers. Both still sit on one host filesystem."""
-    for app in ("sonarr", "radarr", "transmission", "prowlarr", "bazarr"):
+DOWNLOADS_LINK = "10-downloads-link:/custom-cont-init.d/10-downloads-link"
+
+
+def test_arr_apps_bind_media_once_for_hardlinks():
+    """A second downloads bind becomes a nested NFS export, so *arr
+    cannot hardlink. Bind media once; the init script symlinks
+    /data/downloads -> /data/media/downloads for in-flight clients."""
+    linuxserver = (
+        "sonarr", "radarr", "lidarr", "nzbget", "transmission",
+        "prowlarr", "bazarr", "beets",
+    )
+    for app in linuxserver:
         _, svc = SERVICES[app]
-        vols = svc["volumes"]
+        vols = "\n".join(str(v) for v in (svc.get("volumes") or []))
         assert "${DATA_ROOT}/media:/data/media" in vols, app
-        assert "${DATA_ROOT}/downloads:/data/downloads" in vols, app
+        assert "${DATA_ROOT}/downloads:/data/downloads" not in vols, app
         assert "${DATA_ROOT}:/data" not in vols, app
+        assert DOWNLOADS_LINK in vols, app
+    _, unpackerr = SERVICES["unpackerr"]
+    unpack_vols = "\n".join(str(v) for v in (unpackerr.get("volumes") or []))
+    unpack_env = unpackerr.get("environment") or {}
+    assert "${DATA_ROOT}/media:/data/media" in unpack_vols
+    assert "${DATA_ROOT}/downloads:/data/downloads" not in unpack_vols
+    assert unpack_env.get("UN_SONARR_0_PATHS_0") == "/data/media/downloads"
+    assert unpack_env.get("UN_RADARR_0_PATHS_0") == "/data/media/downloads"
+    assert unpack_env.get("UN_LIDARR_0_PATHS_0") == "/data/media/downloads"
+    _, provision = SERVICES["provision"]
+    prov_vols = "\n".join(str(v) for v in (provision.get("volumes") or []))
+    assert "${DATA_ROOT}/media:/data/media" in prov_vols
+    assert "${DATA_ROOT}/downloads:/data/downloads" not in prov_vols
+    script = (ROOT / "provision" / "assets" / "container-init" / "10-downloads-link").read_text()
+    assert "/data/media/downloads" in script
+    assert "/data/downloads" in script
 
 
 def test_helm_never_touches_the_raw_docker_socket():
