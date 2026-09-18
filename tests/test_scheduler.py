@@ -26,3 +26,12 @@ def test_scheduler_refreshes_emby_event_channel_art():
     assert "_emby_event_art_loop" in SCHEDULER
     assert 'asyncio.create_task(_emby_event_art_loop())' in SCHEDULER
     assert "emby-livetv-art" in SCHEDULER
+
+
+def test_scheduler_hunts_missing_arr_items():
+    """RSS never backfills; Helm searches a small missing batch on a cron."""
+    assert "arr_hunt" in SCHEDULER
+    assert "hunt_missing" in SCHEDULER
+    assert 'HELM_ARR_HUNT_CRON' in SCHEDULER
+    assert 'asyncio.create_task(' in SCHEDULER
+    assert "_arr_hunt" in SCHEDULER

@@ -1,7 +1,5 @@
 """Background jobs.
 
-Two of them, and both are deliberately conservative:
-
   update-check   resolves image digests and records what has moved.
                  It never pulls and never recreates anything. The
                  decision to apply an update stays with a human,
@@ -10,6 +8,9 @@ Two of them, and both are deliberately conservative:
 
   backup         a scheduled config snapshot, so the rollback path the
                  updater depends on is never more than a day stale.
+
+  arr-hunt       searches a small batch of missing Sonarr/Radarr items.
+                 RSS never backfills; this is the automatic magnifying glass.
 
   seerr-wire     re-runs provision wire when Seerr's wizard has finished
                  but Sonarr/Radarr are not linked yet (enable runs wire
@@ -35,7 +36,7 @@ from datetime import datetime, timezone
 import httpx
 from croniter import croniter
 
-from . import compose, config, dispatcharr_token, metrics, provision_lock, tunnel_hosts, updates_info
+from . import arr_hunt, compose, config, dispatcharr_token, metrics, provision_lock, tunnel_hosts, updates_info
 
 STATE = pathlib.Path("/stack/helm-jobs.json")
 SEERR_SETTINGS = pathlib.Path("/stack/config/seerr/settings.json")
@@ -350,6 +351,13 @@ async def _emby_event_art_loop() -> None:
         await asyncio.sleep(900)
 
 
+async def _arr_hunt() -> None:
+    result = await arr_hunt.hunt_missing()
+    data = _load()
+    data["arr_hunt"] = result
+    _save(data)
+
+
 async def _loop(name: str, cron_key: str, default: str, job) -> None:
     while True:
         expr = (config.read().get(cron_key, default) or default).strip()
@@ -389,6 +397,9 @@ def start(app) -> None:
         asyncio.create_task(_seerr_wire_loop()),
         asyncio.create_task(_dispatcharr_wire_loop()),
         asyncio.create_task(_emby_event_art_loop()),
+        asyncio.create_task(
+            _loop("arr_hunt", "HELM_ARR_HUNT_CRON", "20 */6 * * *", _arr_hunt)
+        ),
         asyncio.create_task(metrics.collector_loop()),
     ]
 
