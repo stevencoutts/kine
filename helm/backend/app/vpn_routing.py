@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import pathlib
-from typing import Any
+from typing import Any, Iterable
 
 import yaml
 
@@ -382,8 +382,29 @@ def running_secondaries(
     return out
 
 
-def stale_secondary_services(data: dict[str, Any]) -> list[str]:
-    """Secondary tunnel services that should be stopped (empty apps or promoted)."""
+def service_from_gluetun_container(name: str) -> str | None:
+    """Map a running ``kine-gluetun-<id>`` container to its compose service."""
+    raw = (name or "").strip().lstrip("/")
+    prefix = "kine-gluetun-"
+    if not raw.startswith(prefix):
+        return None
+    sid = raw[len(prefix):]
+    if not sid or "/" in sid:
+        return None
+    return f"gluetun-{sid}"
+
+
+def stale_secondary_services(
+    data: dict[str, Any],
+    running: Iterable[str] | None = None,
+) -> list[str]:
+    """Secondary tunnel services that should be stopped.
+
+    Stored profiles that are empty or promoted, plus any running
+    ``kine-gluetun-<id>`` container whose service is no longer an active
+    secondary. A replaced or deleted profile disappears from ``profiles``,
+    so the container list is what still names it.
+    """
     primary_id = data.get("primary_id")
     current = {svc for _, svc in running_secondaries(data)}
     stale: list[str] = []
@@ -397,6 +418,13 @@ def stale_secondary_services(data: dict[str, Any]) -> list[str]:
             stale.append(svc)
             if legacy != svc:
                 stale.append(legacy)
+    seen = set(stale)
+    for name in running or []:
+        svc = service_from_gluetun_container(name)
+        if not svc or svc in current or svc in seen:
+            continue
+        seen.add(svc)
+        stale.append(svc)
     return stale
 
 

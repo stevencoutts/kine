@@ -207,6 +207,18 @@ def test_stale_secondary_services():
     )
 
 
+def test_stale_secondary_services_includes_replaced_profile_container():
+    """A profile id that no longer exists must still be stale if its container is up."""
+    data = _sample_data()
+    data["profiles"][1]["id"] = "99999999-aaaa-bbbb-cccc-dddddddddddd"
+    stale = vpn_routing.stale_secondary_services(
+        data,
+        running=["kine-gluetun-11111111"],
+    )
+    assert "gluetun-11111111" in stale
+    assert "gluetun-99999999" not in stale
+
+
 def test_write_override(tmp_path):
     path = vpn_routing.write_override(tmp_path, "services: {}\n")
     assert path == tmp_path / vpn_routing.ROUTING_GENERATED_REL

@@ -71,6 +71,10 @@ def vpn_env(tmp_path, monkeypatch):
     import json
 
     profiles_path.write_text(json.dumps(_sample_store()))
+    monkeypatch.setattr(
+        main, "_vpn_running_gluetun_containers", AsyncMock(return_value=[]),
+    )
+    monkeypatch.setattr(main, "_vpn_force_remove_containers", AsyncMock())
     return repo, stack
 
 
@@ -175,6 +179,41 @@ async def test_boot_ensure_recreates_when_vpn_enabled(vpn_env, monkeypatch):
             await main._vpn_boot_ensure()
 
     assert any(args[0] == "up" and "gluetun" in args for args in calls)
+
+
+@pytest.mark.asyncio
+async def test_replaced_profile_tears_down_old_gluetun(vpn_env, monkeypatch):
+    """Switching exits replaces the profile id; the old container must still stop."""
+    store = _sample_store()
+    store["profiles"][1]["id"] = "99999999-aaaa-bbbb-cccc-dddddddddddd"
+    calls: list[tuple] = []
+
+    async def fake_run(*args, timeout=600):
+        calls.append(args)
+        return 0, ""
+
+    async def running_gluetun():
+        return ["kine-gluetun-11111111"]
+
+    removed: list[str] = []
+
+    async def capture_remove(names: list[str]) -> None:
+        removed.extend(names)
+
+    monkeypatch.setattr(main, "_vpn_running_gluetun_containers", running_gluetun)
+    monkeypatch.setattr(main, "_vpn_force_remove_containers", capture_remove)
+
+    with patch.object(main.compose, "run", new=AsyncMock(side_effect=fake_run)):
+        code, _, recreated = await main.apply_vpn_routing(store, recreate=True)
+
+    assert code == 0
+    stop_rm = [args for args in calls if args and args[0] in ("stop", "rm")]
+    flat = [svc for args in stop_rm for svc in args[1:]]
+    assert "gluetun-11111111" in flat
+    assert "kine-gluetun-11111111" in removed
+    assert "gluetun-99999999" in recreated
+    assert "gluetun-11111111" not in recreated
+    assert any(args[0] == "up" and "--remove-orphans" in args for args in calls)
 
 
 def test_apply_filesystem_skips_wg0_when_disabled(tmp_path):

@@ -306,7 +306,9 @@ async def _apply_domain_routing() -> None:
     for app in ("emby", "seerr", "tdarr", "dispatcharr", "ecm", "teamarr"):
         if app in profiles:
             routed.append(app)
-    await compose.run("up", "-d", "--force-recreate", *routed, timeout=300)
+    await compose.run(
+        "up", "-d", "--force-recreate", "--remove-orphans", *routed, timeout=300,
+    )
     if "gluetun" not in profiles or env.get("VPN_ENABLED") != "true":
         return
     stack = _vpn_stack_root()
@@ -1125,6 +1127,59 @@ def _vpn_peers_enabled(env: dict) -> set[str]:
     return enabled & active if active else enabled
 
 
+async def _vpn_running_gluetun_containers() -> list[str]:
+    """Container names from ``docker ps --filter name=gluetun-``.
+
+    Secondary tunnels are ``kine-gluetun-<id>``. The primary container is
+    ``kine-gluetun`` and does not match this filter.
+    """
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "ps",
+            "--filter", "name=gluetun-",
+            "--format", "{{.Names}}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except OSError:
+        return []
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+    except asyncio.TimeoutError:
+        proc.kill()
+        return []
+    if proc.returncode != 0:
+        return []
+    return [
+        line.strip()
+        for line in out.decode(errors="replace").splitlines()
+        if line.strip()
+    ]
+
+
+async def _vpn_force_remove_containers(names: list[str]) -> None:
+    """``docker rm -f`` containers Compose no longer has a service for.
+
+    Once a profile id drops out of the generated override, ``compose stop``
+    and ``compose rm`` exit with ``no such service`` and leave the container
+    running. Removing by container name still works.
+    """
+    if not names:
+        return
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "rm", "-f", *names,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except OSError:
+        return
+    try:
+        await asyncio.wait_for(proc.communicate(), timeout=60)
+    except asyncio.TimeoutError:
+        proc.kill()
+
+
 async def _vpn_stop_services(services: list[str]) -> tuple[int, str]:
     if not services:
         return 0, ""
@@ -1146,7 +1201,8 @@ async def _vpn_recreate_services(
     for svc in services:
         group = vpn_routing.recreate_group(store, svc, peers_enabled)
         code, out = await compose.run(
-            "up", "-d", "--force-recreate", *group, timeout=300,
+            "up", "-d", "--force-recreate", "--remove-orphans", *group,
+            timeout=300,
         )
         if code != 0:
             last_code = code
@@ -1190,7 +1246,8 @@ async def apply_vpn_routing(
         return code, out, ordered
 
     peers_enabled = _vpn_peers_enabled(env)
-    stale = set(vpn_routing.stale_secondary_services(store))
+    running = await _vpn_running_gluetun_containers()
+    stale = set(vpn_routing.stale_secondary_services(store, running))
     if stale_services:
         stale |= stale_services
     if stale:
@@ -1200,6 +1257,15 @@ async def apply_vpn_routing(
         seen: set[str] = set()
         ordered = [s for s in stop_group if not (s in seen or seen.add(s))]
         code, out = await _vpn_stop_services(ordered)
+        orphan_containers: list[str] = []
+        seen_names: set[str] = set()
+        for name in running:
+            svc = vpn_routing.service_from_gluetun_container(name)
+            if not svc or svc not in stale or name in seen_names:
+                continue
+            seen_names.add(name)
+            orphan_containers.append(name)
+        await _vpn_force_remove_containers(orphan_containers)
     else:
         code, out = 0, ""
 
