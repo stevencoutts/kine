@@ -1216,6 +1216,7 @@ async def apply_vpn_routing(
     *,
     recreate: bool = True,
     stale_services: set[str] | None = None,
+    services: list[str] | None = None,
 ) -> tuple[int, str, list[str]]:
     """Write confs + override; optionally recreate each tunnel group.
 
@@ -1269,8 +1270,13 @@ async def apply_vpn_routing(
     else:
         code, out = 0, ""
 
+    targets = (
+        services
+        if services is not None
+        else vpn_routing.active_tunnel_services(store)
+    )
     rec_code, rec_out, recreated = await _vpn_recreate_services(
-        store, env, vpn_routing.active_tunnel_services(store),
+        store, env, targets,
     )
     return rec_code or code, "\n".join(part for part in (out, rec_out) if part), recreated
 
@@ -1286,6 +1292,31 @@ def _vpn_profile_public(profile: dict, *, primary_id: str | None = None) -> dict
         "forwarded_port": vpn_profiles.profile_forwarded_port(profile),
         "conf": vpn_profiles.redact_conf(profile.get("conf") or ""),
     }
+
+
+def _queue_dispatcharr_wire() -> None:
+    """Point Emby's HDHomeRun URL at wherever Dispatcharr lives now."""
+    asyncio.create_task(scheduler.wire_dispatcharr_if_ready())
+
+
+def _vpn_live_return(before: dict, store: dict, forced: set[str]) -> list[str] | None:
+    """What to recreate when Live TV leaves Direct.
+
+    Primary is already up, so only the Live TV containers are recreated.
+    A secondary may be stopped; return that tunnel and ``recreate_group``
+    pulls its peers. Any other change recreates every tunnel.
+    """
+    if not (
+        vpn_profiles.live_tv_direct(before) and not vpn_profiles.live_tv_direct(store)
+    ):
+        return None
+    apps = [a for a in vpn_profiles.LIVE_TV_AFFINITY if a in forced]
+    tunnels: list[str] = []
+    for app in apps:
+        svc = vpn_profiles.tunnel_service(store, app)
+        if svc != "gluetun" and svc not in tunnels:
+            tunnels.append(svc)
+    return tunnels or apps
 
 
 def _vpn_forced_assignable() -> set[str]:
@@ -1419,6 +1450,7 @@ async def vpn_status(user: str = Depends(require_user)):
         "public_ip": primary_tunnel.get("public_ip"),
         "profiles": profiles,
         "assignable_apps": _vpn_assignable_apps(),
+        "live_tv_direct": vpn_profiles.live_tv_direct(store),
         "tunnels": tunnels,
         "tunnels_running": sum(1 for t in tunnels if t.get("enabled")),
         "note": (
@@ -1556,6 +1588,7 @@ async def vpn_profile_set_apps(
         raise HTTPException(400, "body must include apps: list[str]")
     stack = _vpn_stack_root()
     forced = _vpn_forced_assignable()
+    before = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
     try:
         store = await asyncio.to_thread(
             vpn_profiles.set_profile_apps, stack, profile_id, apps, forced=forced,
@@ -1564,7 +1597,27 @@ async def vpn_profile_set_apps(
         raise HTTPException(404, str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
-    code, out, group = await apply_vpn_routing(store)
+    code, out, group = await apply_vpn_routing(
+        store, services=_vpn_live_return(before, store, forced),
+    )
+    if _vpn_live_return(before, store, forced) is not None:
+        _queue_dispatcharr_wire()
+    return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
+
+
+@app.put("/api/vpn/live-tv/direct")
+async def vpn_live_tv_direct(request: Request, user: str = Depends(require_user)):
+    """Send the Live TV group out the host network, or leave that mode."""
+    body = await request.json()
+    enabled = body.get("enabled") if isinstance(body, dict) else None
+    if not isinstance(enabled, bool):
+        raise HTTPException(400, "body must include enabled: bool")
+    stack = _vpn_stack_root()
+    store = await asyncio.to_thread(vpn_profiles.set_live_tv_direct, stack, enabled)
+    forced = _vpn_forced_assignable()
+    live = [a for a in vpn_profiles.LIVE_TV_AFFINITY if a in forced]
+    code, out, group = await apply_vpn_routing(store, services=live)
+    _queue_dispatcharr_wire()
     return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
 
 

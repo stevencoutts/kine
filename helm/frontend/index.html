@@ -2585,7 +2585,8 @@ render.vpn = async () => {
   const tunnelAppsFor = (p) => {
     const owned = p.apps || [];
     if (!p.primary) return owned;
-    const leftovers = assignableIds.filter(id => !allAssigned.has(id));
+    const directIds = new Set(v.live_tv_direct ? LIVE_TV_AFFINITY : []);
+    const leftovers = assignableIds.filter(id => !allAssigned.has(id) && !directIds.has(id));
     return [...owned, ...leftovers];
   };
   const showTunnelDetail = (p) => {
@@ -2682,6 +2683,22 @@ render.vpn = async () => {
         </article>`;
       }).join('')
     : '<p style="color:var(--muted);margin:0">No profiles yet. Add a WireGuard config to get started.</p>';
+  const liveMembers = expandGroup('live');
+  const directChip = v.live_tv_direct && liveMembers.length
+    ? `<button type="button" class="vpn-app-chip" data-vpn-move-group="live" data-vpn-from="direct" title="Move Live TV back onto a VPN">Live TV</button>`
+    : '';
+  const directCard = liveMembers.length
+    ? `<article class="vpn-card" data-vpn-id="direct">
+        <div class="vpn-card-top">
+          <h3 class="vpn-card-title">Direct</h3>
+          <div class="watch-badges"><span class="watch-badge">${v.live_tv_direct ? 'No VPN' : 'Empty'}</span></div>
+        </div>
+        ${directChip
+          ? `<div class="vpn-tunnelled">${directChip}</div><p class="vpn-apps-hint">Live TV uses this host's internet. No VPN kill switch.</p>`
+          : `<p class="vpn-apps-hint">No groups here. Move Live TV off a tunnel to skip the VPN.</p>`}
+        <p class="vpn-card-err" data-vpn-err="direct" hidden></p>
+      </article>`
+    : '';
   const orphanMeta = [
     `<span>Public IP <b>${escHtml(v.public_ip || 'unknown')}</b></span>`,
     `<span>Forwarded port <b>${escHtml(v.forwarded_port != null ? String(v.forwarded_port) : 'none')}</b></span>`,
@@ -2710,7 +2727,7 @@ render.vpn = async () => {
         <button type="button" class="act primary" id="vpn-add">Add Profile</button>
       </div>
       ${concurrencyBanner}
-      <div class="vpn-cards">${orphanTunnel}${profileCards}</div>
+      <div class="vpn-cards">${directCard}${orphanTunnel}${profileCards}</div>
       <pre id="out" style="margin-top:1rem"></pre>
     </div>`);
   const out = $('#out');
@@ -2786,6 +2803,23 @@ render.vpn = async () => {
       el.textContent = '';
     }
   };
+  const moveLiveTvDirect = async (fromId) => {
+    setOut('moving Live TV → Direct...');
+    setCardErr(fromId, '');
+    setCardErr('direct', '');
+    try {
+      const r = await api('/vpn/live-tv/direct', {
+        method: 'PUT',
+        body: JSON.stringify({enabled: true}),
+      });
+      setOut(r.log || 'Live TV is direct');
+      await render.vpn();
+    } catch (e) {
+      const msg = e.message || String(e);
+      setCardErr(fromId, msg);
+      setOut(msg);
+    }
+  };
   const moveAppsToProfile = async (groupId, fromId, targetId) => {
     const moving = expandGroup(groupId);
     const group = VPN_GROUPS.find(g => g.id === groupId);
@@ -2817,15 +2851,19 @@ render.vpn = async () => {
       const groupId = chip.dataset.vpnMoveGroup;
       const fromId = chip.dataset.vpnFrom;
       const destinations = profiles.filter(p => p.id !== fromId);
-      if (!destinations.length) {
+      const offerDirect = groupId === 'live' && fromId !== 'direct';
+      if (!destinations.length && !offerDirect) {
         setCardErr(fromId, 'Add another VPN profile to move groups.');
         return;
       }
       const menu = document.createElement('div');
       menu.className = 'vpn-move-menu';
+      const directBtn = offerDirect
+        ? `<button type="button" data-vpn-move-direct>Direct</button>`
+        : '';
       menu.innerHTML = `<p>Move to</p>` + destinations.map(p =>
         `<button type="button" data-vpn-move-to="${escAttr(p.id)}">${escHtml(p.name || p.id)}${p.primary ? ' (Primary)' : ''}</button>`
-      ).join('');
+      ).join('') + directBtn;
       // Fixed to the viewport — vpn-card uses overflow:hidden, which clipped
       // destination buttons when the menu was positioned inside the card.
       document.body.appendChild(menu);
@@ -2844,6 +2882,14 @@ render.vpn = async () => {
           await moveAppsToProfile(groupId, fromId, btn.dataset.vpnMoveTo);
         };
       });
+      const directMove = menu.querySelector('[data-vpn-move-direct]');
+      if (directMove) {
+        directMove.onclick = async (e) => {
+          e.stopPropagation();
+          closeVpnMoveMenu();
+          await moveLiveTvDirect(fromId);
+        };
+      }
       setTimeout(() => {
         const dismiss = (e) => {
           if (e.target.closest('.vpn-move-menu')) return;

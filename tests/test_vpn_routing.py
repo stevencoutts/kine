@@ -207,6 +207,40 @@ def test_stale_secondary_services():
     )
 
 
+def test_render_override_direct_live_tv_leaves_gluetun():
+    data = _sample_data()
+    data["live_tv_direct"] = True
+    data["profiles"][1]["apps"] = []
+    text = vpn_routing.render_override(
+        data,
+        enabled_apps={"dispatcharr", "ecm", "ecm-mcp", "teamarr", "sonarr", "gluetun"},
+        stack_root="/srv/kine",
+        kine_domain="example.com",
+        kine_local_domain="kine.local",
+    )
+    assert "network_mode: !reset null" in text
+    assert "depends_on: !override" in text
+    ecm = text.split("\n  ecm:\n", 1)[1].split("\n  ecm-mcp:\n", 1)[0]
+    assert "dispatcharr:" in ecm
+    assert "kine_internal" in text
+    assert "kine_edge" in text
+    assert "http://dispatcharr:9191" in text
+    assert "http://ecm:6100" in text
+    assert "network_mode: service:gluetun" in text
+    dispatcharr = text.split("\n  dispatcharr:\n", 1)[1].split("\n  teamarr:\n", 1)[0]
+    assert "service:gluetun" not in dispatcharr
+    dyn = vpn_routing.render_traefik_dynamic(
+        data,
+        enabled_apps={"dispatcharr", "sonarr"},
+        kine_domain="example.com",
+        kine_local_domain="kine.local",
+    )
+    assert dyn["http"]["services"]["dispatcharr"]["loadBalancer"]["servers"][0]["url"] == (
+        "http://dispatcharr:9191"
+    )
+    assert "gluetun:8989" in dyn["http"]["services"]["sonarr"]["loadBalancer"]["servers"][0]["url"]
+
+
 def test_stale_secondary_services_includes_replaced_profile_container():
     """A profile id that no longer exists must still be stale if its container is up."""
     data = _sample_data()

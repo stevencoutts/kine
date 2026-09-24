@@ -87,11 +87,12 @@ def migrate_schema(data: dict[str, Any]) -> dict[str, Any]:
     out["profiles"] = profiles
     if not out.get("primary_id") and profiles:
         out["primary_id"] = profiles[0].get("id")
+    out["live_tv_direct"] = bool(out.get("live_tv_direct"))
     return out
 
 
 def empty() -> dict[str, Any]:
-    return {"primary_id": None, "profiles": []}
+    return {"primary_id": None, "profiles": [], "live_tv_direct": False}
 
 
 def load(stack_root: str) -> dict[str, Any]:
@@ -110,6 +111,7 @@ def load(stack_root: str) -> dict[str, Any]:
     raw = {
         "primary_id": data.get("primary_id"),
         "active_id": data.get("active_id"),
+        "live_tv_direct": data.get("live_tv_direct"),
         "profiles": [p for p in profiles if isinstance(p, dict) and p.get("id")],
     }
     return migrate_schema(raw)
@@ -196,7 +198,36 @@ def secondary_tunnel_service(profile_id: str) -> str:
     return f"gluetun-{short_id(profile_id)}"
 
 
+def live_tv_direct(data: dict[str, Any]) -> bool:
+    return bool(data.get("live_tv_direct"))
+
+
+def app_goes_direct(data: dict[str, Any], app_id: str) -> bool:
+    """Live TV apps bypass Gluetun when the Direct option is on."""
+    return live_tv_direct(data) and app_id in LIVE_TV_AFFINITY
+
+
+def set_live_tv_direct(stack_root: str, enabled: bool) -> dict[str, Any]:
+    """Send the live TV group out the host network, or leave that mode.
+
+    Enabling removes the group from every profile so it cannot also sit
+    on a tunnel. Disabling does not assign the group; the caller does.
+    """
+    data = migrate_from_wg0(stack_root)
+    data["live_tv_direct"] = bool(enabled)
+    if enabled:
+        members = set(LIVE_TV_AFFINITY)
+        for profile in data["profiles"]:
+            profile["apps"] = [
+                a for a in (profile.get("apps") or []) if a not in members
+            ]
+    save(stack_root, data)
+    return data
+
+
 def tunnel_service(data: dict[str, Any], app_id: str) -> str:
+    if app_goes_direct(data, app_id):
+        return app_id
     primary_id = data.get("primary_id")
     for profile in data.get("profiles") or []:
         apps = profile.get("apps") or []
@@ -295,6 +326,8 @@ def set_profile_apps(
             a for a in (profile.get("apps") or []) if a not in normalized
         ]
     target["apps"] = normalized
+    if set(normalized) & set(LIVE_TV_AFFINITY):
+        data["live_tv_direct"] = False
     _validate_affinity_groups(data, forced)
     save(stack_root, data)
     return data

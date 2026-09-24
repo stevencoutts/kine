@@ -18,12 +18,47 @@ class _ResetMapping(dict):
     """Compose ``depends_on: !reset`` — replace static merge, do not union."""
 
 
+class _OverrideMapping(dict):
+    """Compose ``depends_on: !override`` — replace the static dependency list."""
+
+
+class _ResetNull:
+    """Compose ``network_mode: !reset null`` — drop the static pin."""
+
+
 def _reset_mapping_representer(dumper: yaml.Dumper, data: _ResetMapping) -> yaml.Node:
     return dumper.represent_mapping("!reset", dict(data))
 
 
+def _override_mapping_representer(
+    dumper: yaml.Dumper, data: _OverrideMapping,
+) -> yaml.Node:
+    return dumper.represent_mapping("!override", dict(data))
+
+
+def _reset_null_representer(dumper: yaml.Dumper, _data: _ResetNull) -> yaml.Node:
+    # Plain style. represent_scalar quotes the word "null".
+    return yaml.ScalarNode(tag="!reset", value="null", style="")
+
+
 yaml.add_representer(_ResetMapping, _reset_mapping_representer)
 yaml.SafeDumper.add_representer(_ResetMapping, _reset_mapping_representer)
+yaml.add_representer(_ResetNull, _reset_null_representer)
+yaml.SafeDumper.add_representer(_ResetNull, _reset_null_representer)
+yaml.add_representer(_OverrideMapping, _override_mapping_representer)
+yaml.SafeDumper.add_representer(_OverrideMapping, _override_mapping_representer)
+
+# Sibling deps that replace ``depends_on: gluetun`` when Live TV is direct.
+_DIRECT_DEPENDS: dict[str, tuple[str, ...]] = {
+    "ecm": ("dispatcharr",),
+    "teamarr": ("dispatcharr",),
+    "ecm-mcp": ("ecm",),
+}
+_DIRECT_ENV: dict[str, dict[str, str]] = {
+    "ecm": {"DISPATCHARR_URL": "http://dispatcharr:9191"},
+    "teamarr": {"DISPATCHARR_URL": "http://dispatcharr:9191"},
+    "ecm-mcp": {"ECM_URL": "http://ecm:6100"},
+}
 
 
 def container_name_for_tunnel_service(service: str) -> str:
@@ -143,27 +178,29 @@ def render_traefik_dynamic(
     """Traefik file-provider config for tunnelled app Host() routers."""
     routers: dict[str, Any] = {}
     services: dict[str, Any] = {}
-    if vpn_enabled:
-        for app in _enabled_tunnel_apps(enabled_apps):
-            if app not in APP_TRAEFIK_HOST:
-                continue
-            port = APP_PORTS[app]
-            tunnel = vpn_profiles.tunnel_service(data, app)
-            routers[app] = {
-                "rule": _host_rule(
-                    app,
-                    kine_domain=kine_domain,
-                    kine_local_domain=kine_local_domain,
-                ),
-                "service": app,
-                "entryPoints": ["websecure"],
-                "tls": {},
-            }
-            services[app] = {
-                "loadBalancer": {
-                    "servers": [{"url": f"http://{tunnel}:{port}"}],
-                },
-            }
+    for app in _enabled_tunnel_apps(enabled_apps):
+        direct = vpn_profiles.app_goes_direct(data, app)
+        if not vpn_enabled and not direct:
+            continue
+        if app not in APP_TRAEFIK_HOST:
+            continue
+        port = APP_PORTS[app]
+        tunnel = vpn_profiles.tunnel_service(data, app)
+        routers[app] = {
+            "rule": _host_rule(
+                app,
+                kine_domain=kine_domain,
+                kine_local_domain=kine_local_domain,
+            ),
+            "service": app,
+            "entryPoints": ["websecure"],
+            "tls": {},
+        }
+        services[app] = {
+            "loadBalancer": {
+                "servers": [{"url": f"http://{tunnel}:{port}"}],
+            },
+        }
     return {"http": {"routers": routers, "services": services}}
 
 
@@ -265,6 +302,37 @@ def _app_network_override(tunnel: str) -> dict[str, Any]:
     }
 
 
+def _direct_app_override(app: str, enabled: set[str]) -> dict[str, Any]:
+    """Own networks and Docker DNS. Static files pin these apps to Gluetun."""
+    depends = {
+        dep: {"condition": "service_started"}
+        for dep in _DIRECT_DEPENDS.get(app, ())
+        if dep in enabled
+    }
+    doc: dict[str, Any] = {
+        "network_mode": _ResetNull(),
+        "networks": ["kine_internal", "kine_edge"],
+        "depends_on": _OverrideMapping(depends),
+    }
+    env = dict(_DIRECT_ENV.get(app, {}))
+    if app == "ecm" and "ecm-mcp" in enabled:
+        env["MCP_HOST"] = "ecm-mcp"
+    if env:
+        doc["environment"] = env
+    return doc
+
+
+def _dump_override(services: dict[str, Any]) -> str:
+    text = yaml.safe_dump(
+        {"services": services},
+        default_flow_style=False,
+        sort_keys=False,
+        allow_unicode=True,
+    )
+    # PyYAML quotes the plain word null; Compose wants an unquoted null.
+    return text.replace("!reset 'null'", "!reset null")
+
+
 def render_override(
     data: dict[str, Any],
     *,
@@ -276,17 +344,18 @@ def render_override(
 ) -> str:
     """Build compose override YAML for secondary tunnels and app pinning."""
     if not vpn_enabled:
-        doc = {"services": {}}
-        return yaml.safe_dump(
-            doc,
-            default_flow_style=False,
-            sort_keys=False,
-            allow_unicode=True,
-        )
+        services = {
+            app: _direct_app_override(app, enabled_apps)
+            for app in _enabled_tunnel_apps(enabled_apps)
+            if vpn_profiles.app_goes_direct(data, app)
+        }
+        return _dump_override(services)
 
     services: dict[str, Any] = {}
     tunnel_apps: dict[str, list[str]] = {}
     for app in _enabled_tunnel_apps(enabled_apps):
+        if vpn_profiles.app_goes_direct(data, app):
+            continue
         svc = vpn_profiles.tunnel_service(data, app)
         tunnel_apps.setdefault(svc, []).append(app)
 
@@ -330,6 +399,9 @@ def render_override(
         )
 
     for app in _enabled_tunnel_apps(enabled_apps):
+        if vpn_profiles.app_goes_direct(data, app):
+            services[app] = _direct_app_override(app, enabled_apps)
+            continue
         tunnel = vpn_profiles.tunnel_service(data, app)
         services[app] = _app_network_override(tunnel)
 
@@ -337,13 +409,7 @@ def render_override(
         tx_tunnel = vpn_profiles.tunnel_service(data, "transmission")
         services["vpn-portsync"] = _app_network_override(tx_tunnel)
 
-    doc = {"services": services}
-    return yaml.safe_dump(
-        doc,
-        default_flow_style=False,
-        sort_keys=False,
-        allow_unicode=True,
-    )
+    return _dump_override(services)
 
 
 def write_override(repo: pathlib.Path, text: str) -> pathlib.Path:

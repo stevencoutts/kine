@@ -235,6 +235,35 @@ def test_set_profile_apps_expands_live_tv_affinity(tmp_path):
     assert not set(by_id[primary["id"]]["apps"]) & {"dispatcharr", "ecm", "teamarr"}
 
 
+def test_set_live_tv_direct_strips_the_group(tmp_path):
+    primary = vpn_profiles.add_profile(str(tmp_path), "Primary", VALID_CONF)
+    secondary = vpn_profiles.add_profile(str(tmp_path), "Secondary", VALID_CONF)
+    vpn_profiles.set_profile_apps(
+        str(tmp_path), secondary["id"], ["dispatcharr"], forced=FORCED | {"ecm-mcp"},
+    )
+    data = vpn_profiles.set_live_tv_direct(str(tmp_path), True)
+    assert data["live_tv_direct"] is True
+    for profile in data["profiles"]:
+        assert not set(profile["apps"]) & set(vpn_profiles.LIVE_TV_AFFINITY)
+    assert vpn_profiles.tunnel_service(data, "dispatcharr") == "dispatcharr"
+    assert vpn_profiles.tunnel_service(data, "ecm") == "ecm"
+    assert vpn_profiles.tunnel_service(data, "sonarr") == "gluetun"
+    again = vpn_profiles.load(str(tmp_path))
+    assert again["live_tv_direct"] is True
+    restored = vpn_profiles.set_profile_apps(
+        str(tmp_path), primary["id"], ["dispatcharr"], forced=FORCED | {"ecm-mcp"},
+    )
+    assert restored["live_tv_direct"] is False
+    assert vpn_profiles.tunnel_service(restored, "dispatcharr") == "gluetun"
+
+
+def test_vpn_ui_offers_direct_for_live_tv():
+    fe = (ROOT / "helm/frontend/index.html").read_text()
+    assert "live_tv_direct" in fe
+    assert "/vpn/live-tv/direct" in fe
+    assert "Direct" in fe
+
+
 def test_set_profile_apps_expands_acquisition_affinity(tmp_path):
     primary = vpn_profiles.add_profile(str(tmp_path), "Primary", VALID_CONF)
     secondary = vpn_profiles.add_profile(str(tmp_path), "Secondary", VALID_CONF)

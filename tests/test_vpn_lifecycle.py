@@ -235,3 +235,45 @@ def test_apply_filesystem_skips_wg0_when_disabled(tmp_path):
     )
     assert wg0.read_text() == "# removed on disable\n"
     assert (repo / vpn_routing.ROUTING_GENERATED_REL).read_text().strip() == "services: {}"
+
+
+_LIVE = {"dispatcharr", "ecm", "ecm-mcp", "teamarr", "sonarr"}
+
+
+def test_leaving_direct_on_primary_recreates_live_apps_only():
+    before = {"live_tv_direct": True}
+    store = {
+        "live_tv_direct": False,
+        "primary_id": PRIMARY_ID,
+        "profiles": [{
+            "id": PRIMARY_ID,
+            "apps": ["dispatcharr", "ecm", "ecm-mcp", "teamarr", "sonarr"],
+        }],
+    }
+    targets = main._vpn_live_return(before, store, _LIVE)
+    assert targets == ["dispatcharr", "ecm", "ecm-mcp", "teamarr"]
+    for app in targets:
+        group = vpn_routing.recreate_group(store, app, _LIVE)
+        assert group == [app]
+
+
+def test_leaving_direct_on_secondary_recreates_that_tunnel():
+    before = {"live_tv_direct": True}
+    store = {
+        "live_tv_direct": False,
+        "primary_id": PRIMARY_ID,
+        "profiles": [
+            {"id": PRIMARY_ID, "apps": ["sonarr"]},
+            {
+                "id": SECONDARY_ID,
+                "apps": ["dispatcharr", "ecm", "ecm-mcp", "teamarr"],
+            },
+        ],
+    }
+    tunnel = vpn_profiles.secondary_tunnel_service(SECONDARY_ID)
+    targets = main._vpn_live_return(before, store, _LIVE)
+    assert targets == [tunnel]
+    group = vpn_routing.recreate_group(store, tunnel, _LIVE)
+    assert tunnel in group
+    assert "dispatcharr" in group
+    assert "sonarr" not in group

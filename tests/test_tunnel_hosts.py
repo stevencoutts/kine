@@ -22,6 +22,21 @@ def test_internal_base_uses_secondary():
     )
 
 
+def test_internal_base_direct_live_tv():
+    data = {
+        "primary_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "live_tv_direct": True,
+        "profiles": [
+            {"id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "apps": ["sonarr"]},
+        ],
+    }
+    assert (
+        tunnel_hosts.internal_base(data, "dispatcharr", 9191)
+        == "http://dispatcharr:9191"
+    )
+    assert tunnel_hosts.internal_base(data, "sonarr", 8989) == "http://gluetun:8989"
+
+
 def test_internal_base_primary_leftover():
     data = {
         "primary_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
