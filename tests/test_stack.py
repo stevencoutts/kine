@@ -193,13 +193,17 @@ def test_compose_includes_vpn_routing_override():
 def test_static_gluetun_has_no_vpn_routing_app_traefik_routers():
     text = (ROOT / "compose" / "vpn.gluetun.yml").read_text()
     assert "traefik.http.routers.sonarr" not in text
-    assert "vpn-routing.override" in text or "generated" in text.lower()
+    assert "docker-compose.override.yml" in text
 
 
 def test_top_level_includes_every_fragment():
     top = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
     included = {pathlib.Path(p).name for p in top["include"]}
-    on_disk = {f.name for f in FRAGMENTS if not f.name.startswith("_")}
+    on_disk = {
+        f.name
+        for f in FRAGMENTS
+        if not f.name.startswith("_") and f.name != "vpn-routing.generated.yml"
+    }
     assert included == on_disk, f"include drift: {included ^ on_disk}"
 
 

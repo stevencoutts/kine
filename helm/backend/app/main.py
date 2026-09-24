@@ -579,6 +579,8 @@ async def apps(request: Request, user: str = Depends(require_user)):
     cat = catalogue.load()
     enabled = set(config.profiles())
     env = config.read()
+    store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, _vpn_stack_root())
+    live_direct = vpn_profiles.live_tv_direct(store)
     code, out = await compose.run("ps", "--format", "json")
     running = out if code == 0 else ""
     dev_on = set(channels.channels())
@@ -608,6 +610,7 @@ async def apps(request: Request, user: str = Depends(require_user)):
             "releases": meta.get("releases"),
             "requires": meta.get("requires", []),
             "tunnelled": meta.get("tunnelled"),
+            "direct": live_direct and vpn_profiles.app_goes_direct(store, key),
             "hidden": meta.get("hidden", False),
             "dev_supported": channels.supported(meta),
             "dev_enabled": key in dev_on,

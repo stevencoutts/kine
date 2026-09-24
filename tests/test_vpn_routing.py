@@ -1,5 +1,7 @@
 """Compose override generator for multi-Gluetun egress."""
+import json
 import pathlib
+import subprocess
 import sys
 
 import yaml
@@ -257,6 +259,8 @@ def test_write_override(tmp_path):
     path = vpn_routing.write_override(tmp_path, "services: {}\n")
     assert path == tmp_path / vpn_routing.ROUTING_GENERATED_REL
     assert path.read_text() == "services: {}\n"
+    mirror = tmp_path / vpn_routing.ROUTING_COMPOSE_OVERRIDE_REL
+    assert mirror.read_text() == path.read_text()
 
 
 def test_routing_stub_exists():
@@ -264,4 +268,57 @@ def test_routing_stub_exists():
     assert stub.is_file()
     doc = yaml.safe_load(stub.read_text())
     assert doc.get("services") == {}
-    assert "vpn-routing.generated.yml" in stub.read_text()
+    # Include drops !reset. The stub must not pull the generated file in.
+    assert "include:" not in stub.read_text()
+
+
+def test_compose_override_file_clears_direct_network_mode(tmp_path):
+    """Static fragments pin Live TV to Gluetun. The root override must lift it.
+
+    Compose include ignores !reset, so docker-compose.override.yml has to be
+    a real project override. This is the merge the osiris project uses.
+    """
+    root = tmp_path / "proj"
+    (root / "compose").mkdir(parents=True)
+    (root / "docker-compose.yml").write_text(
+        "name: kine-direct-merge\n"
+        "include:\n"
+        "  - compose/app.yml\n"
+        "networks:\n"
+        "  kine_internal:\n"
+        "  kine_edge:\n"
+    )
+    (root / "compose" / "app.yml").write_text(
+        "services:\n"
+        "  gluetun:\n"
+        "    image: busybox:1.36\n"
+        "  app:\n"
+        "    image: busybox:1.36\n"
+        "    network_mode: \"service:gluetun\"\n"
+        "    depends_on:\n"
+        "      gluetun:\n"
+        "        condition: service_healthy\n"
+    )
+    vpn_routing.write_override(
+        root,
+        "services:\n"
+        "  app:\n"
+        "    network_mode: !reset null\n"
+        "    networks:\n"
+        "    - kine_internal\n"
+        "    - kine_edge\n"
+        "    depends_on: !override {}\n",
+    )
+    result = subprocess.run(
+        ["docker", "compose", "config", "--format", "json"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    doc = json.loads(result.stdout)
+    app = doc["services"]["app"]
+    assert app.get("network_mode") in (None, "")
+    assert set(app.get("networks") or {}) == {"kine_internal", "kine_edge"}
+    assert not app.get("depends_on")

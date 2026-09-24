@@ -5,6 +5,7 @@
 .local/
 .claude/
 compose/vpn-routing.generated.yml
+docker-compose.override.yml
 
 # Python
 .venv/

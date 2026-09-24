@@ -261,7 +261,8 @@ def test_vpn_ui_offers_direct_for_live_tv():
     fe = (ROOT / "helm/frontend/index.html").read_text()
     assert "live_tv_direct" in fe
     assert "/vpn/live-tv/direct" in fe
-    assert "Direct" in fe
+    card = fe.split("const appCard", 1)[1].split("render.apps", 1)[0]
+    assert "a.direct ? 'Direct' : 'Always Tunnelled'" in card
 
 
 def test_set_profile_apps_expands_acquisition_affinity(tmp_path):

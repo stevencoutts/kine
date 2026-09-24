@@ -1821,7 +1821,7 @@ const appCard = a => `
   <div class="card">
     <h3><span class="dot ${a.running?'on':'off'}"></span>${a.name}</h3>
     <p>${a.summary}</p>
-    ${a.tunnelled==='forced'?'<p style="color:var(--warn)">Always Tunnelled</p>':''}
+    ${a.tunnelled==='forced' ? `<p style="color:${a.direct ? 'var(--muted)' : 'var(--warn)'}">${a.direct ? 'Direct' : 'Always Tunnelled'}</p>` : ''}
     ${a.dev_supported ? `<label class="tier-switch" style="margin:.15rem 0" aria-label="Dev Version">
       <input type="checkbox" data-dev="${a.id}" ${a.dev_enabled?'checked':''}>
       <span class="tier-switch-ui" aria-hidden="true"></span>

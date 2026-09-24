@@ -10,6 +10,10 @@ from . import vpn_profiles, wireguard
 
 ROUTING_STUB_REL = pathlib.Path("compose/vpn-routing.override.yml")
 ROUTING_GENERATED_REL = pathlib.Path("compose/vpn-routing.generated.yml")
+# Compose `include` drops !reset, so a generated file included from the stub
+# cannot clear network_mode. This path is the automatic project override,
+# which Compose merges after the fragments and does honor !reset.
+ROUTING_COMPOSE_OVERRIDE_REL = pathlib.Path("docker-compose.override.yml")
 # Back-compat alias for tests/docs that refer to the generated path.
 ROUTING_REL = ROUTING_GENERATED_REL
 
@@ -413,20 +417,28 @@ def render_override(
 
 
 def write_override(repo: pathlib.Path, text: str) -> pathlib.Path:
-    path = pathlib.Path(repo) / ROUTING_GENERATED_REL
-    path.parent.mkdir(parents=True, exist_ok=True)
+    """Write routing YAML. Compose loads the root override, not the include."""
     if not text.endswith("\n"):
         text = text + "\n"
+    repo = pathlib.Path(repo)
+    path = repo / ROUTING_GENERATED_REL
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text)
+    override = repo / ROUTING_COMPOSE_OVERRIDE_REL
+    override.write_text(text)
     return path
 
 
 def ensure_generated_stub(repo: pathlib.Path) -> pathlib.Path:
     """Create an empty generated override if missing (fresh clone / first up)."""
-    path = pathlib.Path(repo) / ROUTING_GENERATED_REL
+    repo = pathlib.Path(repo)
+    path = repo / ROUTING_GENERATED_REL
     if not path.is_file():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("services: {}\n")
+    override = repo / ROUTING_COMPOSE_OVERRIDE_REL
+    if not override.is_file():
+        override.write_text(path.read_text() if path.is_file() else "services: {}\n")
     return path
 
 

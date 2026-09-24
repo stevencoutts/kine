@@ -1,4 +1,6 @@
-# Tracked stub — Helm writes secrets to vpn-routing.generated.yml (gitignored).
-include:
-  - vpn-routing.generated.yml
+# Tracked stub. Helm writes the same routing document to two gitignored
+# paths: compose/vpn-routing.generated.yml and docker-compose.override.yml.
+# The root file is the one Compose loads. Do not include the generated
+# file here — Compose include drops !reset, which leaves network_mode and
+# networks set together and makes the project invalid.
 services: {}
