@@ -4,7 +4,7 @@
 
 **Goal:** Add an optional Pi-hole that answers DNS for the LAN and for untunnelled Kine containers, with its only upstream on the primary Gluetun tunnel.
 
-**Architecture:** Pi-hole is its own Compose service on a fixed `kine_dns` address. While the profile is on, the generated compose override attaches primary Gluetun at `172.30.53.1` and points untunnelled services at Pi-hole. Tunnelled apps stay on Gluetun’s built-in resolver. Enabling or disabling Pi-hole regenerates that override and recreates the tunnel group together with the DNS consumers.
+**Architecture:** Pi-hole is its own Compose service on a fixed `kine_dns` address. While the profile is on, the generated compose override attaches primary Gluetun at `172.16.53.2` and points untunnelled services at Pi-hole (`172.16.53.3`). Tunnelled apps stay on Gluetun’s built-in resolver. Enabling or disabling Pi-hole regenerates that override and recreates the tunnel group together with the DNS consumers. Shipped defaults are `KINE_DNS_SUBNET=172.16.53.0/27` and `KINE_DNS_POOL=172.16.53.16/28`. `.1` is the Docker gateway. When another program already holds port 53 on one host address, Pi-hole is published on the remaining addresses via `KINE_DNS_BIND`.
 
 **Tech Stack:** Docker Compose, Pi-hole v6 (`FTLCONF_*`), existing Helm override writer, pytest.
 
@@ -14,9 +14,9 @@
 
 - Pi-hole is off by default, tier `network`, `requires: [gluetun]`, not `tunnelled: forced`.
 - Upstream is only `${KINE_DNS_GLUETUN}#53`. DHCP is off. No second public resolver.
-- Defaults: `KINE_DNS_SUBNET=172.30.53.0/29`, `KINE_DNS_GLUETUN=172.30.53.1`, `KINE_DNS_PIHOLE=172.30.53.53`.
+- Defaults: `KINE_DNS_SUBNET=172.16.53.0/27`, `KINE_DNS_POOL=172.16.53.16/28`, `KINE_DNS_GLUETUN=172.16.53.2`, `KINE_DNS_PIHOLE=172.16.53.3`.
 - `PIHOLE_WEBPASSWORD` sentinel is `change-me`. Empty or sentinel is replaced with 16 random bytes as hex. An existing value is kept.
-- Enable refuses to start when host TCP/UDP 53 is taken, or when `FIREWALL_OUTBOUND_SUBNETS` does not contain `KINE_DNS_SUBNET`. Do not rewrite the firewall list or stop `systemd-resolved`.
+- Enable refuses to start when port 53 is bound on every interface, or when `FIREWALL_OUTBOUND_SUBNETS` does not contain `KINE_DNS_SUBNET`. A listener on one address is recorded in `KINE_DNS_BIND` and Pi-hole is published on the other host addresses. Do not rewrite the firewall list or stop `systemd-resolved`.
 - Untunnelled DNS targets: `traefik`, `helm`, `provision`, `emby`, `tdarr`, `beets`, `seerr`, `recyclarr`, `game-thumbs`, `grafana`, `prometheus`, `cadvisor`, `node-exporter`.
 - Not modified: `dockerproxy`, `mdns`, `nfs-browse-agent`, `network_mode: service:gluetun` apps, `vpn-portsync`, secondary Gluetun services.
 - Recreate the tunnel group with its peers when Gluetun’s networks change. Do not restart Gluetun alone.

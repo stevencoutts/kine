@@ -25,6 +25,17 @@ share one network stack, so a port already claimed in there is not a
 conflict you resolve in configuration; it is a container that refuses
 to start. Add your app to that table in the same commit.
 
+An untunnelled app that should resolve public names through Pi-hole has
+to be added to `DNS_TARGETS` in `helm/backend/app/pihole_dns.py`. That
+joins it to `kine_dns` and sets `dns` to `KINE_DNS_PIHOLE`. Skip that
+for anything with `network_mode: service:gluetun`, and for secondary
+tunnels.
+
+A Live TV app that must stay with Dispatcharr, ECM, and Teamarr when
+the group moves to Direct belongs in `LIVE_TV_AFFINITY`. Peer URLs use
+`127.0.0.1` inside a shared tunnel and the Docker service name when
+that app is Direct. Use the `sibling_base` helper for those URLs.
+
 ## 2. A catalogue entry
 
 `catalogue.yml`. `summary` and `releases` are what the GUI shows.

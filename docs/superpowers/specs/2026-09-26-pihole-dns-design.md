@@ -119,9 +119,9 @@ pihole:
 
 ## Secrets and port 53
 
-`.env.example` carries `PIHOLE_TAG=latest`, `PIHOLE_WEBPASSWORD`, and the three `KINE_DNS_*` keys. `PIHOLE_WEBPASSWORD` in the example is the sentinel `change-me`. `install.sh`, `./kine enable pihole`, and the Helm enable path replace an empty value or `change-me` with 16 random bytes written as hex before the container starts. A real password already in `.env` is left alone.
+`.env.example` carries `PIHOLE_TAG=latest`, `PIHOLE_WEBPASSWORD`, and the `KINE_DNS_*` keys (`SUBNET`, `POOL`, `GLUETUN`, `PIHOLE`, `BIND`). `PIHOLE_WEBPASSWORD` in the example is the sentinel `change-me`. `install.sh`, `./kine enable pihole`, and the Helm enable path replace an empty value or `change-me` with 16 random bytes written as hex before the container starts. A real password already in `.env` is left alone.
 
-Before compose starts Pi-hole, enable checks that host TCP 53 and UDP 53 are free. If either is taken, enable stops. It names the process when the host can show who holds the socket, and otherwise reports that the port is in use. It does not stop `systemd-resolved` or anything else bound there.
+Before compose starts Pi-hole, enable checks who holds host TCP 53 and UDP 53. A listener on one specific address does not block the host's other addresses: those are written to `KINE_DNS_BIND` and Pi-hole is published there (`10.0.0.1:53:53/tcp` and `/udp` for each). An empty `KINE_DNS_BIND` publishes `0.0.0.0:53`, which fails when any address already holds the port. A listener on every interface (`0.0.0.0`, `*`, or `::`) stops enable. Enable does not stop `systemd-resolved`, libvirt `dnsmasq`, or anything else bound there. An address added to the host after that publish, such as a VRRP address, is not answered until it is listed in `KINE_DNS_BIND` and Pi-hole is recreated while the address exists.
 
 ## Docs
 

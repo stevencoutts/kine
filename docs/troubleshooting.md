@@ -91,9 +91,53 @@ Pi-hole being enabled.
 `FIREWALL_OUTBOUND_SUBNETS` has to contain `KINE_DNS_SUBNET` (default
 `172.16.53.0/27`). The default list already does, via `172.16.0.0/12`.
 `KINE_DNS_GLUETUN` and `KINE_DNS_PIHOLE` have to be different hosts
-inside that subnet. Docker keeps the first address (`.1`) as the
-gateway, so those two start at `.2` and `.3`. If enable says the pool
-overlaps another network, pick a free subnet and set all three keys.
+inside that subnet, and neither may be the Docker gateway (`.1`). The
+defaults are `.2` and `.3`, with other containers drawn from
+`KINE_DNS_POOL` (`172.16.53.16/28`). If enable says the pool overlaps
+another network, pick a free subnet and set the subnet, the pool, and
+both addresses together.
+
+"Address already in use" on `kine_dns`, or "no available IPv4 addresses",
+means the pool is handing out `.2` or `.3`, or the subnet is too small.
+Keep those two addresses outside `KINE_DNS_POOL`. Start Gluetun before
+the other DNS consumers so it can claim `.2`.
+
+Gravity that stops with "DNS resolution is currently unavailable" means
+Gluetun is not listening on port 53. The primary tunnel has to keep
+`DNS_SERVER=on` with a plaintext resolver. `DOT=off` on current Gluetun
+turns that listener off. Pi-hole's general upstream stays
+`${KINE_DNS_GLUETUN}#53`.
+
+DNS answers only on the addresses in `KINE_DNS_BIND`. Putting another
+address on the host, including a VRRP address moved from another machine,
+does nothing until that address is added to `KINE_DNS_BIND` and Pi-hole
+is recreated. The address has to be on the host first, or Docker cannot
+bind the socket.
+
+## A media server stays offline and Watching is empty
+
+Plex or Emby is configured with a hostname Pi-hole does not know. Helm
+uses Pi-hole once that profile is on, so a name that used to resolve via
+the router now fails and the server shows offline with no sessions.
+
+In the Pi-hole UI, set the local domain and add a conditional forwarder
+for it to the router (`dns.revServers`: enabled, the LAN CIDR, the router
+address, and the domain). Both are required. With the domain marked
+local and no forwarder, Pi-hole answers NXDOMAIN and never asks upstream.
+Check from Helm's resolver:
+
+```bash
+docker exec kine-helm python -c "import socket; print(socket.getaddrinfo('emby.example.com', 443)[0][4])"
+```
+
+## Live TV apps cannot reach each other after Direct
+
+ECM, Teamarr, and Dispatcharr stored `http://127.0.0.1:<port>` while
+they shared Gluetun. On Direct each has its own namespace, so loopback
+is the wrong host. They need `http://dispatcharr:9191` and
+`http://teamarr:9195`. Toggling Direct rewrites those URLs. If a guide
+source still shows the loopback address, toggle Direct off and on again,
+or run `./kine provision`.
 
 ## A newly added tier 2 app will not start
 

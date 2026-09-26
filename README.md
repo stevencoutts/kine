@@ -1,12 +1,14 @@
 # Kine
 
 Kine is a self-hosted media appliance on Docker Compose: acquisition (*arr),
-VPN-routed downloads, optional Emby/Live TV, and metrics — all behind one
-Traefik HTTPS entry point, wired together by a provisioner so a fresh install
-comes up mostly pre-configured.
+VPN-routed downloads, optional Emby and Live TV, optional Pi-hole, and
+metrics. Traefik is the HTTPS entry point. A provisioner wires a fresh
+install so the apps come up mostly pre-configured.
 
-**Helm** is the operator UI: enable apps, watch who’s streaming, check Stats,
-manage VPN profiles, and point Sonarr/Radarr at remote Plex or Emby.
+**Helm** is the operator UI. The Dashboard enables apps and shows who is
+streaming, what is downloading, and whether Sonarr and Radarr still have
+missing items. Stats, VPN, and Settings are the other tabs. Updates sit in
+the footer.
 
 <p align="center">
   <img src="docs/images/helm-apps.png" alt="Helm Apps — enabled acquisition stack" width="900">
@@ -16,10 +18,13 @@ manage VPN profiles, and point Sonarr/Radarr at remote Plex or Emby.
 
 - **Provisioned stack** — root folders, download clients, Prowlarr→*arr, and
   optional Emby wizard / Seerr / Bazarr wiring without hand-editing each app
-- **VPN kill switch** — acquisition (and Live TV) share gluetun’s WireGuard
-  namespace; no tunnel means no outbound path
-- **Helm admin** — Apps, Watching, Stats, Updates, VPN, Settings over the same
-  Compose profiles the CLI uses
+- **VPN kill switch** — acquisition shares gluetun’s WireGuard namespace.
+  Live TV starts there and can move to Direct as a group. No tunnel means
+  no outbound path for anything still inside it
+- **Pi-hole** — optional DNS for the LAN and for apps outside the tunnel.
+  Its only general upstream is the primary VPN
+- **Helm admin** — Dashboard, Stats, VPN, and Settings over the same Compose
+  profiles the CLI uses
 - **Traefik HTTPS** — subdomain routing, mDNS on the LAN, optional Let’s Encrypt
   DNS-01 (ClouDNS)
 - **Remote library notify** — Plex/Emby connections with path maps when mounts
@@ -105,11 +110,12 @@ Enabling a section selects its catalogue defaults:
 | Media | none (enable Emby individually) |
 | Acquisition | Sonarr, Radarr, Prowlarr, Transmission, Recyclarr |
 | Process | Tdarr |
-| Live TV | Dispatcharr, ECM, Teamarr |
+| Live TV | Dispatcharr, ECM, Teamarr, Game Thumbs |
 | Metrics | Grafana (+ Prometheus, cAdvisor, node-exporter) |
 | Network | none (enable Pi-hole individually) |
 
-Optional individually: Emby, Jackett, Bazarr, NZBGet, Unpackerr, Seerr, Pi-hole.
+Optional individually: Emby, Lidarr, Beets, Jackett, Bazarr, NZBGet,
+Unpackerr, Seerr, ECM MCP, Pi-hole.
 Prowlarr is the indexer proxy wired into Sonarr/Radarr. Recyclarr syncs TRaSH
 Guide 1080p profiles (`WEB-1080p` / `HD Bluray + WEB`) on a daily cron.
 
@@ -117,11 +123,41 @@ Seerr is not tunnelled. After its wizard Sign In, provision registers Sonarr and
 Radarr at `gluetun:8989` / `gluetun:7878`. See the Seerr docs in-app if the
 wizard still asks for Configure Services.
 
-Pi-hole is not tunnelled either. Point the router or each LAN device at the
-Kine host for DNS. Upstream queries leave through the primary WireGuard
-tunnel, and external DNS stops while that tunnel is down. Enabling Pi-hole
-recreates the tunnel group so Gluetun can join the DNS network. Apps that
-already share a tunnel keep that tunnel's own resolver.
+Pi-hole is its own container, beside the tunnel. Point the router or each
+LAN device at the Kine host for DNS. The web UI is
+`https://pihole.${KINE_DOMAIN}` on the Traefik HTTPS port. The password is
+`PIHOLE_WEBPASSWORD` in `.env`. Install replaces an empty value or
+`change-me` with a random one and leaves a password you already set.
+
+Upstream queries leave only through the primary WireGuard tunnel
+(`KINE_DNS_GLUETUN`, default `172.16.53.2`). External DNS stops while that
+tunnel is down. Enabling Pi-hole recreates the tunnel group so Gluetun can
+join the DNS bridge, and recreates the apps that should use Pi-hole:
+Traefik, Helm, the provisioner, Emby, Tdarr, Beets, Seerr, Recyclarr, Game
+Thumbs, and the metrics containers. Apps that share a tunnel keep that
+tunnel's resolver.
+
+The DNS bridge is `172.16.53.0/27`. Docker keeps `.1` as the gateway.
+Gluetun is `.2` and Pi-hole is `.3`. Other containers are addressed from
+`172.16.53.16/28`, so a later start cannot take those two addresses. If the
+subnet overlaps another Docker network, change `KINE_DNS_SUBNET`,
+`KINE_DNS_POOL`, `KINE_DNS_GLUETUN`, and `KINE_DNS_PIHOLE` together.
+`FIREWALL_OUTBOUND_SUBNETS` has to contain the subnet. The default list
+already does, via `172.16.0.0/12`.
+
+Port 53 is published on every address in `KINE_DNS_BIND`. An empty value
+means every interface, which fails when anything on the host already holds
+port 53. Enable then publishes Pi-hole on the host's other addresses and
+records them in `KINE_DNS_BIND`. A listener on every interface still stops
+enable. An address added later, such as a VRRP address, is not answered
+until it is listed there and Pi-hole is recreated while the address exists
+on the host.
+
+Names your router already serves are not in Pi-hole until you add them.
+Set the local domain and a conditional forwarder in the Pi-hole UI (a
+`revServer` for that domain, aimed at the router). Otherwise Helm cannot
+resolve a remote Emby or Plex hostname and shows that server offline. Leave
+the general upstream on Gluetun. A public resolver there bypasses the VPN.
 
 **Metrics** (off by default) records stack history. Helm’s **Stats** page embeds
 overview panels; app cards get CPU sparklines when Prometheus is up. Grafana is
@@ -229,9 +265,17 @@ default; the override moves apps to their assigned tunnel. Seerr stays on
 stays untunnelled and reaches Dispatcharr HDHomeRun on that app's tunnel
 host.
 
+**Direct Live TV.** On the VPN tab, move the Live TV group to Direct.
+Dispatcharr, ECM, ECM MCP, and Teamarr then leave the tunnel and use their
+own containers. They reach each other by service name (`dispatcharr:9191`,
+`ecm:6100`, `teamarr:9195`). While they share a tunnel they use
+`127.0.0.1` and those same ports. Helm rewrites the peer URLs when the
+group moves. Game Thumbs stays untunnelled either way. Assigning any of
+those four apps to a VPN profile turns Direct off.
+
 - No independent interface or fallback route for tunnelled apps
-- Tunnel down ⇒ acquisition/Live TV down (by design)
-- Shared port space — see [docs/port-map.md](docs/port-map.md)
+- Tunnel down ⇒ acquisition down, and Live TV down while it is still inside the tunnel
+- Shared port space inside each tunnel — see [docs/port-map.md](docs/port-map.md)
 - Restart with `./kine vpn restart`, not `./kine restart gluetun`
 
 ```bash
@@ -260,11 +304,13 @@ never overwrites an existing key; `./kine provision` is idempotent.
 
 | Tab | Role |
 |-----|------|
-| Apps | Sections/apps, Watching / Downloads overview, Dev channels |
+| Dashboard | Sections and apps, Watching, Downloads, Missing Search, dev channels |
 | Stats | Embedded Grafana / stack metrics |
-| Updates | Per-app and Update All (skips disabled; gluetun recreates tunnel peers) |
-| VPN | Profiles, status, restart tunnel group |
+| VPN | Profiles, Direct Live TV, status, restart tunnel group |
 | Settings | Domain, TLS, NFS, Plex/Emby notify + path maps, Live TV token, OpenSubtitles |
+
+Updates are the footer chip: per-app and Update All. Disabled apps are
+skipped. Updating gluetun recreates its tunnel peers.
 
 Provision (`seed` / `wire`) is single-flight via `${STACK_ROOT}/provision.lock`.
 

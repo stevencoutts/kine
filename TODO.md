@@ -6,9 +6,7 @@
 - [x] Optional NFS exports for `/media/TV`, `/media/Movies`, and `/media/downloads`
 - [x] Media paths available to and pre-configured in enabled apps
 
-# Requires Live Validation
-- [ ] Finish and verify every upstream app integration on a scratch host.
-  Sonarr/Radarr, Transmission/NZBGet, Prowlarr, Unpackerr, and Emby
-  libraries are pre-wired. Bazarr, Recyclarr, and the
-  Dispatcharr/Emby/ECM/Teamarr links still depend on upstream contracts
-  that have not been exercised against running containers.
+# Later
+- [ ] Publish Pi-hole DNS on a VRRP address when that address moves onto
+  the Kine host. Today it answers only the addresses in `KINE_DNS_BIND`.
+  The address has to exist before Pi-hole is recreated.
