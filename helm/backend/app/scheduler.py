@@ -208,6 +208,56 @@ def _dispatcharr_env_needs_token() -> bool:
     return False
 
 
+def _peer_urls_stale() -> bool:
+    """True when ECM or Teamarr still store a Dispatcharr URL for the other mode."""
+    data = tunnel_hosts.load_profiles()
+    settings = pathlib.Path("/stack/config/ecm/settings.json")
+    if settings.is_file():
+        try:
+            body = json.loads(settings.read_text() or "{}")
+        except (OSError, json.JSONDecodeError):
+            body = {}
+        url = ""
+        if isinstance(body, dict):
+            url = str(body.get("url") or "").strip()
+        if tunnel_hosts.align_peer_url(url, data, "dispatcharr", 9191):
+            return True
+    for app in ("ecm", "teamarr"):
+        envp = pathlib.Path(f"/stack/config/{app}/{app}.env")
+        if not envp.is_file():
+            continue
+        try:
+            lines = envp.read_text().splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            if not line.startswith("DISPATCHARR_URL="):
+                continue
+            url = line.split("=", 1)[1].strip()
+            if tunnel_hosts.align_peer_url(url, data, "dispatcharr", 9191):
+                return True
+    return False
+
+
+def _teamarr_epg_stale() -> bool:
+    """True when Dispatcharr's saved Teamarr XMLTV URL is on the wrong host."""
+    if "teamarr" not in config.profiles() or "dispatcharr" not in config.profiles():
+        return False
+    try:
+        from . import dispatcharr_sources
+
+        if not dispatcharr_sources.configured():
+            return False
+        data = tunnel_hosts.load_profiles()
+        for row in dispatcharr_sources.list_epg():
+            url = str(row.get("url") or "")
+            if tunnel_hosts.align_peer_url(url, data, "teamarr", 9195):
+                return True
+    except (OSError, ValueError, httpx.HTTPError):
+        return False
+    return False
+
+
 def _ecm_settings_needs_dispatcharr() -> bool:
     """True when ECM is enabled but settings.json has no API-key connection."""
     if "ecm" not in config.profiles():
@@ -236,7 +286,12 @@ async def _dispatcharr_needs_wire() -> bool:
     if not token:
         return False
     # Token present: wire if dependents need it, or Emby may need tuner.
-    if _dispatcharr_env_needs_token() or _ecm_settings_needs_dispatcharr():
+    if (
+        _dispatcharr_env_needs_token()
+        or _ecm_settings_needs_dispatcharr()
+        or _peer_urls_stale()
+        or _teamarr_epg_stale()
+    ):
         return True
     if "emby" not in config.profiles():
         return False
@@ -264,16 +319,21 @@ async def _dispatcharr_needs_wire() -> bool:
         return True
 
 
-async def wire_dispatcharr_if_ready() -> None:
-    if not await _dispatcharr_needs_wire():
+async def wire_dispatcharr_if_ready(*, force: bool = False) -> None:
+    urls_were_stale = _peer_urls_stale()
+    if not force and not await _dispatcharr_needs_wire():
         return
     if provision_lock.status().get("busy"):
         return
     token = _dispatcharr_token() or ""
     # Capture before wire: fingerprint alone misses "token in .env but
     # ecm.env / settings.json still empty" after a stale provision image.
+    # A stale peer URL also needs a recreate so ECM reloads settings.json.
     dependents_needed = (
-        _dispatcharr_env_needs_token() or _ecm_settings_needs_dispatcharr()
+        _dispatcharr_env_needs_token()
+        or _ecm_settings_needs_dispatcharr()
+        or urls_were_stale
+        or force
     )
     try:
         async with provision_lock.acquire(reason="dispatcharr auto-wire"):

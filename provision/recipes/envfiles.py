@@ -12,12 +12,17 @@ ECM is special: the UI reads Dispatcharr connection from
 import json
 import pathlib
 
+import tunnel_hosts
 from keys import resolve_key
 
 STACK = pathlib.Path("/stack")
-# Live-TV affinity keeps dispatcharr/ecm/teamarr in one gluetun namespace;
-# same-container callers reach Dispatcharr on loopback, not kine_internal DNS.
-DISPATCHARR_LOOPBACK = "http://127.0.0.1:9191"
+
+
+def dispatcharr_sibling_url() -> str:
+    """Address ECM and Teamarr should use for Dispatcharr right now."""
+    return tunnel_hosts.sibling_base(
+        tunnel_hosts.load_profiles(), "dispatcharr", 9191,
+    )
 
 
 def _write(app: str, lines: dict[str, str], log) -> None:
@@ -64,7 +69,7 @@ def write_ecm_dispatcharr_settings(token: str, log) -> bool:
         except json.JSONDecodeError:
             data = {}
     updates = {
-        "url": DISPATCHARR_LOOPBACK,
+        "url": dispatcharr_sibling_url(),
         "auth_method": "api_key",
         "dispatcharr_api_key": token,
         "api_key": token,  # legacy alias ECM still mirrors
@@ -87,8 +92,7 @@ def write_dispatcharr_token(app: str, token: str, log) -> bool:
     for key in ("DISPATCHARR_URL", "DISPATCHARR_TOKEN"):
         if key not in order:
             order.append(key)
-    # ECM/Teamarr share Dispatcharr's tunnel namespace (live-TV affinity).
-    existing["DISPATCHARR_URL"] = DISPATCHARR_LOOPBACK
+    existing["DISPATCHARR_URL"] = dispatcharr_sibling_url()
     existing["DISPATCHARR_TOKEN"] = token or ""
     body = "\n".join(f"{k}={existing[k]}" for k in order) + "\n"
     env_changed = not (target.exists() and target.read_text() == body)

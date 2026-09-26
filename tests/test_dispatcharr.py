@@ -37,6 +37,10 @@ def test_tuner_already_linked_matches_url():
 def test_write_dispatcharr_token_sets_url_and_token(tmp_path, monkeypatch):
     from recipes import envfiles
     monkeypatch.setattr(envfiles, "STACK", tmp_path)
+    monkeypatch.setattr(
+        envfiles.tunnel_hosts, "load_profiles",
+        lambda: {"live_tv_direct": False, "profiles": []},
+    )
     changed = envfiles.write_dispatcharr_token("ecm", "abc-token", lambda m: None)
     assert changed is True
     text = (tmp_path / "config" / "ecm" / "ecm.env").read_text()
@@ -62,6 +66,10 @@ def test_write_dispatcharr_token_seeds_ecm_settings_json(tmp_path, monkeypatch):
     import json
     from recipes import envfiles
     monkeypatch.setattr(envfiles, "STACK", tmp_path)
+    monkeypatch.setattr(
+        envfiles.tunnel_hosts, "load_profiles",
+        lambda: {"live_tv_direct": False, "profiles": []},
+    )
     d = tmp_path / "config" / "ecm"
     d.mkdir(parents=True)
     (d / "settings.json").write_text(json.dumps({
@@ -79,6 +87,79 @@ def test_write_dispatcharr_token_seeds_ecm_settings_json(tmp_path, monkeypatch):
     assert data["api_key"] == "abc-token"
     assert data["theme"] == "dark"
     assert envfiles.write_dispatcharr_token("ecm", "abc-token", lambda m: None) is False
+
+
+def test_write_dispatcharr_token_uses_service_name_when_direct(tmp_path, monkeypatch):
+    import json
+    from recipes import envfiles
+    monkeypatch.setattr(envfiles, "STACK", tmp_path)
+    monkeypatch.setattr(
+        envfiles.tunnel_hosts, "load_profiles",
+        lambda: {"live_tv_direct": True, "profiles": []},
+    )
+    envfiles.write_dispatcharr_token("ecm", "abc-token", lambda m: None)
+    text = (tmp_path / "config" / "ecm" / "ecm.env").read_text()
+    assert "DISPATCHARR_URL=http://dispatcharr:9191" in text
+    data = json.loads((tmp_path / "config" / "ecm" / "settings.json").read_text())
+    assert data["url"] == "http://dispatcharr:9191"
+
+
+class _FakeEpg:
+    def __init__(self, sources):
+        self.sources = sources
+        self.patches = []
+        self.posts = []
+
+    def get(self, path):
+        assert path == "/api/epg/sources/"
+        return _FakeResp(200, self.sources)
+
+    def patch(self, path, json=None):
+        self.patches.append((path, json))
+        return _FakeResp(200, json)
+
+    def post(self, path, json=None):
+        self.posts.append((path, json))
+        return _FakeResp(200, {})
+
+    def close(self):
+        pass
+
+
+def test_reconcile_teamarr_epg_rewrites_loopback_when_direct(monkeypatch):
+    from recipes import dispatcharr
+    monkeypatch.setattr(
+        dispatcharr.tunnel_hosts, "load_profiles",
+        lambda: {"live_tv_direct": True, "profiles": []},
+    )
+    fake = _FakeEpg([
+        {"id": 7, "name": "Teamarr", "url": "http://127.0.0.1:9195/api/v1/epg/xmltv"},
+        {"id": 8, "name": "Other", "url": "http://example.test/guide.xml"},
+    ])
+    n = dispatcharr.reconcile_teamarr_epg("tok", lambda m: None, client=fake)
+    assert n == 1
+    assert fake.patches == [(
+        "/api/epg/sources/7/",
+        {"url": "http://teamarr:9195/api/v1/epg/xmltv"},
+    )]
+    assert fake.posts == [("/api/epg/import/", {"id": 7})]
+
+
+def test_reconcile_teamarr_epg_restores_loopback_when_tunnelled(monkeypatch):
+    from recipes import dispatcharr
+    monkeypatch.setattr(
+        dispatcharr.tunnel_hosts, "load_profiles",
+        lambda: {"live_tv_direct": False, "profiles": []},
+    )
+    fake = _FakeEpg([
+        {"id": 7, "name": "Teamarr", "url": "http://teamarr:9195/api/v1/epg/xmltv"},
+    ])
+    n = dispatcharr.reconcile_teamarr_epg("tok", lambda m: None, client=fake)
+    assert n == 1
+    assert fake.patches == [(
+        "/api/epg/sources/7/",
+        {"url": "http://127.0.0.1:9195/api/v1/epg/xmltv"},
+    )]
 
 
 def test_write_ecm_settings_skips_empty_token(tmp_path, monkeypatch):

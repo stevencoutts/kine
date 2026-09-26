@@ -5,6 +5,7 @@
 | `${TRAEFIK_HTTP_PORT}` (default 8080) | Traefik HTTP | Redirects to HTTPS |
 | `${TRAEFIK_HTTPS_PORT}` (default 8443) | Traefik HTTPS | App hostnames |
 | `${HELM_PORT}` (default 8600) | Helm admin UI | Also via `kine-admin.${KINE_DOMAIN}` |
+| 53/tcp and 53/udp | kine-pihole | LAN DNS, only while the pihole profile is on |
 
 Set `TRAEFIK_HTTP_PORT=80` and `TRAEFIK_HTTPS_PORT=443` in `.env` when those
 ports are free on the host.

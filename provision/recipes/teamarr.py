@@ -13,9 +13,13 @@ import httpx
 import tunnel_hosts
 
 STACK = Path("/stack")
-# Live-TV affinity keeps dispatcharr/ecm/teamarr in one gluetun namespace;
-# same-container callers reach Dispatcharr on loopback, not kine_internal DNS.
-DISPATCHARR_LOOPBACK = "http://127.0.0.1:9191"
+
+
+def dispatcharr_url() -> str:
+    """Address Teamarr should store for Dispatcharr right now."""
+    return tunnel_hosts.sibling_base(
+        tunnel_hosts.load_profiles(), "dispatcharr", 9191,
+    )
 BLOCK_SIZE = 20
 BASE_START = 2000
 
@@ -934,7 +938,7 @@ def configure(
         # Connection fields only — never echo GET's redacted password.
         disp: dict[str, Any] = {
             "enabled": True,
-            "url": DISPATCHARR_LOOPBACK,
+            "url": dispatcharr_url(),
         }
         if dispatcharr_username:
             disp["username"] = dispatcharr_username
@@ -961,7 +965,7 @@ def configure(
 
         resp = http.put("/api/v1/settings/dispatcharr", json=disp)
         resp.raise_for_status()
-        log("teamarr: Dispatcharr URL set to loopback")
+        log(f"teamarr: Dispatcharr URL set to {disp['url']}")
         ensure_emby_settings(http, log)
         from recipes import emby as emby_recipe
         emby_recipe.sync_from_teamarr(http, log)

@@ -107,14 +107,21 @@ Enabling a section selects its catalogue defaults:
 | Process | Tdarr |
 | Live TV | Dispatcharr, ECM, Teamarr |
 | Metrics | Grafana (+ Prometheus, cAdvisor, node-exporter) |
+| Network | none (enable Pi-hole individually) |
 
-Optional individually: Emby, Jackett, Bazarr, NZBGet, Unpackerr, Seerr.
+Optional individually: Emby, Jackett, Bazarr, NZBGet, Unpackerr, Seerr, Pi-hole.
 Prowlarr is the indexer proxy wired into Sonarr/Radarr. Recyclarr syncs TRaSH
 Guide 1080p profiles (`WEB-1080p` / `HD Bluray + WEB`) on a daily cron.
 
 Seerr is not tunnelled. After its wizard Sign In, provision registers Sonarr and
 Radarr at `gluetun:8989` / `gluetun:7878`. See the Seerr docs in-app if the
 wizard still asks for Configure Services.
+
+Pi-hole is not tunnelled either. Point the router or each LAN device at the
+Kine host for DNS. Upstream queries leave through the primary WireGuard
+tunnel, and external DNS stops while that tunnel is down. Enabling Pi-hole
+recreates the tunnel group so Gluetun can join the DNS network. Apps that
+already share a tunnel keep that tunnel's own resolver.
 
 **Metrics** (off by default) records stack history. Helm’s **Stats** page embeds
 overview panels; app cards get CPU sparklines when Prometheus is up. Grafana is

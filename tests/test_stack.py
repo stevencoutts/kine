@@ -216,7 +216,7 @@ def test_every_catalogued_app_has_a_service(app):
 def test_service_declares_its_own_profile(name):
     _, svc = SERVICES[name]
     # Core platform services run unconditionally and carry no profile.
-    if name in {"traefik", "helm", "dockerproxy", "provision"}:
+    if name in {"traefik", "helm", "dockerproxy", "provision", "nfs-browse-agent"}:
         assert "profiles" not in svc
         return
     assert svc.get("profiles") == [name.replace("vpn-portsync", "gluetun")] or \

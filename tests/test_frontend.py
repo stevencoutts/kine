@@ -478,6 +478,8 @@ def test_stats_embeds_solo_panels_from_the_overview_dashboard():
 
 def test_metrics_tier_is_ordered_with_the_others():
     assert "'metrics'" in FRONTEND
+    assert "'network'" in FRONTEND
+    assert "meta.defaults.length" in FRONTEND
 
 
 def test_stats_endpoints_exist_in_the_backend():

@@ -336,6 +336,10 @@ class _FakeClient:
 def test_configure_puts_subscription_and_numbering(monkeypatch):
     fake = _FakeClient()
     monkeypatch.setattr(teamarr.httpx, "Client", lambda **kw: fake)
+    monkeypatch.setattr(
+        teamarr.tunnel_hosts, "load_profiles",
+        lambda: {"live_tv_direct": False, "profiles": []},
+    )
     monkeypatch.setenv("KINE_DOMAIN", "example.test")
     monkeypatch.setenv("KINE_TIMEZONE", "Europe/London")
     monkeypatch.setenv("TRAEFIK_HTTPS_PORT", "8443")
@@ -383,6 +387,14 @@ def test_configure_puts_subscription_and_numbering(monkeypatch):
     assert len(assigned_names) == len(teamarr.DEFAULT_TEMPLATE_ASSIGNMENTS)
     created = [body["name"] for p, body in fake.posts if p.endswith("/templates")]
     assert created == [a["name"] for a in teamarr.DEFAULT_TEMPLATE_ASSIGNMENTS]
+
+
+def test_dispatcharr_url_uses_service_name_when_direct(monkeypatch):
+    monkeypatch.setattr(
+        teamarr.tunnel_hosts, "load_profiles",
+        lambda: {"live_tv_direct": True, "profiles": []},
+    )
+    assert teamarr.dispatcharr_url() == "http://dispatcharr:9191"
 
 
 def test_configure_wires_emby_from_settings(monkeypatch):

@@ -303,6 +303,17 @@ apps:
     default: true
     hidden: true
 
+  pihole:
+    name: Pi-hole
+    tier: network
+    summary: DNS for the LAN and for apps outside the VPN. Upstream queries leave through the primary tunnel.
+    url: https://pi-hole.net
+    releases: https://github.com/pi-hole/pi-hole/releases
+    internal: http://pihole:80
+    subdomain: pihole
+    requires: [gluetun]
+    default: false
+
   gluetun:
     name: VPN gateway
     tier: platform

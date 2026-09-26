@@ -53,6 +53,58 @@ profiles_remove() {
   sedi "s|^COMPOSE_PROFILES=.*|COMPOSE_PROFILES=${new}|" .env
 }
 
+pihole_gate() {
+  PYTHONPATH=helm/backend python3 - <<'PY'
+from app import config, pihole_dns
+env = config.read()
+try:
+    updates = pihole_dns.gate(env, pihole_dns.read_port53())
+except pihole_dns.PiholeRejected as exc:
+    raise SystemExit(str(exc))
+except RuntimeError as exc:
+    raise SystemExit(str(exc))
+if updates:
+    config.write(updates)
+PY
+}
+
+pihole_sync() {
+  PYTHONPATH=helm/backend python3 - <<'PY'
+import os
+from app import config, vpn_profiles, vpn_routing
+env = config.read()
+stack = env.get("STACK_ROOT") or os.environ.get("KINE_ROOT", ".")
+store = vpn_profiles.migrate_from_wg0(stack)
+profiles = {p.strip() for p in env.get("COMPOSE_PROFILES", "").split(",") if p.strip()}
+enabled = {
+    a.strip()
+    for a in env.get("VPN_TUNNELLED_APPS", "").split(",")
+    if a.strip() and a.strip() in vpn_routing.APP_PORTS and a.strip() in profiles
+}
+vpn_routing.apply_filesystem(
+    stack,
+    ".",
+    store,
+    enabled,
+    kine_domain=env.get("KINE_DOMAIN") or "",
+    kine_local_domain=env.get("KINE_LOCAL_DOMAIN") or "127.0.0.1.nip.io",
+    vpn_enabled=env.get("VPN_ENABLED") == "true",
+    pihole_enabled="pihole" in profiles,
+)
+PY
+}
+
+pihole_recreate() {
+  local names
+  names=$(PYTHONPATH=helm/backend python3 - <<'PY'
+from app import config, pihole_dns
+print(" ".join(pihole_dns.services_to_recreate(config.read())))
+PY
+)
+  # shellcheck disable=SC2086
+  [[ -n "$names" ]] && docker compose up -d --force-recreate $names
+}
+
 # gluetun's dependants lose their networking when it restarts, so the
 # whole tunnel group goes together or not at all. That group is every
 # forced-tunnel acquisition app (not Seerr), which makes this restart
@@ -105,17 +157,34 @@ case "$cmd" in
 
   enable)
     app="${1:?app}"
+    if [[ "$app" == "pihole" ]]; then
+      pihole_gate
+      profiles_add gluetun
+    fi
     profiles_add "$app"
     load_env .env
+    if [[ "$app" == "pihole" ]]; then
+      pihole_sync
+    fi
     # Seed before start so *arr apps adopt derived keys on first run.
     docker compose run --rm provision seed
-    docker compose up -d
+    if [[ "$app" == "pihole" ]]; then
+      pihole_recreate
+    else
+      docker compose up -d
+    fi
     docker compose run --rm provision wire ;;
   disable)
     app="${1:?app}"
     docker compose stop "$app" 2>/dev/null || true
     docker compose rm -f "$app" 2>/dev/null || true
-    profiles_remove "$app" ;;
+    profiles_remove "$app"
+    if [[ "$app" == "pihole" ]]; then
+      load_env .env
+      pihole_sync
+      pihole_recreate
+    fi
+    ;;
   apps)
     python3 - <<'PY'
 import os, yaml

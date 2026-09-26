@@ -337,6 +337,20 @@ def _dump_override(services: dict[str, Any]) -> str:
     return text.replace("!reset 'null'", "!reset null")
 
 
+def _with_pihole(services: dict[str, Any], pihole_enabled: bool) -> dict[str, Any]:
+    if not pihole_enabled:
+        return services
+    from . import pihole_dns
+
+    for name, patch in pihole_dns.patches().items():
+        svc = services.setdefault(name, {})
+        if "networks" in patch:
+            svc["networks"] = _OverrideMapping(patch["networks"])
+        if "dns" in patch:
+            svc["dns"] = list(patch["dns"])
+    return services
+
+
 def render_override(
     data: dict[str, Any],
     *,
@@ -345,6 +359,7 @@ def render_override(
     kine_domain: str,
     kine_local_domain: str,
     vpn_enabled: bool = True,
+    pihole_enabled: bool = False,
 ) -> str:
     """Build compose override YAML for secondary tunnels and app pinning."""
     if not vpn_enabled:
@@ -353,7 +368,7 @@ def render_override(
             for app in _enabled_tunnel_apps(enabled_apps)
             if vpn_profiles.app_goes_direct(data, app)
         }
-        return _dump_override(services)
+        return _dump_override(_with_pihole(services, pihole_enabled))
 
     services: dict[str, Any] = {}
     tunnel_apps: dict[str, list[str]] = {}
@@ -413,7 +428,7 @@ def render_override(
         tx_tunnel = vpn_profiles.tunnel_service(data, "transmission")
         services["vpn-portsync"] = _app_network_override(tx_tunnel)
 
-    return _dump_override(services)
+    return _dump_override(_with_pihole(services, pihole_enabled))
 
 
 def write_override(repo: pathlib.Path, text: str) -> pathlib.Path:
@@ -551,11 +566,13 @@ def apply_filesystem(
     kine_domain: str,
     kine_local_domain: str,
     vpn_enabled: bool = True,
+    pihole_enabled: bool = False,
 ) -> None:
     """Write primary/secondary wg0.conf files and regenerate the compose override.
 
     Does not run ``docker compose``; callers recreate tunnel groups separately.
-    When ``vpn_enabled`` is false, only writes an empty override (no wg0 rewrite).
+    When ``vpn_enabled`` is false, WireGuard confs are left alone. Pi-hole
+    DNS lines are still written when ``pihole_enabled`` is true.
     """
     ensure_generated_stub(repo)
     if vpn_enabled:
@@ -588,6 +605,7 @@ def apply_filesystem(
         kine_domain=kine_domain,
         kine_local_domain=kine_local_domain,
         vpn_enabled=vpn_enabled,
+        pihole_enabled=pihole_enabled,
     )
     write_override(repo, text)
     write_traefik_dynamic(

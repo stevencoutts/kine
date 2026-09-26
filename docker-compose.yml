@@ -17,6 +17,7 @@ include:
   - compose/core.provision.yml
   - compose/core.mdns.yml
   - compose/vpn.gluetun.yml
+  - compose/core.pihole.yml
   - compose/vpn-routing.override.yml
   - compose/media.emby.yml
   - compose/media.tdarr.yml

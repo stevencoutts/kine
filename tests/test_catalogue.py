@@ -89,6 +89,17 @@ def test_metrics_tier_is_labelled_for_the_gui():
     assert catalogue.TIER_LABELS["metrics"] == "Metrics"
 
 
+def test_pihole_is_an_optional_network_app():
+    meta = CATALOGUE["pihole"]
+    assert meta["default"] is False
+    assert meta["tier"] == "network"
+    assert meta["requires"] == ["gluetun"]
+    assert meta.get("tunnelled") != "forced"
+    assert "pihole" not in catalogue.defaults()
+    assert catalogue.tier_default_apps("network") == []
+    assert catalogue.TIER_LABELS["network"] == "Network"
+
+
 def test_prune_orphan_deps_drops_metrics_chain_when_grafana_goes():
     cat = {
         "grafana": {"requires": ["prometheus"]},

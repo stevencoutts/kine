@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import acme_env, appkeys, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, mdns_policy, media_servers, metrics, nfs_exports, nzbget_news, profile_reconcile, prowlarr_newznab, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, tunnel_hosts, updates_info, vpn_profiles, vpn_routing, watching
+from . import acme_env, appkeys, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, mdns_policy, media_servers, metrics, nfs_exports, nzbget_news, pihole_dns, profile_reconcile, prowlarr_newznab, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, tunnel_hosts, updates_info, vpn_profiles, vpn_routing, watching
 import sys
 from .gluetun import connection_label as _connection_label
 from .gluetun import coalesce_forwarded_port as _coalesce_forwarded_port
@@ -250,6 +250,17 @@ async def _start_app(app_id: str, profiles: list[str]) -> tuple[int, str]:
             "up", "-d", "--force-recreate", *ordered, timeout=300,
         )
     return await compose.run("up", "-d", app_id)
+
+
+async def _recreate_pihole_dns(env: dict | None = None) -> tuple[int, str]:
+    """Recreate Pi-hole's DNS consumers and, when the VPN is up, the tunnel group."""
+    fresh = env if env is not None else config.read()
+    names = await asyncio.to_thread(pihole_dns.services_to_recreate, fresh)
+    if not names:
+        return 0, ""
+    return await compose.run(
+        "up", "-d", "--force-recreate", *names, timeout=300,
+    )
 
 
 async def _recreate_media_volume_apps() -> None:
@@ -819,6 +830,16 @@ async def enable(app_id: str, request: Request, user: str = Depends(require_user
     wanted = catalogue.resolve_deps(app_id, cat, list(wanted))
     if app_id not in wanted:
         wanted.append(app_id)
+    if app_id == "pihole":
+        env = config.read()
+        try:
+            updates = pihole_dns.gate(env, await asyncio.to_thread(pihole_dns.read_port53))
+        except pihole_dns.PiholeRejected as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(500, str(exc)) from exc
+        if updates:
+            config.write(updates)
     config.set_profiles(wanted)
     _ensure_vpn_tunnelled_apps(wanted, cat)
     await _refresh_mdns()
@@ -834,7 +855,14 @@ async def enable(app_id: str, request: Request, user: str = Depends(require_user
                 if err := _nfs_mount_error(mount):
                     raise HTTPException(500, f"NFS mount failed: {err}")
                 remounted = mount is not None
-            code, out = await _start_app(app_id, wanted)
+            if app_id == "pihole":
+                stack = _vpn_stack_root()
+                store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+                env = config.read()
+                await asyncio.to_thread(_vpn_ensure_routing_fs, store, env)
+                code, out = await _recreate_pihole_dns(env)
+            else:
+                code, out = await _start_app(app_id, wanted)
             if code != 0:
                 raise HTTPException(500, f"Could not start {app_id}")
             if remounted:
@@ -894,6 +922,14 @@ async def disable(app_id: str, user: str = Depends(require_user)):
         await compose.run("rm", "-f", sid)
     config.set_profiles(pruned)
     await _refresh_mdns()
+    if app_id == "pihole":
+        stack = _vpn_stack_root()
+        store = await asyncio.to_thread(vpn_profiles.migrate_from_wg0, stack)
+        env = config.read()
+        await asyncio.to_thread(_vpn_ensure_routing_fs, store, env)
+        code, out = await _recreate_pihole_dns(env)
+        if code != 0:
+            raise HTTPException(500, "Could not restore DNS after disabling Pi-hole")
     return {"ok": True, "stopped": stop_ids}
 
 
@@ -1121,6 +1157,11 @@ def _vpn_ensure_routing_fs(data: dict, env: dict | None = None) -> None:
         kine_domain=e.get("KINE_DOMAIN") or "",
         kine_local_domain=e.get("KINE_LOCAL_DOMAIN") or "127.0.0.1.nip.io",
         vpn_enabled=e.get("VPN_ENABLED") == "true",
+        pihole_enabled="pihole" in {
+            p.strip()
+            for p in (e.get("COMPOSE_PROFILES") or "").split(",")
+            if p.strip()
+        },
     )
 
 
@@ -1297,9 +1338,13 @@ def _vpn_profile_public(profile: dict, *, primary_id: str | None = None) -> dict
     }
 
 
-def _queue_dispatcharr_wire() -> None:
-    """Point Emby's HDHomeRun URL at wherever Dispatcharr lives now."""
-    asyncio.create_task(scheduler.wire_dispatcharr_if_ready())
+def _queue_dispatcharr_wire(*, force: bool = False) -> None:
+    """Point Emby's HDHomeRun URL at wherever Dispatcharr lives now.
+
+    ``force`` rewrites Live TV peer URLs even when a previous wire already
+    stored some address. Direct mode makes that stored loopback wrong.
+    """
+    asyncio.create_task(scheduler.wire_dispatcharr_if_ready(force=force))
 
 
 def _vpn_live_return(before: dict, store: dict, forced: set[str]) -> list[str] | None:
@@ -1604,7 +1649,7 @@ async def vpn_profile_set_apps(
         store, services=_vpn_live_return(before, store, forced),
     )
     if _vpn_live_return(before, store, forced) is not None:
-        _queue_dispatcharr_wire()
+        _queue_dispatcharr_wire(force=True)
     return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
 
 
@@ -1620,7 +1665,7 @@ async def vpn_live_tv_direct(request: Request, user: str = Depends(require_user)
     forced = _vpn_forced_assignable()
     live = [a for a in vpn_profiles.LIVE_TV_AFFINITY if a in forced]
     code, out, group = await apply_vpn_routing(store, services=live)
-    _queue_dispatcharr_wire()
+    _queue_dispatcharr_wire(force=True)
     return {"ok": code == 0, "recreated": group, "log": out[-2000:]}
 
 

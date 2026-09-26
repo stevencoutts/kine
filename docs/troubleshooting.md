@@ -73,6 +73,21 @@ A bad WireGuard key, an expired subscription or a dead endpoint all
 present the same way: the entire acquisition tier unreachable while
 Emby and Dispatcharr carry on fine. That split is the diagnostic.
 
+## Pi-hole will not start, or LAN DNS dies with the VPN
+
+Port 53 on the host has to be free. Pi-hole does not move `systemd-resolved`
+or anything else already bound there. If enable stops with "port 53 is
+already in use", free that socket and enable again.
+
+External lookups from Pi-hole go only to the primary tunnel. While that
+tunnel is down, LAN DNS and DNS for apps outside the tunnel fail on
+purpose. The Pi-hole web UI can still be up. Tunnelled apps such as
+Sonarr keep using their own tunnel's resolver and are unaffected by
+Pi-hole being enabled.
+
+`FIREWALL_OUTBOUND_SUBNETS` has to contain `KINE_DNS_SUBNET` (default
+`172.30.53.0/29`). The default list already does, via `172.16.0.0/12`.
+
 ## A newly added tier 2 app will not start
 
 Two apps in the tunnel cannot claim the same port, because they share

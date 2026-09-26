@@ -92,14 +92,74 @@ def link_emby_tuner(
             http.close()
 
 
+def _source_rows(payload: Any) -> list[dict]:
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if isinstance(payload, dict) and isinstance(payload.get("results"), list):
+        return [row for row in payload["results"] if isinstance(row, dict)]
+    return []
+
+
+def reconcile_teamarr_epg(
+    token: str,
+    log: Callable[[str], None],
+    *,
+    client: httpx.Client | None = None,
+) -> int:
+    """Point Dispatcharr's Teamarr XMLTV source at the host that works now.
+
+    Direct mode breaks ``127.0.0.1:9195`` because Teamarr is no longer in
+    Dispatcharr's network namespace. Tunnelled mode breaks ``teamarr:9195``
+    because that name does not resolve inside Gluetun.
+    """
+    data = tunnel_hosts.load_profiles()
+    own = client is None
+    http = client or httpx.Client(
+        base_url=dispatcharr_base(),
+        timeout=30.0,
+        headers={"X-API-Key": token, "Accept": "application/json"},
+    )
+    changed = 0
+    try:
+        resp = http.get("/api/epg/sources/")
+        resp.raise_for_status()
+        rows = _source_rows(resp.json() if resp.content else [])
+        for row in rows:
+            url = str(row.get("url") or "")
+            fixed = tunnel_hosts.align_peer_url(url, data, "teamarr", 9195)
+            if not fixed:
+                continue
+            source_id = row.get("id")
+            if source_id is None:
+                continue
+            patched = http.patch(
+                f"/api/epg/sources/{source_id}/",
+                json={"url": fixed},
+            )
+            patched.raise_for_status()
+            name = row.get("name") or source_id
+            log(f"dispatcharr: EPG {name} URL set to {fixed}")
+            changed += 1
+            try:
+                refresh = http.post("/api/epg/import/", json={"id": source_id})
+                refresh.raise_for_status()
+            except httpx.HTTPError as exc:
+                log(f"dispatcharr: EPG refresh failed ({exc})")
+        return changed
+    finally:
+        if own and hasattr(http, "close"):
+            http.close()
+
+
 def configure(
     enabled: set[str],
     token: str | None,
     log: Callable[[str], None],
     *,
     emby_client: httpx.Client | None = None,
+    epg_client: httpx.Client | None = None,
 ) -> dict[str, Any]:
-    result: dict[str, Any] = {"emby_linked": False, "env_changed": []}
+    result: dict[str, Any] = {"emby_linked": False, "env_changed": [], "epg_updated": 0}
     if "dispatcharr" not in enabled:
         return result
 
@@ -113,6 +173,14 @@ def configure(
             continue
         if envfiles.write_dispatcharr_token(app, resolved, log):
             result["env_changed"].append(app)
+
+    if "teamarr" in enabled:
+        try:
+            result["epg_updated"] = reconcile_teamarr_epg(
+                resolved, log, client=epg_client,
+            )
+        except httpx.HTTPError as exc:
+            log(f"dispatcharr: Teamarr EPG URL update failed ({exc})")
 
     if "emby" in enabled:
         emby_key = os.environ.get("EMBY_API_KEY", "").strip()

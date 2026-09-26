@@ -95,6 +95,45 @@ def test_render_override_secondary_and_network_mode():
     assert "Host(`dispatcharr.example.com`)" in dyn["http"]["routers"]["dispatcharr"]["rule"]
 
 
+def _service_block(text: str, name: str) -> str:
+    lines = text.splitlines()
+    start = next(i for i, line in enumerate(lines) if line == f"  {name}:")
+    block = []
+    for line in lines[start + 1:]:
+        if line.startswith("  ") and not line.startswith("   "):
+            break
+        block.append(line)
+    return "\n".join(block)
+
+
+def test_render_override_pihole_attaches_primary_gluetun_only():
+    data = _sample_data()
+    text = vpn_routing.render_override(
+        data,
+        enabled_apps={"dispatcharr", "sonarr", "gluetun"},
+        stack_root="/srv/kine",
+        kine_domain="example.com",
+        kine_local_domain="kine.local",
+        pihole_enabled=True,
+    )
+    assert text.count("ipv4_address") == 1
+    assert "${KINE_DNS_GLUETUN}" in text
+    assert "${KINE_DNS_PIHOLE}" in text
+    assert "traefik:" in text
+    assert "!override" in text
+    assert "kine_dns" in _service_block(text, "gluetun")
+    assert "kine_dns" not in _service_block(text, "gluetun-11111111")
+    off = vpn_routing.render_override(
+        data,
+        enabled_apps={"dispatcharr", "sonarr", "gluetun"},
+        stack_root="/srv/kine",
+        kine_domain="example.com",
+        kine_local_domain="kine.local",
+        pihole_enabled=False,
+    )
+    assert "KINE_DNS_PIHOLE" not in off
+
+
 def test_render_traefik_dynamic_includes_ecm_mcp():
     data = _sample_data()
     dyn = vpn_routing.render_traefik_dynamic(

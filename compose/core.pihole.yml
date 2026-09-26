@@ -1,0 +1,54 @@
+# DNS for the LAN and for containers that are not inside a tunnel.
+# Pi-hole does not join Gluetun's namespace. Its only upstream is
+# primary Gluetun on kine_dns, so those queries leave through WireGuard
+# and fail when that tunnel is down. The generated compose override
+# attaches Gluetun to kine_dns and points untunnelled apps here.
+services:
+  pihole:
+    image: pihole/pihole:${PIHOLE_TAG}
+    container_name: kine-pihole
+    profiles: ["pihole"]
+    restart: unless-stopped
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      TZ: ${KINE_TIMEZONE}
+      FTLCONF_dns_upstreams: "${KINE_DNS_GLUETUN}#53"
+      FTLCONF_dns_listeningMode: ALL
+      FTLCONF_dhcp_active: "false"
+      FTLCONF_webserver_api_password: ${PIHOLE_WEBPASSWORD}
+      FTLCONF_webserver_port: "80"
+    volumes:
+      - ${STACK_ROOT}/config/pihole:/etc/pihole
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+    dns:
+      - ${KINE_DNS_GLUETUN}
+    networks:
+      kine_internal: {}
+      kine_edge: {}
+      kine_dns:
+        ipv4_address: ${KINE_DNS_PIHOLE}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "dig +short +time=2 +tries=1 @127.0.0.1 pi.hole A | grep -q .",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.pihole.rule=Host(`pihole.${KINE_DOMAIN}`) || Host(`pihole.${KINE_LOCAL_DOMAIN}`)
+      - traefik.http.services.pihole.loadbalancer.server.port=80
+
+networks:
+  kine_dns:
+    name: kine_dns
+    ipam:
+      config:
+        - subnet: ${KINE_DNS_SUBNET}

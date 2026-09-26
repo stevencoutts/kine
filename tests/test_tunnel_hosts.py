@@ -22,6 +22,31 @@ def test_internal_base_uses_secondary():
     )
 
 
+def test_sibling_base_is_loopback_until_direct():
+    tunnelled = {"live_tv_direct": False, "profiles": []}
+    direct = {"live_tv_direct": True, "profiles": []}
+    assert tunnel_hosts.sibling_base(tunnelled, "dispatcharr", 9191) == "http://127.0.0.1:9191"
+    assert tunnel_hosts.sibling_base(direct, "teamarr", 9195) == "http://teamarr:9195"
+    assert (
+        tunnel_hosts.align_peer_url(
+            "http://127.0.0.1:9195/api/v1/epg/xmltv", direct, "teamarr", 9195,
+        )
+        == "http://teamarr:9195/api/v1/epg/xmltv"
+    )
+    assert (
+        tunnel_hosts.align_peer_url(
+            "http://teamarr:9195/api/v1/epg/xmltv", tunnelled, "teamarr", 9195,
+        )
+        == "http://127.0.0.1:9195/api/v1/epg/xmltv"
+    )
+    assert tunnel_hosts.align_peer_url(
+        "http://127.0.0.1:9195/api/v1/epg/xmltv", tunnelled, "teamarr", 9195,
+    ) is None
+    assert tunnel_hosts.align_peer_url(
+        "http://example.test/guide.xml", direct, "teamarr", 9195,
+    ) is None
+
+
 def test_internal_base_direct_live_tv():
     data = {
         "primary_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",

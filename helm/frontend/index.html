@@ -1258,7 +1258,7 @@ const enableTeamarrFlow = async (btn) => {
   });
   await render.apps();
 };
-const TIER_ORDER = ['media','acquisition','process','live','metrics','platform'];
+const TIER_ORDER = ['media','acquisition','process','live','metrics','network','platform'];
 
 // Embeddable apps open in an in-page iframe on /view/{app}/ (same host
 // certificate as Helm). Others still open in a new tab.
@@ -1879,7 +1879,9 @@ render.apps = async () => {
     const tierOn = mediaTicked || !!meta.enabled;
     const stat = tier === 'media' ? mediaStatHtml(media, stats)
       : `${stats.running}<span> / ${stats.total} running</span>`;
-    const switchHtml = mediaTicked
+    const switchHtml = (!meta.defaults || !meta.defaults.length) && tier !== 'media'
+      ? ''
+      : mediaTicked
       ? `<label class="tier-switch settings-configured" title="Plex/Emby configured in Settings" aria-label="Media servers configured in Settings">
           <input type="checkbox" checked disabled>
           <span class="tier-switch-ui" aria-hidden="true"></span>

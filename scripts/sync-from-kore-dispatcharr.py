@@ -23,7 +23,22 @@ import urllib.request
 from typing import Any
 
 KORE_TEAMARR_EPG = "http://10.100.100.90:9195/api/v1/epg/xmltv"
-KINE_TEAMARR_EPG = "http://127.0.0.1:9195/api/v1/epg/xmltv"
+_TEAMARR_EPG_PATH = "/api/v1/epg/xmltv"
+
+
+def kine_teamarr_epg() -> str:
+    """Teamarr XMLTV URL that works inside the current Live TV network mode."""
+    repo = pathlib.Path(__file__).resolve().parents[1]
+    provision = str(repo / "provision")
+    if provision not in sys.path:
+        sys.path.insert(0, provision)
+    try:
+        import tunnel_hosts
+
+        data = tunnel_hosts.load_profiles()
+        return tunnel_hosts.sibling_base(data, "teamarr", 9195) + _TEAMARR_EPG_PATH
+    except Exception:
+        return "http://127.0.0.1:9195" + _TEAMARR_EPG_PATH
 
 
 def _request(
@@ -111,7 +126,7 @@ def _export_from_kore_ssh(host: str = "kore") -> list[dict]:
 
 def _rewrite_epg_url(url: str) -> str:
     if url.strip() == KORE_TEAMARR_EPG:
-        return KINE_TEAMARR_EPG
+        return kine_teamarr_epg()
     return url
 
 

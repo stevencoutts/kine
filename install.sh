@@ -35,6 +35,16 @@ fi
 if merge_missing_env_keys .env .env.example; then
   ok "merged missing keys from .env.example into .env"
 fi
+pw=$(grep '^PIHOLE_WEBPASSWORD=' .env | cut -d= -f2- || true)
+if [[ -z "$pw" || "$pw" == "change-me" ]]; then
+  generated=$(openssl rand -hex 16)
+  if grep -q '^PIHOLE_WEBPASSWORD=' .env; then
+    sedi "s|^PIHOLE_WEBPASSWORD=.*|PIHOLE_WEBPASSWORD=${generated}|" .env
+  else
+    printf 'PIHOLE_WEBPASSWORD=%s\n' "$generated" >> .env
+  fi
+  ok "generated Pi-hole web password"
+fi
 # Helm runs compose inside its container; relative binds are resolved
 # there then sent to dockerd. The checkout must exist at this path.
 if grep -q '^KINE_CHECKOUT=' .env; then
@@ -113,7 +123,7 @@ else
 fi
 
 mkdir -p "${STACK_ROOT}"/{config,backups,nzbget-incomplete} "${DATA_ROOT}"/{media,downloads,cache}
-mkdir -p "${STACK_ROOT}"/config/{traefik/dynamic,traefik/certs,unpackerr,recyclarr,seerr/logs,ecm,teamarr,game-thumbs/cache,tdarr/{server,configs,logs}}
+mkdir -p "${STACK_ROOT}"/config/{traefik/dynamic,traefik/certs,unpackerr,recyclarr,seerr/logs,ecm,teamarr,game-thumbs/cache,tdarr/{server,configs,logs},pihole}
 mkdir -p "${DATA_ROOT}"/media/{movies,tv,sports,recordings}
 mkdir -p "${DATA_ROOT}"/downloads/{incomplete,complete/{tv-sonarr,radarr}}
 mkdir -p "${DATA_ROOT}/cache/tdarr"
