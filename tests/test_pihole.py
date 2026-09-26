@@ -184,6 +184,7 @@ def test_env_example_declares_pihole_variables():
         "PIHOLE_DIGEST",
         "PIHOLE_WEBPASSWORD",
         "KINE_DNS_SUBNET",
+        "KINE_DNS_POOL",
         "KINE_DNS_GLUETUN",
         "KINE_DNS_PIHOLE",
         "KINE_DNS_BIND",

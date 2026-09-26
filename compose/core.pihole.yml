@@ -51,4 +51,8 @@ networks:
     name: kine_dns
     ipam:
       config:
+        # Dynamic addresses come from the pool. .2 and .3 stay reserved
+        # for Gluetun and Pi-hole; Docker would otherwise hand .2 to the
+        # first container that joins.
         - subnet: ${KINE_DNS_SUBNET}
+          ip_range: ${KINE_DNS_POOL}

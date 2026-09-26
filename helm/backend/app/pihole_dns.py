@@ -14,7 +14,7 @@ import subprocess
 from . import config
 
 SENTINEL = "change-me"
-DEFAULT_SUBNET = "172.16.53.0/29"
+DEFAULT_SUBNET = "172.16.53.0/27"
 
 # These core services have no Compose profile, so they are always running.
 ALWAYS_RECREATE = ("traefik", "helm", "provision")
