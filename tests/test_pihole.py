@@ -28,6 +28,21 @@ def test_firewall_rejects_a_list_that_misses_the_subnet():
     ) == "FIREWALL_OUTBOUND_SUBNETS must include 172.30.53.0/29"
 
 
+def test_address_error_rejects_the_gateway_and_an_address_outside_the_subnet():
+    base = {
+        "KINE_DNS_SUBNET": "172.16.53.0/29",
+        "KINE_DNS_GLUETUN": "172.16.53.2",
+        "KINE_DNS_PIHOLE": "172.16.53.3",
+    }
+    assert pihole_dns.address_error(base) is None
+    gateway = dict(base)
+    gateway["KINE_DNS_GLUETUN"] = "172.16.53.1"
+    assert "gateway" in (pihole_dns.address_error(gateway) or "")
+    outside = dict(base)
+    outside["KINE_DNS_PIHOLE"] = "172.30.53.53"
+    assert "outside" in (pihole_dns.address_error(outside) or "")
+
+
 def test_password_update_replaces_sentinel_and_keeps_a_real_value():
     assert pihole_dns.password_update("") is not None
     assert pihole_dns.password_update("change-me") not in ("", "change-me")

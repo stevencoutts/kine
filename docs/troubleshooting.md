@@ -89,7 +89,11 @@ Sonarr keep using their own tunnel's resolver and are unaffected by
 Pi-hole being enabled.
 
 `FIREWALL_OUTBOUND_SUBNETS` has to contain `KINE_DNS_SUBNET` (default
-`172.30.53.0/29`). The default list already does, via `172.16.0.0/12`.
+`172.16.53.0/29`). The default list already does, via `172.16.0.0/12`.
+`KINE_DNS_GLUETUN` and `KINE_DNS_PIHOLE` have to be different hosts
+inside that subnet. Docker keeps the first address (`.1`) as the
+gateway, so those two start at `.2` and `.3`. If enable says the pool
+overlaps another network, pick a free subnet and set all three keys.
 
 ## A newly added tier 2 app will not start
 

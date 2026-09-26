@@ -14,7 +14,7 @@ import subprocess
 from . import config
 
 SENTINEL = "change-me"
-DEFAULT_SUBNET = "172.30.53.0/29"
+DEFAULT_SUBNET = "172.16.53.0/29"
 
 # These core services have no Compose profile, so they are always running.
 ALWAYS_RECREATE = ("traefik", "helm", "provision")
@@ -198,11 +198,45 @@ def read_host_dns() -> tuple[str, str]:
     return ss.stdout, addr.stdout
 
 
+def address_error(env: dict) -> str | None:
+    """The two fixed addresses have to be usable hosts on the DNS bridge.
+
+    Docker claims the first address as the gateway. An address outside
+    the subnet, or on that gateway, fails later as "address already in use"
+    or "pool overlaps".
+    """
+    raw_net = (env.get("KINE_DNS_SUBNET") or DEFAULT_SUBNET).strip()
+    try:
+        subnet = ipaddress.ip_network(raw_net, strict=False)
+    except ValueError:
+        return f"KINE_DNS_SUBNET {raw_net} is not a network"
+    gateway = subnet.network_address + 1
+    seen: dict[str, str] = {}
+    for key in ("KINE_DNS_GLUETUN", "KINE_DNS_PIHOLE"):
+        raw = (env.get(key) or "").strip()
+        if not raw:
+            continue
+        try:
+            ip = ipaddress.ip_address(raw)
+        except ValueError:
+            return f"{key} is not an IP address"
+        if ip not in subnet or ip in (subnet.network_address, subnet.broadcast_address):
+            return f"{key} {ip} is outside {subnet}"
+        if ip == gateway:
+            return f"{key} {ip} is the Docker gateway for {subnet}"
+        seen[key] = str(ip)
+    if len(seen) == 2 and len(set(seen.values())) == 1:
+        return "KINE_DNS_GLUETUN and KINE_DNS_PIHOLE must be different addresses"
+    return None
+
+
 def rejection(env: dict, ss_text: str, addr_text: str = "") -> str | None:
     subnet = (env.get("KINE_DNS_SUBNET") or DEFAULT_SUBNET).strip()
     firewall = env.get("FIREWALL_OUTBOUND_SUBNETS") or ""
     if not firewall_allows(firewall, subnet):
         return f"FIREWALL_OUTBOUND_SUBNETS must include {subnet}"
+    if err := address_error(env):
+        return err
     try:
         bind_addresses(ss_text, addr_text)
     except PiholeRejected as exc:

@@ -865,7 +865,14 @@ async def enable(app_id: str, request: Request, user: str = Depends(require_user
             else:
                 code, out = await _start_app(app_id, wanted)
             if code != 0:
-                raise HTTPException(500, f"Could not start {app_id}")
+                last = next(
+                    (ln.strip() for ln in reversed(out.splitlines()) if ln.strip()),
+                    "",
+                )
+                detail = f"Could not start {app_id}"
+                if last:
+                    detail = f"{detail}: {last}"
+                raise HTTPException(500, detail)
             if remounted:
                 await _recreate_media_volume_apps()
             await compose.run("run", "--rm", "provision", "wire")

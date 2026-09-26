@@ -54,7 +54,11 @@ services:
       # back into the namespace and the provisioner cannot configure it.
       FIREWALL_OUTBOUND_SUBNETS: ${FIREWALL_OUTBOUND_SUBNETS}
       HTTP_CONTROL_SERVER_ADDRESS: ":8000"
-      DOT: "off"
+      # v3.41 renamed DOT to DNS_SERVER. DOT=off now disables the
+      # forwarder, so Pi-hole cannot use this container as its upstream.
+      # Plaintext, not DoT: queries still leave only through the tunnel.
+      DNS_SERVER: "on"
+      DNS_UPSTREAM_RESOLVER_TYPE: plain
     volumes:
       - ${STACK_ROOT}/config/gluetun:/gluetun
     networks: [kine_internal, kine_edge]

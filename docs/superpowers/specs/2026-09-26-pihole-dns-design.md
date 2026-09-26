@@ -30,18 +30,18 @@ A new bridge, `kine_dns`, is declared in `compose/core.pihole.yml`:
 
 | Name | Default |
 |---|---|
-| `KINE_DNS_SUBNET` | `172.30.53.0/29` |
-| `KINE_DNS_GLUETUN` | `172.30.53.1` |
-| `KINE_DNS_PIHOLE` | `172.30.53.53` |
+| `KINE_DNS_SUBNET` | `172.16.53.0/29` |
+| `KINE_DNS_GLUETUN` | `172.16.53.2` |
+| `KINE_DNS_PIHOLE` | `172.16.53.3` |
 
-`172.30.53.0/29` sits inside the default `FIREWALL_OUTBOUND_SUBNETS` entry `172.16.0.0/12`, which is what already lets Docker-bridge clients reach Gluetun. Enabling Pi-hole checks that the configured `FIREWALL_OUTBOUND_SUBNETS` contains `KINE_DNS_SUBNET`. If it does not, enable stops and tells the operator to add that subnet. It does not rewrite the firewall list.
+`172.16.53.0/29` sits inside the default `FIREWALL_OUTBOUND_SUBNETS` entry `172.16.0.0/12`, which is what already lets Docker-bridge clients reach Gluetun. `.1` is left for the Docker gateway. Enabling Pi-hole checks that the configured `FIREWALL_OUTBOUND_SUBNETS` contains `KINE_DNS_SUBNET`, and that the two addresses are distinct hosts inside it. It does not rewrite the firewall list. A subnet that overlaps an existing Docker network is refused; the operator changes the three keys together.
 
 If compose refuses the subnet because it overlaps another Docker network, the operator changes the three keys together and enables again.
 
 ## Data flow
 
 ```text
-LAN device ──host :53──► Pi-hole ──172.30.53.1:53──► primary Gluetun ──wg0──► upstream
+LAN device ──host :53──► Pi-hole ──172.16.53.2:53──► primary Gluetun ──wg0──► upstream
 untunnelled container ──embedded DNS──► Pi-hole ──same path──►
 tunnelled app ──that Gluetun’s resolver──► that tunnel’s wg0
 ```
