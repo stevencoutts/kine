@@ -9,7 +9,7 @@ ARG TARGETARCH
 # compose ps/exec and makes Apps show 0 running / tunnel status unknown.
 ARG COMPOSE_VERSION=v5.5.0
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl ca-certificates docker-cli nfs-common \
+      curl ca-certificates docker-cli nfs-common iproute2 \
     && rm -rf /var/lib/apt/lists/* \
     && case "${TARGETARCH}" in \
          amd64) COMPOSE_ARCH=x86_64 ;; \

@@ -134,6 +134,25 @@ def test_render_override_pihole_attaches_primary_gluetun_only():
     assert "KINE_DNS_PIHOLE" not in off
 
 
+def test_render_override_pihole_publishes_only_the_lan_address(monkeypatch):
+    from app import pihole_dns
+    monkeypatch.setattr(
+        pihole_dns.config, "read", lambda: {"KINE_DNS_BIND": "10.100.100.34"},
+    )
+    text = vpn_routing.render_override(
+        _sample_data(),
+        enabled_apps={"gluetun"},
+        stack_root="/srv/kine",
+        kine_domain="example.com",
+        kine_local_domain="kine.local",
+        pihole_enabled=True,
+    )
+    block = _service_block(text, "pihole")
+    assert "ports: !override" in block
+    assert "10.100.100.34:53:53/tcp" in block
+    assert "10.100.100.34:53:53/udp" in block
+
+
 def test_render_traefik_dynamic_includes_ecm_mcp():
     data = _sample_data()
     dyn = vpn_routing.render_traefik_dynamic(

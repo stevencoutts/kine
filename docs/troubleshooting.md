@@ -75,9 +75,12 @@ Emby and Dispatcharr carry on fine. That split is the diagnostic.
 
 ## Pi-hole will not start, or LAN DNS dies with the VPN
 
-Port 53 on the host has to be free. Pi-hole does not move `systemd-resolved`
-or anything else already bound there. If enable stops with "port 53 is
-already in use", free that socket and enable again.
+Publishing `0.0.0.0:53` fails when anything on the host already holds
+port 53, including a listener on a single address such as libvirt's
+dnsmasq on `virbr0`. Enable does not stop that program. It publishes
+Pi-hole on the host's other addresses (the LAN bridge) and records them
+in `KINE_DNS_BIND`. A listener on every interface still stops enable.
+Free that socket and enable again.
 
 External lookups from Pi-hole go only to the primary tunnel. While that
 tunnel is down, LAN DNS and DNS for apps outside the tunnel fail on

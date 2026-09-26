@@ -833,7 +833,8 @@ async def enable(app_id: str, request: Request, user: str = Depends(require_user
     if app_id == "pihole":
         env = config.read()
         try:
-            updates = pihole_dns.gate(env, await asyncio.to_thread(pihole_dns.read_port53))
+            ss_text, addr_text = await asyncio.to_thread(pihole_dns.read_host_dns)
+            updates = pihole_dns.gate(env, ss_text, addr_text)
         except pihole_dns.PiholeRejected as exc:
             raise HTTPException(409, str(exc)) from exc
         except RuntimeError as exc:

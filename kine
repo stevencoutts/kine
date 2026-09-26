@@ -58,7 +58,8 @@ pihole_gate() {
 from app import config, pihole_dns
 env = config.read()
 try:
-    updates = pihole_dns.gate(env, pihole_dns.read_port53())
+    ss_text, addr_text = pihole_dns.read_host_dns()
+    updates = pihole_dns.gate(env, ss_text, addr_text)
 except pihole_dns.PiholeRejected as exc:
     raise SystemExit(str(exc))
 except RuntimeError as exc:

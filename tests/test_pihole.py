@@ -35,6 +35,37 @@ def test_password_update_replaces_sentinel_and_keeps_a_real_value():
     assert pihole_dns.password_update("already-set") is None
 
 
+def test_specific_listener_leaves_the_lan_address_free():
+    ss = (
+        'udp UNCONN 0 0 192.168.122.1:53 0.0.0.0:* '
+        'users:(("dnsmasq",pid=1,fd=5))'
+    )
+    addrs = "\n".join([
+        "5: virbr0    inet 192.168.122.1/24 brd 192.168.122.255 scope global virbr0",
+        "4: br0    inet 10.100.100.34/24 brd 10.100.100.255 scope global br0",
+        "10: docker0    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0",
+        "771: br-5fd6d55dffe0    inet 172.24.0.1/16 brd 172.24.255.255 scope global br-5fd6d55dffe0",
+    ])
+    assert pihole_dns.bind_addresses(ss, addrs) == ["10.100.100.34"]
+    env = {
+        "FIREWALL_OUTBOUND_SUBNETS": "172.16.0.0/12",
+        "KINE_DNS_SUBNET": "172.30.53.0/29",
+        "PIHOLE_WEBPASSWORD": "secret",
+    }
+    assert pihole_dns.gate(env, ss, addrs) == {"KINE_DNS_BIND": "10.100.100.34"}
+
+
+def test_wildcard_listener_still_blocks_every_address():
+    ss = 'tcp LISTEN 0 32 0.0.0.0:53 0.0.0.0:* users:(("named",pid=1,fd=6))'
+    addrs = "4: br0    inet 10.100.100.34/24 brd 10.100.100.255 scope global br0"
+    try:
+        pihole_dns.bind_addresses(ss, addrs)
+    except pihole_dns.PiholeRejected as exc:
+        assert "named" in str(exc)
+    else:
+        raise AssertionError("expected PiholeRejected")
+
+
 def test_port53_error_names_the_listener():
     assert pihole_dns.port53_error("") is None
     assert pihole_dns.port53_error("   \n") is None
@@ -77,6 +108,18 @@ def test_patches_point_untunnelled_apps_at_pihole_and_gluetun_at_the_bridge():
     assert "dockerproxy" not in doc
     assert "mdns" not in doc
     assert "sonarr" not in doc
+    assert "ports" not in doc.get("pihole", {})
+
+
+def test_patches_publish_on_the_recorded_lan_address(monkeypatch):
+    monkeypatch.setattr(
+        pihole_dns.config, "read", lambda: {"KINE_DNS_BIND": "10.100.100.34"},
+    )
+    doc = pihole_dns.patches()
+    assert doc["pihole"]["ports"] == [
+        "10.100.100.34:53:53/tcp",
+        "10.100.100.34:53:53/udp",
+    ]
 
 
 def test_services_to_recreate_skips_the_tunnel_when_vpn_is_off():
@@ -128,6 +171,7 @@ def test_env_example_declares_pihole_variables():
         "KINE_DNS_SUBNET",
         "KINE_DNS_GLUETUN",
         "KINE_DNS_PIHOLE",
+        "KINE_DNS_BIND",
     ):
         assert f"{key}=" in ENV_EXAMPLE
     assert "PIHOLE_WEBPASSWORD=change-me" in ENV_EXAMPLE

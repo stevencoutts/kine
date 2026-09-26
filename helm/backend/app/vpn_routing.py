@@ -26,6 +26,10 @@ class _OverrideMapping(dict):
     """Compose ``depends_on: !override`` — replace the static dependency list."""
 
 
+class _OverrideList(list):
+    """Compose ``ports: !override`` — replace the static port list."""
+
+
 class _ResetNull:
     """Compose ``network_mode: !reset null`` — drop the static pin."""
 
@@ -40,6 +44,12 @@ def _override_mapping_representer(
     return dumper.represent_mapping("!override", dict(data))
 
 
+def _override_list_representer(
+    dumper: yaml.Dumper, data: _OverrideList,
+) -> yaml.Node:
+    return dumper.represent_sequence("!override", list(data))
+
+
 def _reset_null_representer(dumper: yaml.Dumper, _data: _ResetNull) -> yaml.Node:
     # Plain style. represent_scalar quotes the word "null".
     return yaml.ScalarNode(tag="!reset", value="null", style="")
@@ -51,6 +61,8 @@ yaml.add_representer(_ResetNull, _reset_null_representer)
 yaml.SafeDumper.add_representer(_ResetNull, _reset_null_representer)
 yaml.add_representer(_OverrideMapping, _override_mapping_representer)
 yaml.SafeDumper.add_representer(_OverrideMapping, _override_mapping_representer)
+yaml.add_representer(_OverrideList, _override_list_representer)
+yaml.SafeDumper.add_representer(_OverrideList, _override_list_representer)
 
 # Sibling deps that replace ``depends_on: gluetun`` when Live TV is direct.
 _DIRECT_DEPENDS: dict[str, tuple[str, ...]] = {
@@ -348,6 +360,8 @@ def _with_pihole(services: dict[str, Any], pihole_enabled: bool) -> dict[str, An
             svc["networks"] = _OverrideMapping(patch["networks"])
         if "dns" in patch:
             svc["dns"] = list(patch["dns"])
+        if patch.get("ports"):
+            svc["ports"] = _OverrideList(patch["ports"])
     return services
 
 
