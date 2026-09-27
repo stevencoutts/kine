@@ -9,6 +9,7 @@ service. Run them before every commit:
     python -m pytest tests -q
 """
 import ast
+import os
 import pathlib
 import re
 import subprocess
@@ -753,10 +754,199 @@ def test_install_clone_url_and_env_files():
     text = (ROOT / "install.sh").read_text()
     assert "git clone --branch master https://github.com/stevencoutts/kine.git" in text
     assert 'exec bash "$dest/install.sh"' in text
+    assert "pull --ff-only" in text
+    # Reattach only after the pipe path has re-exec'd this file.
+    after_guard = text.split("KINE_INSTALL_SOURCE_ONLY", 1)[1]
+    assert after_guard.index("\nensure_checkout\n") < after_guard.index("\nattach_console\n")
+    assert after_guard.index("\nattach_console\n") < after_guard.index(
+        "docker compose run --rm provision seed"
+    )
     touch = text.index(
         'touch "${STACK_ROOT}/config/"{ecm/ecm.env,teamarr/teamarr.env,unpackerr/unpackerr.env}'
     )
-    assert touch < text.index("docker compose build provision")
+    assert touch < text.index("docker compose build provision >/dev/null")
+
+
+def _kine_checkout(dest: pathlib.Path) -> None:
+    dest.mkdir()
+    (dest / "install.sh").write_text("#!/bin/bash\n")
+    (dest / "catalogue.yml").write_text("apps: {}\n")
+    (dest / "docker-compose.yml").write_text("services: {}\n")
+
+
+def test_sync_checkout_fast_forwards_existing_clone(tmp_path):
+    """A second curl|bash must update ~/kine instead of refusing the clone."""
+    dest = tmp_path / "kine"
+    _kine_checkout(dest)
+    (dest / ".git").mkdir()
+    log = tmp_path / "git.log"
+    script = f"""
+set -euo pipefail
+export KINE_INSTALL_SOURCE_ONLY=1
+source "{ROOT}/install.sh"
+unset SUDO_USER
+git() {{ printf '%s\\n' "$*" > "{log}"; }}
+sync_checkout "{dest}"
+"""
+    result = subprocess.run(["bash", "-c", script], text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert log.read_text().strip() == f"-C {dest} pull --ff-only"
+    assert "clone" not in result.stdout
+
+
+def test_sync_checkout_pulls_as_sudo_user(tmp_path):
+    dest = tmp_path / "kine"
+    _kine_checkout(dest)
+    (dest / ".git").mkdir()
+    log = tmp_path / "sudo.log"
+    script = f"""
+set -euo pipefail
+export KINE_INSTALL_SOURCE_ONLY=1
+source "{ROOT}/install.sh"
+export SUDO_USER=alice
+sudo() {{ printf '%s\\n' "$*" > "{log}"; }}
+sync_checkout "{dest}"
+"""
+    result = subprocess.run(["bash", "-c", script], text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr + result.stdout
+    logged = log.read_text()
+    assert logged.startswith("-u alice -H env GIT_TERMINAL_PROMPT=0 git ")
+    assert f"-C {dest} pull --ff-only" in logged
+
+
+def test_sync_checkout_continues_when_fast_forward_fails(tmp_path):
+    dest = tmp_path / "kine"
+    _kine_checkout(dest)
+    (dest / ".git").mkdir()
+    script = f"""
+set -euo pipefail
+export KINE_INSTALL_SOURCE_ONLY=1
+source "{ROOT}/install.sh"
+unset SUDO_USER
+git() {{ return 1; }}
+sync_checkout "{dest}"
+printf '%s\\n' continued
+"""
+    result = subprocess.run(["bash", "-c", script], text=True, capture_output=True)
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "continued" in result.stdout
+    assert "could not fast-forward" in result.stdout
+
+
+def test_sync_checkout_refuses_a_non_checkout(tmp_path):
+    dest = tmp_path / "kine"
+    dest.mkdir()
+    (dest / "notes").write_text("not kine\n")
+    script = f"""
+set -euo pipefail
+export KINE_INSTALL_SOURCE_ONLY=1
+source "{ROOT}/install.sh"
+sync_checkout "{dest}"
+"""
+    result = subprocess.run(["bash", "-c", script], text=True, capture_output=True)
+    assert result.returncode != 0
+    assert "not a Kine checkout" in result.stderr
+
+
+def test_attach_console_keeps_a_terminal_stdin(tmp_path):
+    """sudo ./install.sh from a real terminal must not retarget stdin."""
+    result_file = tmp_path / "result"
+    script = f"""
+set -euo pipefail
+export KINE_INSTALL_SOURCE_ONLY=1
+source "{ROOT}/install.sh"
+stat_fd() {{ stat -f '%d %i' /dev/fd/0 2>/dev/null || stat -c '%d %i' /dev/fd/0; }}
+before=$(stat_fd)
+attach_console
+after=$(stat_fd)
+if [[ "$before" == "$after" && -t 0 ]]; then
+  printf 'kept\\n' > "{result_file}"
+else
+  printf 'changed %s -> %s\\n' "$before" "$after" > "{result_file}"
+fi
+"""
+    master, slave = os.openpty()
+    try:
+        proc = subprocess.Popen(
+            ["bash", "-c", script],
+            stdin=slave,
+            stdout=slave,
+            stderr=subprocess.PIPE,
+            close_fds=True,
+        )
+        os.close(slave)
+        slave = -1
+        _, err = proc.communicate(timeout=15)
+    finally:
+        if slave >= 0:
+            os.close(slave)
+        os.close(master)
+    assert proc.returncode == 0, err.decode() + result_file.read_text()
+    assert result_file.read_text().strip() == "kept"
+
+
+def test_attach_console_reopens_controlling_terminal(tmp_path):
+    """Re-exec leaves stdin on /dev/null; Compose needs the controlling tty."""
+    result_file = tmp_path / "result"
+    script = f"""
+set -euo pipefail
+export KINE_INSTALL_SOURCE_ONLY=1
+source "{ROOT}/install.sh"
+exec </dev/null
+attach_console
+if [[ -t 0 ]]; then printf 'tty\\n'; else printf 'notty\\n'; fi > "{result_file}"
+"""
+    master, slave = os.openpty()
+    pid = os.fork()
+    if pid == 0:
+        try:
+            os.close(master)
+            os.setsid()
+            tty_fd = os.open(os.ttyname(slave), os.O_RDWR)
+            import fcntl
+            import termios
+            try:
+                fcntl.ioctl(tty_fd, termios.TIOCSCTTY, 0)
+            except OSError:
+                pass
+            os.dup2(tty_fd, 1)
+            os.dup2(tty_fd, 2)
+            null = os.open(os.devnull, os.O_RDONLY)
+            os.dup2(null, 0)
+            os.close(null)
+            if slave > 2:
+                os.close(slave)
+            if tty_fd > 2:
+                os.close(tty_fd)
+            os.execvp("bash", ["bash", "-c", script])
+        except Exception:
+            os._exit(99)
+    os.close(slave)
+    _, status = os.waitpid(pid, 0)
+    os.close(master)
+    assert os.waitstatus_to_exitcode(status) == 0, result_file.read_text() if result_file.exists() else status
+    assert result_file.read_text().strip() == "tty"
+
+
+def test_attach_console_does_not_prompt_without_a_terminal(tmp_path):
+    """No controlling terminal: leave stdin alone and exit cleanly."""
+    script = f"""
+set -euo pipefail
+export KINE_INSTALL_SOURCE_ONLY=1
+source "{ROOT}/install.sh"
+attach_console
+if [[ -t 0 ]]; then printf 'tty\\n'; else printf 'notty\\n'; fi
+"""
+    result = subprocess.run(
+        ["bash", "-c", script],
+        text=True,
+        capture_output=True,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert result.stdout.strip() == "notty"
 
 
 def test_helm_mounts_data_root_media_for_status_disk():

@@ -33,8 +33,49 @@ clone_dest() {
   printf '%s\n' "/opt/kine"
 }
 
+# git in $1, as the user who owns the clone when invoked via sudo.
+git_in_checkout() {
+  local dest=$1
+  shift
+  if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+    sudo -u "$SUDO_USER" -H env GIT_TERMINAL_PROMPT=0 git -C "$dest" "$@"
+  else
+    GIT_TERMINAL_PROMPT=0 git -C "$dest" "$@"
+  fi
+}
+
+# Clone $1, or fast-forward a checkout that is already there.
+# A second `curl | sudo bash` must not die because ~/kine exists:
+# pull so the re-exec'd install.sh is the one that reattaches the console.
+sync_checkout() {
+  local dest=$1
+  if [[ -f "$dest/install.sh" && -f "$dest/catalogue.yml" && -f "$dest/docker-compose.yml" ]]; then
+    ok "using existing checkout ${dest}"
+    if [[ -d "$dest/.git" ]]; then
+      if git_in_checkout "$dest" pull --ff-only; then
+        ok "updated ${dest}"
+      else
+        warn "could not fast-forward ${dest}; continuing with the files already there"
+      fi
+    fi
+    return 0
+  fi
+  if [[ -e "$dest" ]]; then
+    die "${dest} exists but is not a Kine checkout"
+  fi
+  ok "cloning https://github.com/stevencoutts/kine.git into ${dest}"
+  if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+    sudo -u "$SUDO_USER" -H git clone --branch master https://github.com/stevencoutts/kine.git "$dest"
+  else
+    git clone --branch master https://github.com/stevencoutts/kine.git "$dest"
+  fi
+}
+
 # Clone once, then re-exec the copy on disk. The second run sees
 # catalogue.yml and docker-compose.yml and does not clone again.
+# stdin is /dev/null so the child does not keep reading the curl pipe.
+# /dev/null is not a console; attach_console fixes that after the
+# child is reading this file from disk.
 ensure_checkout() {
   if in_kine_checkout; then
     return 0
@@ -43,22 +84,32 @@ ensure_checkout() {
 
   local dest
   dest="$(clone_dest)"
-  if [[ -f "$dest/install.sh" && -f "$dest/catalogue.yml" && -f "$dest/docker-compose.yml" ]]; then
-    ok "using existing checkout ${dest}"
-  elif [[ -e "$dest" ]]; then
-    die "${dest} exists but is not a Kine checkout"
-  else
-    ok "cloning https://github.com/stevencoutts/kine.git into ${dest}"
-    if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
-      sudo -u "$SUDO_USER" -H git clone --branch master https://github.com/stevencoutts/kine.git "$dest"
-    else
-      git clone --branch master https://github.com/stevencoutts/kine.git "$dest"
-    fi
-  fi
+  sync_checkout "$dest"
   if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
     chown -R "${SUDO_USER}:$(id -g "$SUDO_USER")" "$dest"
   fi
   exec bash "$dest/install.sh" </dev/null
+}
+
+# Point stdin at the controlling terminal when this script is being
+# read from a file and stdin is not already a tty.
+#
+# `curl | sudo bash` re-execs this file with stdin on /dev/null. That
+# is not a console. Docker Compose's TTY progress UI then fails with
+# "failed to get console: provided file is not a console". The command
+# that hits it is `docker compose run --rm provision seed`: the
+# preceding `docker compose build provision` redirects stdout to
+# /dev/null, so Compose stays on its plain writer for that build.
+#
+# Call this only after ensure_checkout returns. Redirecting stdin
+# while bash is still reading the script from the curl pipe would
+# discard the rest of the installer. If /dev/tty cannot be opened
+# there is no controlling terminal; leave stdin alone and do not prompt.
+attach_console() {
+  [[ -t 0 ]] && return 0
+  if ( : </dev/tty ) >/dev/null 2>&1; then
+    exec </dev/tty
+  fi
 }
 
 # Tests source the helpers above without cloning or installing.
@@ -67,6 +118,7 @@ if [[ "${KINE_INSTALL_SOURCE_ONLY:-}" == "1" ]]; then
 fi
 
 ensure_checkout
+attach_console
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO"
