@@ -299,3 +299,35 @@ if [[ "${KINE_TLS_MODE}" == "internal" ]]; then
   warn "you trust ${STACK_ROOT}/config/traefik/certs/ca.crt, or switch"
   warn "KINE_TLS_MODE to acme-dns in the GUI."
 fi
+
+# .local is multicast DNS. Any other domain needs an A record for every
+# name the stack serves once apps are enabled, not only the profiles
+# running at this moment.
+echo
+domain_lc=$(printf '%s' "${KINE_DOMAIN}" | tr '[:upper:]' '[:lower:]')
+domain_lc="${domain_lc%.}"
+if [[ "$domain_lc" == *.local ]]; then
+  echo "${KINE_DOMAIN} is multicast DNS, not the DNS server. This machine resolves"
+  echo "it from /etc/hosts. Other machines on the LAN resolve it only if they"
+  echo "do mDNS. On Linux that is Avahi and libnss-mdns, and the hosts line"
+  echo "in /etc/nsswitch.conf includes mdns4_minimal."
+  echo "host and dig ask the DNS server and will return NXDOMAIN."
+else
+  lan_ip="$(local_ip)"
+  echo "mDNS will not be how other machines find ${KINE_DOMAIN}."
+  echo "Add an A record for each name below, all pointing at ${lan_ip}:"
+  echo
+  KINE_DOMAIN="${KINE_DOMAIN}" KINE_LAN_IP="${lan_ip}" python3 - <<'PY'
+import os, sys, yaml
+sys.path.insert(0, "mdns")
+from gen_hosts import dns_names
+domain = os.environ.get("KINE_DOMAIN", "")
+ip = os.environ.get("KINE_LAN_IP", "")
+cat = yaml.safe_load(open("catalogue.yml"))["apps"]
+for name in dns_names(domain, cat):
+    print(f"  {name}  A  {ip}")
+PY
+  echo
+  echo "A single wildcard A record for *.${KINE_DOMAIN} pointing at ${lan_ip}"
+  echo "covers the same set."
+fi

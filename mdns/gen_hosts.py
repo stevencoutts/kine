@@ -38,6 +38,44 @@ def build_names(domain: str, profiles: set[str], catalogue: dict) -> list[str]:
     return names
 
 
+def _label(value) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip().strip(".")
+
+
+def dns_names(domain: str, catalogue: dict) -> list[str]:
+    """Hostnames to publish in real DNS once apps are enabled.
+
+    Install often enables only the mdns profile, but each catalogue
+    subdomain is still a name Traefik will serve when that app is turned
+    on. The admin hostname is always one of them. Hidden apps are
+    included only when the catalogue gives them a subdomain, which is
+    the public name that gets a router. Apps with no subdomain are not
+    published. The bare domain is left out: nothing serves it.
+    """
+    domain = _label(domain)
+    if not domain:
+        return []
+    names: list[str] = []
+    seen: set[str] = set()
+
+    def add(sub: str) -> None:
+        sub = _label(sub)
+        if not sub or sub in seen:
+            return
+        seen.add(sub)
+        names.append(f"{sub}.{domain}")
+
+    for sub in ALWAYS_SUBDOMAINS:
+        add(sub)
+    for meta in catalogue.values():
+        if not isinstance(meta, dict):
+            continue
+        add(meta.get("subdomain"))
+    return names
+
+
 def main() -> None:
     domain = os.environ.get("KINE_DOMAIN", "kine.local")
     profiles = {p.strip() for p in os.environ.get("COMPOSE_PROFILES", "").split(",") if p.strip()}

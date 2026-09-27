@@ -2,11 +2,13 @@
 import pathlib
 import sys
 
+import yaml
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "mdns"))
 sys.path.insert(0, str(ROOT / "helm" / "backend" / "app"))
 
-from gen_hosts import build_names  # noqa: E402
+from gen_hosts import build_names, dns_names  # noqa: E402
 from mdns_policy import should_run  # noqa: E402
 from pick_ip import _is_bad_dev, _is_bad_ip, pick_host_ip  # noqa: E402
 
@@ -60,6 +62,95 @@ def test_install_hosts_uses_build_names():
 
 def test_build_names_skips_real_dns_domain():
     assert build_names("couttsnet.com", {"sonarr", "mdns"}, CAT) == []
+
+
+# Names Traefik serves from catalogue.yml, in file order, plus the admin
+# hostname. Hidden apps in that file have no subdomain. The apex is not
+# served. Fresh installs enable only mdns, so this list is not filtered
+# by the profiles running now.
+CATALOGUE_DNS = [
+    "kine-admin",
+    "emby",
+    "tdarr",
+    "sonarr",
+    "radarr",
+    "lidarr",
+    "beets",
+    "prowlarr",
+    "jackett",
+    "bazarr",
+    "transmission",
+    "nzbget",
+    "seerr",
+    "tv",
+    "channels",
+    "mcp",
+    "thumbs",
+    "sports",
+    "grafana",
+    "pihole",
+]
+
+
+def test_dns_names_lists_every_published_subdomain_once_apps_are_enabled():
+    catalogue = yaml.safe_load((ROOT / "catalogue.yml").read_text())["apps"]
+    names = dns_names("couttsnet.com", catalogue)
+    assert names == [f"{sub}.couttsnet.com" for sub in CATALOGUE_DNS]
+    assert "couttsnet.com" not in names
+    assert "traefik.couttsnet.com" not in names
+    assert "dispatcharr.couttsnet.com" not in names
+
+
+def test_dns_names_ignores_which_profiles_are_on_now():
+    catalogue = yaml.safe_load((ROOT / "catalogue.yml").read_text())["apps"]
+    assert "pihole.couttsnet.com" in dns_names("couttsnet.com", catalogue)
+    assert "kine-admin.couttsnet.com" in dns_names("couttsnet.com", catalogue)
+
+
+def test_dns_names_skips_hidden_apps_without_a_public_name():
+    catalogue = {
+        "prometheus": {"hidden": True},
+        "gluetun": {"hidden": True, "mandatory": True},
+        "sonarr": {"subdomain": "sonarr"},
+    }
+    assert dns_names("example.com", catalogue) == [
+        "kine-admin.example.com",
+        "sonarr.example.com",
+    ]
+
+
+def test_dns_names_includes_a_hidden_app_only_when_it_publishes_a_subdomain():
+    catalogue = {
+        "metrics-ui": {"hidden": True, "subdomain": "metrics"},
+        "sonarr": {"subdomain": "sonarr"},
+    }
+    assert dns_names("example.com", catalogue) == [
+        "kine-admin.example.com",
+        "metrics.example.com",
+        "sonarr.example.com",
+    ]
+
+
+def test_dns_names_omits_the_apex():
+    assert dns_names("example.com", {"sonarr": {"subdomain": "sonarr"}})[0] == (
+        "kine-admin.example.com"
+    )
+    assert "example.com" not in dns_names("example.com.", {})
+
+
+def test_install_explains_mdns_and_prints_catalogue_records():
+    text = (ROOT / "install.sh").read_text()
+    tail = text.split('bold "Ready"', 1)[1]
+    assert "from gen_hosts import dns_names" in tail
+    assert "multicast DNS, not the DNS server" in tail
+    assert "/etc/hosts" in tail
+    assert "Avahi and libnss-mdns" in tail
+    assert "mdns4_minimal" in tail
+    assert "NXDOMAIN" in tail
+    assert "mDNS will not be how other machines find" in tail
+    assert "A single wildcard A record" in tail
+    assert "pihole" not in tail.lower()
+    assert "Pi-hole" not in tail
 
 
 def test_mdns_runs_only_for_local_domain():
