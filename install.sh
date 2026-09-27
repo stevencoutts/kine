@@ -46,7 +46,7 @@ git_in_checkout() {
 
 # Clone $1, or fast-forward a checkout that is already there.
 # A second `curl | sudo bash` must not die because ~/kine exists:
-# pull so the re-exec'd install.sh is the one that reattaches the console.
+# pull so the re-exec'd install.sh is the one just published.
 sync_checkout() {
   local dest=$1
   if [[ -f "$dest/install.sh" && -f "$dest/catalogue.yml" && -f "$dest/docker-compose.yml" ]]; then
@@ -74,8 +74,7 @@ sync_checkout() {
 # Clone once, then re-exec the copy on disk. The second run sees
 # catalogue.yml and docker-compose.yml and does not clone again.
 # stdin is /dev/null so the child does not keep reading the curl pipe.
-# /dev/null is not a console; attach_console fixes that after the
-# child is reading this file from disk.
+# That fd is not a console. Compose commands below must not open one.
 ensure_checkout() {
   if in_kine_checkout; then
     return 0
@@ -91,34 +90,12 @@ ensure_checkout() {
   exec bash "$dest/install.sh" </dev/null
 }
 
-# Point stdin at the controlling terminal when this script is being
-# read from a file and stdin is not already a tty.
-#
-# `curl | sudo bash` re-execs this file with stdin on /dev/null. That
-# is not a console. Docker Compose's TTY progress UI then fails with
-# "failed to get console: provided file is not a console". The command
-# that hits it is `docker compose run --rm provision seed`: the
-# preceding `docker compose build provision` redirects stdout to
-# /dev/null, so Compose stays on its plain writer for that build.
-#
-# Call this only after ensure_checkout returns. Redirecting stdin
-# while bash is still reading the script from the curl pipe would
-# discard the rest of the installer. If /dev/tty cannot be opened
-# there is no controlling terminal; leave stdin alone and do not prompt.
-attach_console() {
-  [[ -t 0 ]] && return 0
-  if ( : </dev/tty ) >/dev/null 2>&1; then
-    exec </dev/tty
-  fi
-}
-
 # Tests source the helpers above without cloning or installing.
 if [[ "${KINE_INSTALL_SOURCE_ONLY:-}" == "1" ]]; then
   return 0 2>/dev/null || exit 0
 fi
 
 ensure_checkout
-attach_console
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO"
@@ -275,22 +252,26 @@ ok "loopback resolution for ${KINE_DOMAIN} written to /etc/hosts"
 # The *arr apps mint a random API key on first run. Writing config.xml
 # first makes them adopt ours instead, which is what allows the stack to
 # ship pre-wired.
-docker compose build provision >/dev/null
-docker compose run --rm provision seed
+# `curl | sudo bash` re-execs with stdin on /dev/null, which is not a
+# console. `run` allocates a TTY unless -T is set, and the progress UI
+# opens a console when stdout is a terminal. Seed and wire do not read
+# from the terminal. A real `sudo ./install.sh` still prints their output.
+docker compose --progress plain build provision >/dev/null
+docker compose --progress plain run -T --rm provision seed
 ok "application config seeded"
 
 # ── 6. Bring it up ──────────────────────────────────────────────
 # Build local images first. nfs-browse-agent also uses kine/helm:local;
 # pulling before the image exists makes Compose try a registry fetch.
-docker compose build helm mdns
-docker compose pull --ignore-buildable
-docker compose up -d
+docker compose --progress plain build helm mdns
+docker compose --progress plain pull --ignore-buildable
+docker compose --progress plain up -d
 ok "containers started"
 
 # ── 7. Wire the apps together ───────────────────────────────────
 echo
 bold "Waiting for applications and wiring them together"
-docker compose run --rm provision wire
+docker compose --progress plain run -T --rm provision wire
 
 # Recyclarr only runs on a daily cron; sync once now so TRaSH profiles exist
 # before the user opens Sonarr/Radarr.
