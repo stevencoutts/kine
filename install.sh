@@ -300,20 +300,36 @@ if [[ "${KINE_TLS_MODE}" == "internal" ]]; then
   warn "KINE_TLS_MODE to acme-dns in the GUI."
 fi
 
-# .local is multicast DNS. Any other domain needs an A record for every
-# name the stack serves once apps are enabled, not only the profiles
-# running at this moment.
+# .local is multicast DNS. A fresh install uses it, so that message also
+# says which names need an A record if the domain is changed later.
+# A domain that is already custom gets the concrete records now.
 echo
 domain_lc=$(printf '%s' "${KINE_DOMAIN}" | tr '[:upper:]' '[:lower:]')
 domain_lc="${domain_lc%.}"
+lan_ip="$(local_ip)"
 if [[ "$domain_lc" == *.local ]]; then
   echo "${KINE_DOMAIN} is multicast DNS, not the DNS server. This machine resolves"
   echo "it from /etc/hosts. Other machines on the LAN resolve it only if they"
   echo "do mDNS. On Linux that is Avahi and libnss-mdns, and the hosts line"
   echo "in /etc/nsswitch.conf includes mdns4_minimal."
   echo "host and dig ask the DNS server and will return NXDOMAIN."
+  echo
+  echo "If you change the domain, add an A record for each name below."
+  echo "Each name is <host>.<your domain>, and every record points at ${lan_ip}:"
+  echo
+  python3 - <<'PY'
+import sys, yaml
+sys.path.insert(0, "mdns")
+from gen_hosts import dns_names
+cat = yaml.safe_load(open("catalogue.yml"))["apps"]
+# The stand-in domain is discarded. The message prints hostname labels only.
+for name in dns_names("label", cat):
+    print(f"  {name.rsplit('.', 1)[0]}")
+PY
+  echo
+  echo "A single wildcard A record for *.<your domain> pointing at ${lan_ip}"
+  echo "covers the same set."
 else
-  lan_ip="$(local_ip)"
   echo "mDNS will not be how other machines find ${KINE_DOMAIN}."
   echo "Add an A record for each name below, all pointing at ${lan_ip}:"
   echo

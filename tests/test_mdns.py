@@ -138,19 +138,31 @@ def test_dns_names_omits_the_apex():
     assert "example.com" not in dns_names("example.com.", {})
 
 
-def test_install_explains_mdns_and_prints_catalogue_records():
+def test_install_explains_mdns_and_what_changing_the_domain_needs():
     text = (ROOT / "install.sh").read_text()
     tail = text.split('bold "Ready"', 1)[1]
-    assert "from gen_hosts import dns_names" in tail
-    assert "multicast DNS, not the DNS server" in tail
-    assert "/etc/hosts" in tail
-    assert "Avahi and libnss-mdns" in tail
-    assert "mdns4_minimal" in tail
-    assert "NXDOMAIN" in tail
-    assert "mDNS will not be how other machines find" in tail
-    assert "A single wildcard A record" in tail
-    assert "pihole" not in tail.lower()
-    assert "Pi-hole" not in tail
+    local_branch, custom_branch = tail.split("\nelse\n", 1)
+
+    assert "multicast DNS, not the DNS server" in local_branch
+    assert "/etc/hosts" in local_branch
+    assert "Avahi and libnss-mdns" in local_branch
+    assert "mdns4_minimal" in local_branch
+    assert "NXDOMAIN" in local_branch
+    assert "If you change the domain, add an A record for each name below." in local_branch
+    assert "Each name is <host>.<your domain>" in local_branch
+    assert "from gen_hosts import dns_names" in local_branch
+    assert "A single wildcard A record for *.<your domain>" in local_branch
+    # Labels come from dns_names. The default message names no stand-in domain.
+    assert "example.com" not in local_branch
+    assert "couttsnet.com" not in local_branch
+    assert "*.kine.local" not in local_branch
+    assert "pihole" not in local_branch.lower()
+    assert "Pi-hole" not in local_branch
+
+    assert "mDNS will not be how other machines find" in custom_branch
+    assert "from gen_hosts import dns_names" in custom_branch
+    assert 'print(f"  {name}  A  {ip}")' in custom_branch
+    assert "A single wildcard A record for *.${KINE_DOMAIN}" in custom_branch
 
 
 def test_mdns_runs_only_for_local_domain():
