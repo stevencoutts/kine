@@ -36,8 +36,26 @@ CAT = {
 
 def test_build_names_for_local_domain():
     names = build_names("kine.local", {"sonarr"}, CAT)
-    assert "kine.local" in names
+    assert names[0] == "kine.local"
+    assert "kine-admin.kine.local" in names
     assert "sonarr.kine.local" in names
+    assert names.count("kine-admin.kine.local") == 1
+
+
+def test_build_names_includes_admin_without_app_profiles():
+    # Fresh install: COMPOSE_PROFILES is only mdns, and helm is not a catalogue app.
+    names = build_names("kine.local", {"mdns"}, {"sonarr": {"subdomain": "sonarr"}})
+    assert names == ["kine.local", "kine-admin.kine.local"]
+
+
+def test_admin_name_not_duplicated_when_catalogue_also_lists_it():
+    names = build_names("kine.local", {"helm"}, CAT)
+    assert names.count("kine-admin.kine.local") == 1
+
+
+def test_install_hosts_uses_build_names():
+    text = (ROOT / "install.sh").read_text()
+    assert "from gen_hosts import build_names" in text
 
 
 def test_build_names_skips_real_dns_domain():

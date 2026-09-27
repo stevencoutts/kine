@@ -235,13 +235,13 @@ ok "TLS mode: ${KINE_TLS_MODE}"
 # itself: a plain /etc/hosts entry is instant and doesn't depend on
 # avahi coming up cleanly. Re-run-safe: the old block is replaced.
 HOSTS_BLOCK=$(KINE_DOMAIN="${KINE_DOMAIN}" COMPOSE_PROFILES="${COMPOSE_PROFILES}" python3 - <<'PY'
-import os, yaml
+import os, sys, yaml
+sys.path.insert(0, "mdns")
+from gen_hosts import build_names
 domain = os.environ.get("KINE_DOMAIN", "kine.local")
 profiles = {p.strip() for p in os.environ.get("COMPOSE_PROFILES", "").split(",") if p.strip()}
 cat = yaml.safe_load(open("catalogue.yml"))["apps"]
-names = [domain] + [f"{v['subdomain']}.{domain}" for k, v in cat.items()
-                     if v.get("subdomain") and k in profiles]
-print("127.0.0.1 " + " ".join(names))
+print("127.0.0.1 " + " ".join(build_names(domain, profiles, cat)))
 PY
 )
 sedi '/# BEGIN kine/,/# END kine/d' /etc/hosts

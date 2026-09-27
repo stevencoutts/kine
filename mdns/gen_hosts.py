@@ -1,5 +1,5 @@
-"""Which names to advertise over mDNS: the appliance's own domain plus
-every enabled app's subdomain.
+"""Which names to advertise over mDNS: the appliance's own domain, the
+always-on admin hostname, and every enabled app's subdomain.
 
 Split into a pure function so it's testable without a running avahi
 daemon. Not called "gen_hosts" for /etc/avahi/hosts any more --
@@ -15,16 +15,26 @@ import pathlib
 
 import yaml
 
+# Helm is not a catalogue profile. A fresh install sets COMPOSE_PROFILES
+# to "mdns" only, and the admin GUI is still served at kine-admin.<domain>.
+ALWAYS_SUBDOMAINS = ("kine-admin",)
+
 
 def build_names(domain: str, profiles: set[str], catalogue: dict) -> list[str]:
     domain = (domain or "").strip().rstrip(".")
     if not domain.lower().endswith(".local"):
         return []
     names = [domain]
+    for sub in ALWAYS_SUBDOMAINS:
+        names.append(f"{sub}.{domain}")
+    seen = set(names)
     for key, meta in catalogue.items():
         sub = meta.get("subdomain")
         if sub and key in profiles:
-            names.append(f"{sub}.{domain}")
+            name = f"{sub}.{domain}"
+            if name not in seen:
+                names.append(name)
+                seen.add(name)
     return names
 
 
