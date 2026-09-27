@@ -699,6 +699,66 @@ def test_install_writes_kine_checkout_to_the_host_path():
     assert "KINE_CHECKOUT=" in example
 
 
+def test_install_from_checkout_does_not_clone(tmp_path):
+    """A checkout install must not hit the network, even with non-tty stdin.
+
+    The curl|bash path re-execs this file from disk. Treating a closed
+    stdin as "not a checkout" would clone GitHub on every re-run.
+    """
+    marker = tmp_path / "git-called"
+    script = f"""
+set -euo pipefail
+export KINE_INSTALL_SOURCE_ONLY=1
+source "{ROOT}/install.sh"
+git() {{ printf '%s\\n' "$*" > "{marker}"; return 99; }}
+ensure_checkout
+printf '%s\\n' stayed
+"""
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        stdin=subprocess.DEVNULL,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert result.stdout.strip() == "stayed"
+    assert not marker.exists()
+
+
+def test_clone_dest_follows_sudo_user_home(tmp_path):
+    home = tmp_path / "alice"
+    home.mkdir()
+    script = f"""
+set -euo pipefail
+export KINE_INSTALL_SOURCE_ONLY=1
+source "$1"
+getent() {{ printf '%s\\n' 'alice:x:1000:1000:Alice:{home}:/bin/bash'; }}
+export SUDO_USER=alice
+clone_dest
+unset SUDO_USER
+clone_dest
+"""
+    result = subprocess.run(
+        ["bash", "-c", script, "bash", str(ROOT / "install.sh")],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert result.stdout.splitlines() == [f"{home}/kine", "/opt/kine"]
+
+
+def test_install_clone_url_and_env_files():
+    text = (ROOT / "install.sh").read_text()
+    assert "git clone --branch master https://github.com/stevencoutts/kine.git" in text
+    assert 'exec bash "$dest/install.sh"' in text
+    touch = text.index(
+        'touch "${STACK_ROOT}/config/"{ecm/ecm.env,teamarr/teamarr.env,unpackerr/unpackerr.env}'
+    )
+    assert touch < text.index("docker compose build provision")
+
+
 def test_helm_mounts_data_root_media_for_status_disk():
     """Status disk usage needs the NFS media bind; parent DATA_ROOT alone hides it."""
     _, helm = SERVICES["helm"]

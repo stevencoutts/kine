@@ -61,31 +61,13 @@ the internet.
 ## Linux installation
 
 ```bash
-git clone <repository-url> kine
-cd kine
-sudo install -d /srv/kine/config/{ecm,teamarr,unpackerr}
-sudo touch /srv/kine/config/{ecm/ecm.env,teamarr/teamarr.env,unpackerr/unpackerr.env}
-sudo ./install.sh
+curl -fsSL https://raw.githubusercontent.com/stevencoutts/kine/master/install.sh | sudo bash
 ```
 
-The empty `env_file`s are required because Compose validates them before the
-provisioner can populate them.
-
-The installer is idempotent. On first run it:
-
-1. Creates `.env` from `.env.example` (or merges missing keys), generates
-   secrets, and picks free Traefik ports when needed
-2. Checks Compose, storage, TUN, and optional GPU support
-3. Creates the `kine` service user and data/config directories
-4. Prepares TLS, seeds app config, starts enabled profiles, and runs provision
-
-Typical URLs after install:
-
-- Admin: `https://kine-admin.kine.local:8443` (or `:443` if set in `.env`)
-- Emby: `https://emby.kine.local:8443`
-- Helm recovery: `http://<host-lan-ip>:8600`
-
-First-run admin password must be at least 12 characters. If VPN is enabled in
+That clones the repo into the invoking user's home as `kine` (or `/opt/kine`
+when there is no sudo user) and installs from that checkout. Open the admin
+GUI at `https://kine-admin.kine.local:8443` (or `:443` when that is the HTTPS
+port). Set a password of at least 12 characters. If VPN is enabled in
 onboarding, paste a valid WireGuard client config.
 
 **Live TV:** enable the Live TV section → finish Dispatcharr’s first login →
@@ -193,8 +175,9 @@ Sonarr uses `/data/media/tv`, Radarr `/data/media/movies`, downloads
 
 ## Docker Desktop on macOS
 
-macOS is for development/testing, not production. Docker Desktop provides
-`/dev/net/tun` but not Intel `/dev/dri` (Emby software-transcodes).
+macOS is for development/testing, not production. The one-line curl
+install above is for Linux. Docker Desktop provides `/dev/net/tun` but
+not Intel `/dev/dri` (Emby software-transcodes).
 
 ```bash
 cp .env.example .env

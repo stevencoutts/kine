@@ -1,15 +1,76 @@
 #!/usr/bin/env bash
 # Kine installer. Idempotent: safe to re-run.
+# Linux one-liner (clones the repo, then re-execs this file from disk):
+#   curl -fsSL https://raw.githubusercontent.com/stevencoutts/kine/master/install.sh | sudo bash
 set -Eeuo pipefail
-
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$REPO"
-source ./scripts/lib.sh
 
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
 warn() { printf '\033[33m! %s\033[0m\n' "$*"; }
 die()  { printf '\033[31mx %s\033[0m\n' "$*" >&2; exit 1; }
 ok()   { printf '\033[32m+ %s\033[0m\n' "$*"; }
+
+# True when this process was started from a file inside a Kine checkout.
+# A pipe (`curl | sudo bash`) leaves BASH_SOURCE as "bash" or empty, and
+# stdin is the script, so the rest of the install cannot run from there.
+in_kine_checkout() {
+  local self dir
+  self="${BASH_SOURCE[0]:-}"
+  [[ -n "$self" && "$self" != "bash" && "$self" != "-" && -f "$self" ]] || return 1
+  dir="$(cd "$(dirname "$self")" && pwd)"
+  [[ -f "$dir/catalogue.yml" && -f "$dir/docker-compose.yml" ]]
+}
+
+# Prefer the invoking user's home so the clone is not left in /root.
+# An already-root shell (no SUDO_USER) lands in /opt/kine.
+clone_dest() {
+  local home
+  if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+    home="$(getent passwd "$SUDO_USER" | cut -d: -f6 || true)"
+    [[ -n "$home" && -d "$home" ]] || die "no home directory for ${SUDO_USER}"
+    printf '%s\n' "${home}/kine"
+    return 0
+  fi
+  printf '%s\n' "/opt/kine"
+}
+
+# Clone once, then re-exec the copy on disk. The second run sees
+# catalogue.yml and docker-compose.yml and does not clone again.
+ensure_checkout() {
+  if in_kine_checkout; then
+    return 0
+  fi
+  [[ $EUID -eq 0 ]] || die "run with sudo"
+
+  local dest
+  dest="$(clone_dest)"
+  if [[ -f "$dest/install.sh" && -f "$dest/catalogue.yml" && -f "$dest/docker-compose.yml" ]]; then
+    ok "using existing checkout ${dest}"
+  elif [[ -e "$dest" ]]; then
+    die "${dest} exists but is not a Kine checkout"
+  else
+    ok "cloning https://github.com/stevencoutts/kine.git into ${dest}"
+    if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+      sudo -u "$SUDO_USER" -H git clone --branch master https://github.com/stevencoutts/kine.git "$dest"
+    else
+      git clone --branch master https://github.com/stevencoutts/kine.git "$dest"
+    fi
+  fi
+  if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+    chown -R "${SUDO_USER}:$(id -g "$SUDO_USER")" "$dest"
+  fi
+  exec bash "$dest/install.sh" </dev/null
+}
+
+# Tests source the helpers above without cloning or installing.
+if [[ "${KINE_INSTALL_SOURCE_ONLY:-}" == "1" ]]; then
+  return 0 2>/dev/null || exit 0
+fi
+
+ensure_checkout
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO"
+source ./scripts/lib.sh
 
 [[ $EUID -eq 0 ]] || die "run with sudo"
 
@@ -127,6 +188,8 @@ mkdir -p "${STACK_ROOT}"/config/{traefik/dynamic,traefik/certs,unpackerr,recycla
 mkdir -p "${DATA_ROOT}"/media/{movies,tv,music,sports,recordings}
 mkdir -p "${DATA_ROOT}"/downloads/{incomplete,complete/{tv-sonarr,radarr}}
 mkdir -p "${DATA_ROOT}/cache/tdarr"
+# Compose checks env_file paths before the provisioner can write them.
+touch "${STACK_ROOT}/config/"{ecm/ecm.env,teamarr/teamarr.env,unpackerr/unpackerr.env}
 chown -R "${PUID_ACTUAL}:${PGID_ACTUAL}" "${STACK_ROOT}" "${DATA_ROOT}"
 chown -R 1000:1000 "${STACK_ROOT}/config/seerr"
 chmod -R g+rwX "${DATA_ROOT}"
