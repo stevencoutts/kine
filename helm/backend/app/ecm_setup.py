@@ -52,9 +52,20 @@ def ensure_admin(
             "reason": "ECM rejects passwords that contain the username",
         }
 
-    domain = (config.read().get("KINE_DOMAIN") or "").strip()
+    # ECM's pydantic EmailStr rejects reserved/special-use domains
+    # (RFC 6761), including the default KINE_DOMAIN `kine.local`.
+    domain = (config.read().get("KINE_DOMAIN") or "").strip().lower()
+    reserved = (
+        not domain
+        or domain == "localhost"
+        or domain.endswith(".local")
+        or domain.endswith(".localhost")
+        or domain.endswith(".invalid")
+        or domain.endswith(".test")
+        or domain.endswith(".example")
+    )
     mail = (email or "").strip() or (
-        f"{user}@{domain}" if domain else f"{user}@localhost"
+        f"{user}@example.com" if reserved else f"{user}@{domain}"
     )
 
     try:

@@ -19,7 +19,8 @@ services:
       - ${DATA_ROOT}/media:/data/media:ro
     networks: [kine_internal, kine_edge]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8096/System/Info/Public || exit 1"]
+      # embyserver is Alpine-based and ships wget, not curl.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8096/System/Info/Public >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5

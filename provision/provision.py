@@ -41,7 +41,7 @@ def enabled_apps() -> set[str]:
 
 
 def ensure_data_tree() -> None:
-    for path in (
+    paths = (
         "/data/media/movies",
         "/data/media/tv",
         "/data/media/music",
@@ -52,8 +52,19 @@ def ensure_data_tree() -> None:
         "/data/media/downloads/complete/tv-sonarr",
         "/data/media/downloads/complete/radarr",
         "/data/media/downloads/complete/lidarr",
-    ):
-        pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+    )
+    # Provision runs as root; *arr containers use PUID/PGID (linuxserver
+    # "abc"). A root-owned directory fails Lidarr's FolderWritableValidator.
+    uid = int(os.environ.get("PUID", "0") or "0")
+    gid = int(os.environ.get("PGID", "0") or "0")
+    for path in paths:
+        p = pathlib.Path(path)
+        p.mkdir(parents=True, exist_ok=True)
+        if uid and gid:
+            try:
+                os.chown(p, uid, gid)
+            except OSError:
+                pass
 
 
 def wire(enabled: set[str]) -> None:

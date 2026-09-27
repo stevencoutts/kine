@@ -23,7 +23,7 @@ def test_ensure_admin_rejects_password_containing_username(monkeypatch):
 
 def test_ensure_admin_creates_when_required(monkeypatch):
     monkeypatch.setattr(ecm_setup, "enabled", lambda: True)
-    monkeypatch.setattr(ecm_setup.config, "read", lambda: {"KINE_DOMAIN": "example.com"})
+    monkeypatch.setattr(ecm_setup.config, "read", lambda: {"KINE_DOMAIN": "media.example.com"})
     seen = {}
 
     class FakeResp:
@@ -58,8 +58,47 @@ def test_ensure_admin_creates_when_required(monkeypatch):
     monkeypatch.setattr(ecm_setup.httpx, "Client", FakeClient)
     out = ecm_setup.ensure_admin("admin", "SecretPass123!")
     assert out == {"ok": True, "status": "created", "username": "admin"}
-    assert seen["json"]["email"] == "admin@example.com"
+    assert seen["json"]["email"] == "admin@media.example.com"
     assert seen["json"]["password"] == "SecretPass123!"
+
+
+def test_ensure_admin_avoids_reserved_local_domain(monkeypatch):
+    """Default KINE_DOMAIN is *.local; EmailStr rejects that as reserved."""
+    monkeypatch.setattr(ecm_setup, "enabled", lambda: True)
+    monkeypatch.setattr(ecm_setup.config, "read", lambda: {"KINE_DOMAIN": "kine.local"})
+    seen = {}
+
+    class FakeResp:
+        def __init__(self, status_code, payload=None, text=""):
+            self.status_code = status_code
+            self._payload = payload
+            self.content = b"x" if payload is not None else b""
+            self.text = text
+
+        def json(self):
+            return self._payload
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, url):
+            return FakeResp(200, {"required": True})
+
+        def post(self, url, json=None):
+            seen["json"] = json
+            return FakeResp(201, {"message": "Setup complete"})
+
+    monkeypatch.setattr(ecm_setup.httpx, "Client", FakeClient)
+    out = ecm_setup.ensure_admin("kine-admin", "SecretPass123!")
+    assert out["status"] == "created"
+    assert seen["json"]["email"] == "kine-admin@example.com"
 
 
 def test_ensure_admin_skips_when_already_configured(monkeypatch):

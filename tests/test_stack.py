@@ -559,12 +559,14 @@ def test_traefik_uses_socket_proxy_for_docker_discovery():
 def test_traefik_publishes_configurable_host_ports():
     _, traefik = SERVICES["traefik"]
     ports = traefik.get("ports", [])
-    assert "${TRAEFIK_HTTP_PORT:-8080}:${TRAEFIK_HTTP_PORT:-8080}" in ports
+    # Host 8080 must not be the container listen port: Traefik's ping
+    # entrypoint already binds :8080 inside the container.
+    assert "${TRAEFIK_HTTP_PORT:-8080}:8088" in ports
     assert "${TRAEFIK_HTTPS_PORT:-8443}:${TRAEFIK_HTTPS_PORT:-8443}" in ports
     assert "80:80" not in ports
     assert "443:443" not in ports
     cmd = " ".join(traefik["command"])
-    assert "--entrypoints.web.address=:${TRAEFIK_HTTP_PORT:-8080}" in cmd
+    assert "--entrypoints.web.address=:8088" in cmd
     assert "--entrypoints.websecure.address=:${TRAEFIK_HTTPS_PORT:-8443}" in cmd
     env = {}
     for line in (ROOT / ".env.example").read_text().splitlines():
