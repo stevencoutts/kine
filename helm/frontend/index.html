@@ -484,11 +484,19 @@ details.settings-group[open] > summary.settings-group-title::before{transform:ro
 .stats-glass.accent-down{--stats-glow:color-mix(in srgb, #3b82f6 35%, transparent)}
 .stats-glass.accent-disk{--stats-glow:color-mix(in srgb, #e5a00d 30%, transparent)}
 .stats-glass.accent-host{--stats-glow:color-mix(in srgb, var(--accent) 40%, transparent)}
-.stats-glass.accent-stream,.stats-glass.accent-down,.stats-glass.accent-disk,.stats-glass.accent-host{
+.stats-glass.accent-dns{--stats-glow:color-mix(in srgb, #c23b3b 32%, transparent)}
+.stats-glass.accent-stream,.stats-glass.accent-down,.stats-glass.accent-disk,.stats-glass.accent-host,.stats-glass.accent-dns{
   box-shadow:
     0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset,
     0 10px 36px color-mix(in srgb, #000 10%, transparent),
     0 0 0 1px color-mix(in srgb, var(--stats-glow) 35%, transparent)}
+.stats-pihole{margin-bottom:1rem}
+.stats-pihole:empty{display:none}
+.stats-pihole .stats-glass{min-height:0}
+.stats-pihole .figs{position:relative;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.35rem 1rem}
+.stats-pihole .figs span{display:block;font-size:.68rem;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.stats-pihole .figs b{display:block;margin-top:.12rem;font-size:1.35rem;font-weight:650;letter-spacing:-.02em;line-height:1.15}
+@media (max-width:560px){.stats-pihole .figs{grid-template-columns:repeat(2,minmax(0,1fr));gap:.65rem}}
 .stats-frame{
   background:color-mix(in srgb, var(--panel) 48%, transparent);
   backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);
@@ -2067,19 +2075,14 @@ render.apps = async () => {
 render.stats = async () => {
   render.shell('<div class="card"><h3>Stats</h3><p>Loading&hellip;</p></div>');
   const data = await api('/apps').catch(() => ({apps: []}));
-  const grafana = (data.apps || []).find(a => a.id === 'grafana');
-  if (!grafana || !grafana.enabled || !grafana.url) {
-    render.shell(`
-      <div class="card">
-        <h3>Stats</h3>
-        <p>The Metrics section is off, so there is nothing to graph yet.
-           Turning it on starts Prometheus, cAdvisor, node-exporter and
-           Grafana. History begins accumulating from that moment, so the
-           graphs fill in over the following hours.</p>
-        <div class="row"><button class="act primary" id="enable-metrics">Enable Metrics</button></div>
-        <div id="metrics-msg"></div>
-      </div>`);
-    $('#enable-metrics').onclick = async (e) => {
+  const apps = data.apps || [];
+  const grafana = apps.find(a => a.id === 'grafana');
+  const piholeOn = !!apps.find(a => a.id === 'pihole' && a.enabled);
+  const grafanaOn = !!(grafana && grafana.enabled && grafana.url);
+  const enableMetrics = () => {
+    const btn = $('#enable-metrics');
+    if (!btn) return;
+    btn.onclick = async (e) => {
       e.target.disabled = true;
       e.target.textContent = 'Starting...';
       try {
@@ -2093,9 +2096,22 @@ render.stats = async () => {
         e.target.textContent = 'Enable Metrics';
       }
     };
+  };
+  if (!grafanaOn && !piholeOn) {
+    render.shell(`
+      <div class="card">
+        <h3>Stats</h3>
+        <p>The Metrics section is off, so there is nothing to graph yet.
+           Turning it on starts Prometheus, cAdvisor, node-exporter and
+           Grafana. History begins accumulating from that moment, so the
+           graphs fill in over the following hours.</p>
+        <div class="row"><button class="act primary" id="enable-metrics">Enable Metrics</button></div>
+        <div id="metrics-msg"></div>
+      </div>`);
+    enableMetrics();
     return;
   }
-  const base = grafana.url.replace(/\/$/, '');
+  const base = grafanaOn ? grafana.url.replace(/\/$/, '') : '';
   const theme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
   const panel = (id, height=280) =>
     `<iframe loading="lazy" title="Kine panel ${id}" style="height:${height}px" src="${base}` +
@@ -2106,6 +2122,28 @@ render.stats = async () => {
     const order = ['plex', 'emby', ...Object.keys(by).filter(k => k !== 'plex' && k !== 'emby')];
     const parts = order.filter(k => by[k]).map(k => `${k[0].toUpperCase()}${k.slice(1)} ${by[k]}`);
     return parts.length ? parts.join(' · ') : 'Nobody watching';
+  };
+
+  const fmtCount = (n) => Math.round(Number(n) || 0).toLocaleString();
+  const paintPihole = (p) => {
+    if (!p || p.queries == null || p.blocked == null) return '';
+    const pctNum = Number(p.percent_blocked);
+    const pct = Number.isFinite(pctNum) ? Math.max(0, Math.min(100, pctNum)) : 0;
+    const pctText = Number.isFinite(pctNum)
+      ? `${pctNum.toLocaleString(undefined, {maximumFractionDigits: 1})}%`
+      : '—';
+    const domains = p.domains_blocked == null ? '' : `
+          <p><span>Blocklist</span><b>${fmtCount(p.domains_blocked)}</b></p>`;
+    return `
+      <div class="stats-glass accent-dns">
+        <p class="stats-kicker">Pi-hole</p>
+        <div class="figs">
+          <p><span>Queries</span><b>${fmtCount(p.queries)}</b></p>
+          <p><span>Blocked</span><b>${fmtCount(p.blocked)}</b></p>
+          <p><span>Blocked %</span><b>${pctText}</b></p>${domains}
+        </div>
+        <div class="stats-meter" aria-hidden="true"><i style="width:${pct}%"></i></div>
+      </div>`;
   };
 
   const paintHero = (o={}) => {
@@ -2145,28 +2183,46 @@ render.stats = async () => {
       </div>`;
   };
 
-  render.shell(`
-    <div class="section stats-page">
-      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:.9rem">
-        <h2 style="margin:0">Stats</h2>
-        <a class="link" href="${base}/d/kine-overview" target="_blank"
-           rel="noopener noreferrer">Open Grafana</a>
-      </div>
-      <div class="stats-hero" id="stats-hero">${paintHero()}</div>
+  const graphs = grafanaOn ? `
       <div class="stats-graphs">
         <div class="stats-frame wide">${'<h3>Streams</h3>'}${panel(7)}</div>
         <div class="stats-frame">${'<h3>Streaming bandwidth</h3>'}${panel(13)}</div>
         <div class="stats-frame">${'<h3>Download bandwidth</h3>'}${panel(8)}</div>
         <div class="stats-frame wide">${'<h3>NFS media capacity</h3>'}${panel(10, 220)}</div>
+      </div>` : '';
+  const grafanaLink = grafanaOn ? `
+        <a class="link" href="${base}/d/kine-overview" target="_blank"
+           rel="noopener noreferrer">Open Grafana</a>` : '';
+  const metricsNote = grafanaOn ? '' : `
+      <div class="card">
+        <h3>Graphs</h3>
+        <p>The Metrics section is off, so there is nothing to graph yet.
+           Turning it on starts Prometheus, cAdvisor, node-exporter and
+           Grafana. History begins accumulating from that moment, so the
+           graphs fill in over the following hours.</p>
+        <div class="row"><button class="act primary" id="enable-metrics">Enable Metrics</button></div>
+        <div id="metrics-msg"></div>
+      </div>`;
+
+  render.shell(`
+    <div class="section stats-page">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:.9rem">
+        <h2 style="margin:0">Stats</h2>${grafanaLink}
       </div>
+      ${grafanaOn ? `<div class="stats-hero" id="stats-hero">${paintHero()}</div>` : ''}
+      <div class="stats-pihole" id="stats-pihole"></div>
+      ${graphs}
+      ${metricsNote}
     </div>`);
+  enableMetrics();
 
   const refreshHero = async () => {
-    const hero = $('#stats-hero');
-    if (!hero) return;
     try {
       const overview = await api('/stats/overview');
-      hero.innerHTML = paintHero(overview);
+      const hero = $('#stats-hero');
+      if (hero) hero.innerHTML = paintHero(overview);
+      const slot = $('#stats-pihole');
+      if (slot) slot.innerHTML = paintPihole(overview && overview.pihole);
     } catch (_) { /* keep last paint */ }
   };
   refreshHero();

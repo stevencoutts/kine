@@ -476,6 +476,17 @@ def test_stats_embeds_solo_panels_from_the_overview_dashboard():
     assert "stats-glass" in FRONTEND
 
 
+def test_stats_page_shows_pihole_only_when_the_overview_has_it():
+    stats = FRONTEND.split("render.stats = async", 1)[1].split("render.updates = async", 1)[0]
+    assert "id === 'pihole' && a.enabled" in stats
+    assert 'id="stats-pihole"' in stats
+    assert "overview.pihole" in stats
+    assert "domains_blocked" in stats
+    assert "if (!p || p.queries == null || p.blocked == null) return '';" in stats
+    assert "PIHOLE_WEBPASSWORD" not in stats
+    assert "if (!grafanaOn && !piholeOn)" in stats
+
+
 def test_metrics_tier_is_ordered_with_the_others():
     assert "'metrics'" in FRONTEND
     assert "'network'" in FRONTEND

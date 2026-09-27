@@ -10,7 +10,7 @@ import time
 
 import httpx
 
-from . import config
+from . import config, pihole_stats
 
 PROMETHEUS = "http://prometheus:9090"
 WINDOW_SECONDS = 3 * 60 * 60
@@ -180,6 +180,15 @@ async def card_series() -> dict:
 
 
 async def overview() -> dict:
+    """Hero numbers, plus a Pi-hole summary when that profile is enabled."""
+    base = await _overview_base()
+    pihole = await pihole_stats.summary()
+    if not pihole:
+        return {k: v for k, v in base.items() if k != "pihole"}
+    return {**base, "pihole": pihole}
+
+
+async def _overview_base() -> dict:
     if time.monotonic() - float(_overview_cache["at"]) < CACHE_TTL:
         return _overview_cache["data"]  # type: ignore[return-value]
     empty = build_overview(
