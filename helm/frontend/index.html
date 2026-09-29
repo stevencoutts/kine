@@ -1446,10 +1446,13 @@ const updateVpnBar = async () => {
     if (!v.enabled) {
       status.innerHTML = '<span class="dot off"></span>VPN Disabled';
     } else {
-      const up = !!v.public_ip;
+      const up = v.vpn_status === 'running' || !!v.public_ip;
+      const ip = v.public_ip
+        ? ` &mdash; public IP <b>${escHtml(v.public_ip)}</b>`
+        : '';
       status.innerHTML = `<span class="dot ${up ? 'on' : 'off'}"></span>` +
-        (up ? `Tunnel up via ${v.connection_type || 'VPN'} &mdash; public IP <b>${v.public_ip}</b>`
-            : `Tunnel status unknown &mdash; ${v.connection_type || 'VPN'}`);
+        (up ? `Tunnel up via ${escHtml(v.connection_type || 'VPN')}${ip}`
+            : `Tunnel status unknown &mdash; ${escHtml(v.connection_type || 'VPN')}`);
     }
   } catch (e) { /* not signed in yet, or the request failed; leave it as-is */ }
   await updateUpdatesChip();
@@ -2690,7 +2693,7 @@ render.vpn = async () => {
   const tunnelDetailHtml = (p) => {
     const t = p.tunnel || {};
     const meta = [
-      `<span>Public IP <b>${escHtml(t.public_ip || 'unknown')}</b></span>`,
+      `<span>Public IP <b>${escHtml(t.public_ip || (t.vpn_status === 'running' ? 'not reported' : 'unknown'))}</b></span>`,
       `<span>Forwarded port <b>${escHtml(t.forwarded_port != null ? String(t.forwarded_port) : 'none')}</b></span>`,
     ].join('');
     return `<div class="vpn-active-detail"><div class="watch-meta">${meta}</div>${appChipsHtml(p)}</div>`;
@@ -2758,7 +2761,7 @@ render.vpn = async () => {
       </article>`
     : '';
   const orphanMeta = [
-    `<span>Public IP <b>${escHtml(v.public_ip || 'unknown')}</b></span>`,
+    `<span>Public IP <b>${escHtml(v.public_ip || (v.vpn_status === 'running' ? 'not reported' : 'unknown'))}</b></span>`,
     `<span>Forwarded port <b>${escHtml(v.forwarded_port != null ? String(v.forwarded_port) : 'none')}</b></span>`,
   ].join('');
   const orphanTunnel = (!hasPrimary && (v.enabled || v.public_ip))

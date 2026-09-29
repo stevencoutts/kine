@@ -27,9 +27,33 @@ def parse_public_ip(raw: str) -> str | None:
         return None
     try:
         data = json.loads(raw)
-        return data.get("public_ip") or data.get("ip")
     except ValueError:
-        return raw
+        text = raw.strip()
+        return text or None
+    if not isinstance(data, dict):
+        return None
+    ip = data.get("public_ip") or data.get("ip")
+    if isinstance(ip, str):
+        ip = ip.strip()
+    return ip or None
+
+
+def parse_vpn_status(raw: str) -> str | None:
+    """/v1/vpn/status stays running when the public IP lookup stored nothing."""
+    raw = _payload(raw)
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    status = data.get("status")
+    if not isinstance(status, str):
+        return None
+    status = status.strip().lower()
+    return status or None
 
 
 def parse_forwarded_port(raw: str) -> int | None:

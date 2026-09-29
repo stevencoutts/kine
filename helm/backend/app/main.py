@@ -21,6 +21,7 @@ from .gluetun import connection_label as _connection_label
 from .gluetun import coalesce_forwarded_port as _coalesce_forwarded_port
 from .gluetun import parse_forwarded_port as _parse_forwarded_port
 from .gluetun import parse_public_ip as _parse_public_ip
+from .gluetun import parse_vpn_status as _parse_vpn_status
 from .wireguard import empty_vpn_env as _empty_vpn_env
 from .wireguard import parse_conf as _parse_wireguard_conf
 from .wireguard import remove_gluetun_conf as _remove_gluetun_conf
@@ -1417,14 +1418,28 @@ async def _vpn_probe_tunnel(service: str, static_port: int | None = None) -> dic
         "http://127.0.0.1:8000/v1/publicip/ip",
         timeout=30,
     )
+    status_code, status_out = await compose.run(
+        "exec", "-T", service,
+        "wget", "-qO-",
+        "http://127.0.0.1:8000/v1/vpn/status",
+        timeout=30,
+    )
     public_ip = _parse_public_ip(ip_out) if ip_code == 0 else None
+    vpn_status = _parse_vpn_status(status_out) if status_code == 0 else None
     api_port = _parse_forwarded_port(out) if code == 0 else None
     forwarded_port = _coalesce_forwarded_port(api_port, static_port)
     return {
         "service": service,
         "public_ip": public_ip,
+        "vpn_status": vpn_status,
         "forwarded_port": forwarded_port,
-        "enabled": public_ip is not None or forwarded_port is not None or code == 0 or ip_code == 0,
+        "enabled": (
+            vpn_status == "running"
+            or public_ip is not None
+            or forwarded_port is not None
+            or code == 0
+            or ip_code == 0
+        ),
     }
 
 
@@ -1504,6 +1519,7 @@ async def vpn_status(user: str = Depends(require_user)):
         "tunnelled": [a for a in env.get("VPN_TUNNELLED_APPS", "").split(",") if a],
         "forwarded_port": primary_tunnel.get("forwarded_port"),
         "public_ip": primary_tunnel.get("public_ip"),
+        "vpn_status": primary_tunnel.get("vpn_status"),
         "profiles": profiles,
         "assignable_apps": _vpn_assignable_apps(),
         "live_tv_direct": vpn_profiles.live_tv_direct(store),

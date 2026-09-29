@@ -99,6 +99,7 @@ def test_footer_has_updates_chip_that_opens_updates():
     vpn = FRONTEND.split("const updateVpnBar = async () => {", 1)[1].split("setInterval", 1)[0]
     assert "bar.innerHTML" not in vpn
     assert "vpn-status" in vpn
+    assert "v.vpn_status === 'running'" in vpn
     assert "updateUpdatesChip" in vpn or "updates-chip" in vpn
     assert "render.updates()" in FRONTEND
     assert "settingsSection = 'updates'" in FRONTEND or 'settingsSection="updates"' in FRONTEND

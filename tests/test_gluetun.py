@@ -26,6 +26,14 @@ def test_bare_ip_response():
 def test_empty_response():
     assert parse_public_ip("") is None
     assert parse_public_ip("   ") is None
+    assert parse_public_ip('{"public_ip":""}') is None
+
+
+def test_vpn_status_running_without_a_public_ip():
+    assert gluetun.parse_vpn_status('{"status":"running"}') == "running"
+    assert gluetun.parse_vpn_status('{"status": " stopped "}') == "stopped"
+    assert gluetun.parse_vpn_status('{"status":""}') is None
+    assert gluetun.parse_vpn_status("") is None
 
 
 def test_public_ip_ignores_compose_warnings():
