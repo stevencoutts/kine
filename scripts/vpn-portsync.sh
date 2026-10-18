@@ -25,6 +25,13 @@ while true; do
   port=$(wget -qO- "$CONTROL" 2>/dev/null | json_field port || true)
   if [ -z "${port:-}" ] || [ "$port" = "0" ]; then
     port="$STATIC"
+    # A static forward (e.g. Njalla UDP 51413) is already Transmission's
+    # peer-port, so there is nothing to push. Busybox wget cannot read the
+    # 409 session-id header anyway, so trying every minute only logs noise.
+    if [ -n "${port:-}" ] && [ "$port" != "$last" ]; then
+      log "static forwarded port ${port}; Transmission already uses it, nothing to sync"
+      last="$port"
+    fi
   fi
 
   if [ -n "${port:-}" ] && [ "$port" != "0" ] && [ "$port" != "$last" ]; then
