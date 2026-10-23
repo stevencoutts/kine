@@ -26,7 +26,7 @@ services:
       - /run/containerd/containerd.sock:/run/containerd/containerd.sock:ro
     devices:
       - /dev/kmsg:/dev/kmsg
-    privileged: true
+    privileged: false
     networks: [kine_internal, kine_ctrl]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
