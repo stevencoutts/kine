@@ -7,6 +7,8 @@ services:
     container_name: kine-ecm
     profiles: ["ecm"]
     restart: unless-stopped
+    # Reap child processes: uvicorn is PID 1 and left zombies (Lynis 2026-10-24, infra plan 10b)
+    init: true
     depends_on:
       gluetun:
         condition: service_healthy
