@@ -1,7 +1,10 @@
 """Helm scheduler behaviour."""
+import sqlite3
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "helm" / "backend"))
 SCHEDULER = (ROOT / "helm" / "backend" / "app" / "scheduler.py").read_text()
 
 
@@ -26,6 +29,32 @@ def test_scheduler_refreshes_emby_event_channel_art():
     assert "_emby_event_art_loop" in SCHEDULER
     assert 'asyncio.create_task(_emby_event_art_loop())' in SCHEDULER
     assert "emby-livetv-art" in SCHEDULER
+
+
+def test_peer_url_stale_reads_teamarr_database(tmp_path, monkeypatch):
+    """Teamarr dials settings.dispatcharr_url, not DISPATCHARR_URL in the env file."""
+    from app import scheduler
+
+    db = tmp_path / "teamarr.db"
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE settings (dispatcharr_url TEXT)")
+    conn.execute(
+        "INSERT INTO settings (dispatcharr_url) VALUES ('http://dispatcharr:9191')"
+    )
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(scheduler, "_teamarr_dispatcharr_db", lambda: db)
+    monkeypatch.setattr(
+        scheduler.tunnel_hosts, "load_profiles",
+        lambda: {"live_tv_direct": False, "profiles": []},
+    )
+    assert scheduler._peer_urls_stale() is True
+
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE settings SET dispatcharr_url = 'http://127.0.0.1:9191'")
+    conn.commit()
+    conn.close()
+    assert scheduler._peer_urls_stale() is False
 
 
 def test_scheduler_hunts_missing_arr_items():

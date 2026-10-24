@@ -19,6 +19,8 @@
   dispatcharr-wire
                  auto-generates a Dispatcharr admin API key when missing,
                  then links Emby HDHomeRun and fills ECM/Teamarr env tokens.
+                 Also rewrites Teamarr's saved Dispatcharr URL when it still
+                 addresses the other Live TV mode.
 
   emby-event-art
                  copies Teamarr's current Game-Thumbs URL onto Emby Live TV
@@ -30,6 +32,7 @@ import contextlib
 import hashlib
 import json
 import pathlib
+import sqlite3
 import time
 from datetime import datetime, timezone
 
@@ -208,9 +211,43 @@ def _dispatcharr_env_needs_token() -> bool:
     return False
 
 
+def _teamarr_dispatcharr_db() -> pathlib.Path:
+    """Teamarr stores the URL it dials here. The env file is not that URL."""
+    return pathlib.Path("/stack/config/teamarr/teamarr.db")
+
+
+def _teamarr_stored_dispatcharr_url() -> str:
+    path = _teamarr_dispatcharr_db()
+    if not path.is_file():
+        return ""
+    try:
+        conn = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+        try:
+            row = conn.execute(
+                "SELECT dispatcharr_url FROM settings LIMIT 1"
+            ).fetchone()
+        finally:
+            conn.close()
+    except (OSError, sqlite3.Error):
+        return ""
+    if not row or row[0] is None:
+        return ""
+    return str(row[0]).strip()
+
+
 def _peer_urls_stale() -> bool:
-    """True when ECM or Teamarr still store a Dispatcharr URL for the other mode."""
+    """True when ECM or Teamarr still store a Dispatcharr URL for the other mode.
+
+    Teamarr ignores ``DISPATCHARR_URL`` and dials ``settings.dispatcharr_url``.
+    A correct env file with a Docker hostname in that column is still stale:
+    inside the shared Gluetun namespace that name is the host, and port 9191
+    is not published there.
+    """
     data = tunnel_hosts.load_profiles()
+    if tunnel_hosts.align_peer_url(
+        _teamarr_stored_dispatcharr_url(), data, "dispatcharr", 9191,
+    ):
+        return True
     settings = pathlib.Path("/stack/config/ecm/settings.json")
     if settings.is_file():
         try:
