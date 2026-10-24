@@ -14,4 +14,12 @@ if [ -n "$lan" ] && [ -n "$local_domain" ]; then
   grep -q "thumbs.${local_domain}" /etc/hosts 2>/dev/null \
     || echo "$lan thumbs.${local_domain}" >> /etc/hosts
 fi
+# KINE_HOST_PINS: extra "ip host" pairs, comma-separated, for upstreams whose
+# DNS rotates through an address the VPN exit cannot reach (my.xc4.net).
+IFS=, read -ra pins <<< "${KINE_HOST_PINS:-}"
+for pin in "${pins[@]}"; do
+  pin="$(echo "$pin" | xargs)"
+  [ -n "$pin" ] || continue
+  grep -qxF "$pin" /etc/hosts 2>/dev/null || echo "$pin" >> /etc/hosts
+done
 exec /app/docker/entrypoint.sh "$@"

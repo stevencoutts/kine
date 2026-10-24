@@ -270,6 +270,7 @@ def test_dispatcharr_pins_game_thumbs_host_at_start():
     assert svc.get("entrypoint") == ["/bin/bash", "/kine/kine-thumbs-hosts.sh"]
     env = svc.get("environment") or {}
     assert env.get("KINE_LAN_IP") == "${KINE_LAN_IP:-}"
+    assert env.get("KINE_HOST_PINS") == "${KINE_HOST_PINS:-}"
     script = (ROOT / "provision" / "assets" / "dispatcharr" / "kine-thumbs-hosts.sh").read_text()
     assert "thumbs.${KINE_DOMAIN}" in script or "thumbs." in script
     assert "/app/docker/entrypoint.sh" in script

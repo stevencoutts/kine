@@ -24,6 +24,7 @@ services:
       KINE_DOMAIN: ${KINE_DOMAIN}
       KINE_LOCAL_DOMAIN: ${KINE_LOCAL_DOMAIN:-}
       KINE_LAN_IP: ${KINE_LAN_IP:-}
+      KINE_HOST_PINS: ${KINE_HOST_PINS:-}
     volumes:
       - ${STACK_ROOT}/config/dispatcharr:/data
       - ${DATA_ROOT}/media/recordings:/data/recordings
