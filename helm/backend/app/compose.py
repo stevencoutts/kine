@@ -39,11 +39,18 @@ def compose_env(base: dict[str, str] | None = None) -> dict[str, str]:
     return env
 
 
-async def run(*args: str, timeout: int = 600) -> tuple[int, str]:
+async def run(
+    *args: str, timeout: int = 600, extra_env: dict[str, str] | None = None,
+) -> tuple[int, str]:
+    """Run `docker compose`. ``extra_env`` is for secrets: pass them here and
+    name the key in `-e KEY` so the value never shows up in `ps` argv."""
+    env = compose_env()
+    if extra_env:
+        env.update(extra_env)
     proc = await asyncio.create_subprocess_exec(
         "docker", "compose", *args,
         cwd=REPO,
-        env=compose_env(),
+        env=env,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )

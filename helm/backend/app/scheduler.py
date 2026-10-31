@@ -376,9 +376,10 @@ async def wire_dispatcharr_if_ready(*, force: bool = False) -> None:
         async with provision_lock.acquire(reason="dispatcharr auto-wire"):
             code, out = await compose.run(
                 "run", "--rm",
-                "-e", f"DISPATCHARR_TOKEN={token}",
+                "-e", "DISPATCHARR_TOKEN",
                 "provision", "wire",
                 timeout=900,
+                extra_env={"DISPATCHARR_TOKEN": token},
             )
     except provision_lock.ProvisionBusy:
         return

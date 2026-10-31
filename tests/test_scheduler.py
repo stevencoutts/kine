@@ -65,3 +65,9 @@ def test_scheduler_hunts_missing_arr_items():
     assert 'asyncio.create_task(' in SCHEDULER
     assert "_arr_hunt" in SCHEDULER
     assert "run_arr_hunt" in SCHEDULER
+
+
+def test_dispatcharr_token_not_on_argv():
+    """The token must travel in the subprocess env, never in `ps`-visible argv."""
+    assert "DISPATCHARR_TOKEN={" not in SCHEDULER
+    assert 'extra_env={"DISPATCHARR_TOKEN": token}' in SCHEDULER
