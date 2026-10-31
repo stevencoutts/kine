@@ -342,6 +342,8 @@ details.settings-group[open] > summary.settings-group-title::before{transform:ro
   border-color:color-mix(in srgb, var(--ok) 26%, transparent)}
 .watch-badge.stream.transcode{background:rgba(224,160,48,.14);color:var(--warn);
   border-color:rgba(224,160,48,.28)}
+.watch-badge.provider{background:rgba(124,58,237,.12);color:#6d28d9;
+  border-color:rgba(124,58,237,.28);text-transform:none;letter-spacing:.02em}
 .watch-meta{display:flex;flex-wrap:wrap;gap:.4rem .7rem;margin-top:.75rem;color:var(--muted);font-size:.8rem}
 .watch-meta span{display:inline-flex;align-items:center;gap:.3rem}
 .watch-meta b{color:var(--text);font-weight:600}
@@ -1682,6 +1684,7 @@ const watchPanel = (w) => {
             <div class="watch-badges">
               <span class="watch-badge ${escAttr(s.server || '')}">${server}</span>
               <span class="watch-badge kind">${escHtml(kindLabel(s.kind))}</span>
+              ${s.provider ? `<span class="watch-badge provider">${escHtml(s.provider)}</span>` : ''}
               <span class="watch-badge state ${st}">${st}</span>
             </div>
           </div>

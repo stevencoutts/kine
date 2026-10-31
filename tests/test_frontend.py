@@ -254,6 +254,8 @@ def test_media_overview_uses_settings_servers():
     assert "photo/:/transcode" in (ROOT / "helm" / "backend" / "app" / "watching.py").read_text()
     assert 'image="Logo"' in (ROOT / "helm" / "backend" / "app" / "watching.py").read_text()
     assert "s.formats" in FRONTEND
+    assert "s.provider" in FRONTEND
+    assert "watch-badge provider" in FRONTEND
     assert "s.art_url" in FRONTEND
     assert "position_label" in (ROOT / "helm" / "backend" / "app" / "watching.py").read_text()
     assert '@app.get("/api/watching/art/{server}")' in BACKEND

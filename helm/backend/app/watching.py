@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from typing import Any
 from urllib.parse import quote, urlencode
 
@@ -83,6 +84,251 @@ def _as_list(value: Any) -> list:
     if isinstance(value, list):
         return value
     return [value]
+
+
+_STREAM_UUID_RE = re.compile(
+    r"/stream/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"
+)
+_HDHR_NUMBER_RE = re.compile(r"/auto/v(\d+)", re.IGNORECASE)
+
+
+def _channel_number(value: Any) -> str | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, float):
+        if value != value:
+            return None
+        if value == int(value):
+            return str(int(value))
+    text = str(value).strip()
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+    return text if text.isdigit() else None
+
+
+def _norm_channel_name(value: Any) -> str:
+    return " ".join(str(value or "").casefold().split())
+
+
+def _tuner_ref(path: str | None) -> tuple[str | None, str | None]:
+    """Channel UUID or HDHomeRun number embedded in a Plex/Emby media path."""
+    if not path or not isinstance(path, str):
+        return None, None
+    uuid_match = _STREAM_UUID_RE.search(path)
+    number_match = _HDHR_NUMBER_RE.search(path)
+    channel_id = uuid_match.group(1).lower() if uuid_match else None
+    number = number_match.group(1) if number_match else None
+    return channel_id, number
+
+
+def _first_tuner(paths: list) -> tuple[str | None, str | None]:
+    channel_id = None
+    number = None
+    for path in paths:
+        found_id, found_number = _tuner_ref(path if isinstance(path, str) else None)
+        if channel_id is None and found_id:
+            channel_id = found_id
+        if number is None and found_number:
+            number = found_number
+    return channel_id, number
+
+
+def _rows(payload: Any) -> list[dict]:
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if isinstance(payload, dict):
+        for key in ("results", "channels", "streams"):
+            rows = payload.get(key)
+            if isinstance(rows, list):
+                return [row for row in rows if isinstance(row, dict)]
+    return []
+
+
+def _account_name(stream: dict, accounts: dict[str, str]) -> str | None:
+    raw = stream.get("m3u_account")
+    if isinstance(raw, dict):
+        name = str(raw.get("name") or "").strip()
+        if name:
+            return name
+        raw = raw.get("id")
+    if raw is None:
+        raw = stream.get("m3u_account_id")
+    if raw is None:
+        return None
+    return accounts.get(str(raw))
+
+
+def _plex_live(item: dict) -> bool:
+    """Plex live TV sessions are often type=movie/episode and omit the channel."""
+    if str(item.get("live") or "").strip().lower() in {"1", "true"}:
+        return True
+    if str(item.get("key") or "").startswith("/livetv/"):
+        return True
+    try:
+        if int(item.get("librarySectionID")) == -4:
+            return True
+    except (TypeError, ValueError):
+        pass
+    for media in _as_list(item.get("Media")):
+        if isinstance(media, dict) and str(media.get("origin") or "").lower() == "livetv":
+            return True
+    return False
+
+
+def index_live_providers(
+    stats: Any,
+    streams: Any,
+    accounts: Any,
+    channels: Any = None,
+    programs: Any = None,
+) -> list[dict]:
+    """Active Dispatcharr channels, each labelled with the M3U account in use."""
+    account_names: dict[str, str] = {}
+    for row in accounts or []:
+        if isinstance(row, dict) and row.get("id") is not None and str(row.get("name") or "").strip():
+            account_names[str(row["id"])] = str(row["name"]).strip()
+    stream_provider: dict[str, str] = {}
+    for stream in _rows(streams):
+        sid = stream.get("id")
+        if sid is None:
+            continue
+        name = _account_name(stream, account_names)
+        if name:
+            stream_provider[str(sid)] = name
+    detail_by_id: dict[str, dict] = {}
+    for row in _rows(channels):
+        cid = row.get("uuid") or row.get("channel_id")
+        if cid:
+            detail_by_id[str(cid).lower()] = row
+    program_by_id: dict[str, str] = {}
+    for row in _rows(programs):
+        cid = str(row.get("channel_uuid") or row.get("uuid") or "").strip().lower()
+        title = str(row.get("title") or "").strip()
+        if cid and title:
+            program_by_id[cid] = title
+    live = stats.get("live") if isinstance(stats, dict) and "live" in stats else stats
+    indexed: list[dict] = []
+    for channel in _rows(live):
+        sid = channel.get("stream_id")
+        provider = stream_provider.get(str(sid)) if sid is not None else None
+        if not provider:
+            continue
+        cid = str(channel.get("channel_id") or "").strip().lower() or None
+        detail = detail_by_id.get(cid or "", {})
+        names: list[str] = []
+        for candidate in (
+            detail.get("effective_name"),
+            channel.get("channel_name"),
+            detail.get("name"),
+        ):
+            text = str(candidate or "").strip()
+            if text and text not in names:
+                names.append(text)
+        number = (
+            _channel_number(detail.get("effective_channel_number"))
+            or _channel_number(detail.get("channel_number"))
+            or _channel_number(channel.get("channel_number"))
+        )
+        indexed.append({
+            "channel_id": cid,
+            "name": names[0] if names else None,
+            "names": names,
+            "number": number,
+            "program": program_by_id.get(cid or ""),
+            "provider": provider,
+        })
+    return indexed
+
+
+def _remember(bucket: dict[str, str | None], key: str | None, provider: str) -> None:
+    if not key:
+        return
+    current = bucket.get(key, provider)
+    bucket[key] = provider if current == provider else None
+
+
+def _remember_row(bucket: dict[str, dict | None], key: str | None, row: dict) -> None:
+    if not key:
+        return
+    if key not in bucket:
+        bucket[key] = row
+        return
+    current = bucket[key]
+    if current is not None and current.get("channel_id") != row.get("channel_id"):
+        bucket[key] = None
+
+
+def _label_live_program(session: dict, row: dict) -> None:
+    """Plex live sessions name the programme, not the channel."""
+    if session.get("channel"):
+        return
+    name = str(row.get("name") or "").strip()
+    number = row.get("number")
+    program = str(session.get("program") or "").strip()
+    if not name:
+        return
+    session["channel"] = str(number) if number else name
+    if number:
+        session["channel_number"] = number
+    if program and _norm_channel_name(program) != _norm_channel_name(name):
+        session["title"] = f"{name} — {program}"
+    else:
+        session["title"] = f"{number} — {name}" if number else name
+
+
+def attach_live_providers(sessions: list[dict], rows: list[dict]) -> list[dict]:
+    """Set provider on live sessions. Library plays are left alone."""
+    by_id: dict[str, str | None] = {}
+    by_number: dict[str, str | None] = {}
+    by_name: dict[str, str | None] = {}
+    by_program: dict[str, dict | None] = {}
+    for row in rows:
+        provider = str(row.get("provider") or "").strip()
+        if not provider:
+            continue
+        _remember(by_id, str(row.get("channel_id") or "").strip().lower() or None, provider)
+        _remember(by_number, _channel_number(row.get("number")), provider)
+        aliases = row.get("names") if isinstance(row.get("names"), list) else [row.get("name")]
+        for alias in aliases:
+            _remember(by_name, _norm_channel_name(alias) or None, provider)
+        _remember_row(by_program, _norm_channel_name(row.get("program")) or None, row)
+    for session in sessions:
+        # A library file has no tuner id. A live play can still carry one when
+        # Plex/Emby label the session as an episode.
+        if session.get("kind") != "channel" and not session.get("channel_id"):
+            session.pop("provider", None)
+            continue
+        provider = None
+        matched: dict | None = None
+        channel_id = str(session.get("channel_id") or "").strip().lower()
+        if channel_id:
+            provider = by_id.get(channel_id)
+        if not provider:
+            number = _channel_number(session.get("channel_number")) or _channel_number(session.get("channel"))
+            if number:
+                provider = by_number.get(number)
+        if not provider:
+            name = _norm_channel_name(session.get("channel"))
+            if name:
+                provider = by_name.get(name)
+        if not provider:
+            head = str(session.get("title") or "").split(" — ")[0]
+            name = _norm_channel_name(head)
+            if name:
+                provider = by_name.get(name)
+        if not provider:
+            program = _norm_channel_name(session.get("program"))
+            if program and program in by_program:
+                matched = by_program[program]
+                provider = str(matched.get("provider") or "").strip() if matched else None
+        if provider:
+            session["provider"] = provider
+            if matched:
+                _label_live_program(session, matched)
+        else:
+            session.pop("provider", None)
+    return sessions
 
 
 def _basename(path: str | None) -> str | None:
@@ -324,8 +570,11 @@ def parse_plex_sessions(payload: dict) -> list[dict]:
             .strip()
             or None
         )
-        if kind in {"live", "channel"} or channel:
+        program = None
+        plex_live = _plex_live(item)
+        if plex_live or kind in {"live", "channel"} or channel:
             kind = "channel"
+            program = title if plex_live else None
             display = channel or title
             if title and channel and title != channel:
                 display = f"{channel} — {title}"
@@ -350,6 +599,15 @@ def parse_plex_sessions(payload: dict) -> list[dict]:
         player = item.get("Player") or {}
         media = _plex_media_bits(item)
         source = media["source"]
+        tuner_paths = []
+        for media_item in _as_list(item.get("Media")):
+            if not isinstance(media_item, dict):
+                continue
+            for part in _as_list(media_item.get("Part")):
+                if isinstance(part, dict):
+                    tuner_paths.append(part.get("file") or part.get("key"))
+        channel_id, tuner_number = _first_tuner(tuner_paths)
+        channel_number = _channel_number(item.get("channelIdentifier")) or tuner_number
         if kind == "channel" and not source:
             source = channel or (item.get("channelIdentifier") or None)
 
@@ -364,6 +622,9 @@ def parse_plex_sessions(payload: dict) -> list[dict]:
             "episode": episode,
             "year": year,
             "channel": channel,
+            "channel_number": channel_number,
+            "channel_id": channel_id,
+            "program": program,
             "user": user or "unknown",
             "player": (player.get("title") or player.get("product") or "").strip() or "Plex",
             "product": (player.get("product") or "").strip() or None,
@@ -549,6 +810,12 @@ def parse_emby_sessions(payload: list | dict) -> list[dict]:
 
         media = _emby_media_bits(now, item)
         source = media["source"]
+        tuner_paths = [now.get("Path")]
+        for src in _as_list(now.get("MediaSources")):
+            if isinstance(src, dict):
+                tuner_paths.append(src.get("Path"))
+        channel_id, tuner_number = _first_tuner(tuner_paths)
+        channel_number = _channel_number(now.get("ChannelNumber")) or tuner_number
         if kind == "channel" and not source:
             source = channel
 
@@ -563,6 +830,8 @@ def parse_emby_sessions(payload: list | dict) -> list[dict]:
             "episode": episode,
             "year": year,
             "channel": channel,
+            "channel_number": channel_number,
+            "channel_id": channel_id,
             "user": (item.get("UserName") or "unknown").strip(),
             "player": (item.get("DeviceName") or item.get("Client") or "Emby").strip(),
             "product": (item.get("Client") or "").strip() or None,
@@ -757,6 +1026,65 @@ async def _emby_sessions(env: dict) -> tuple[list[dict], str | None]:
     return [], last_error
 
 
+async def _fetch_live_provider_rows() -> list[dict]:
+    """Ask Dispatcharr which M3U account is serving each active channel."""
+    from . import dispatcharr_sources as sources
+
+    if not sources.enabled() or not sources.configured():
+        return []
+    try:
+        stats = await asyncio.to_thread(sources._request, "GET", "/proxy/stats/")
+    except Exception:
+        return []
+    active = []
+    if isinstance(stats, dict) and isinstance(stats.get("live"), dict):
+        active = [row for row in _as_list(stats["live"].get("channels")) if isinstance(row, dict)]
+    if not active:
+        return []
+    stream_ids: list[int] = []
+    uuids: list[str] = []
+    for row in active:
+        try:
+            stream_ids.append(int(row["stream_id"]))
+        except (KeyError, TypeError, ValueError):
+            pass
+        cid = str(row.get("channel_id") or "").strip()
+        if cid:
+            uuids.append(cid)
+
+    async def _safe(func, *args, **kwargs):
+        try:
+            return await asyncio.to_thread(func, *args, **kwargs)
+        except Exception:
+            return []
+
+    async def _empty():
+        return []
+
+    streams, details, accounts, programs = await asyncio.gather(
+        _safe(
+            sources._request,
+            "POST",
+            "/api/channels/streams/by-ids/",
+            json={"ids": stream_ids},
+        ) if stream_ids else _empty(),
+        _safe(
+            sources._request,
+            "POST",
+            "/api/channels/channels/by-uuids/",
+            json={"uuids": uuids},
+        ) if uuids else _empty(),
+        _safe(sources.list_m3u),
+        _safe(
+            sources._request,
+            "POST",
+            "/api/epg/current-programs/",
+            json={"channel_uuids": uuids},
+        ) if uuids else _empty(),
+    )
+    return index_live_providers(stats, streams, accounts, details, programs)
+
+
 async def snapshot() -> dict:
     env = config.read()
     plex_task = asyncio.create_task(_plex_sessions(env))
@@ -764,6 +1092,11 @@ async def snapshot() -> dict:
     plex_rows, plex_error = await plex_task
     emby_rows, emby_error = await emby_task
     sessions = sort_watching_sessions([*plex_rows, *emby_rows])
+    if any(row.get("kind") == "channel" for row in sessions):
+        try:
+            attach_live_providers(sessions, await _fetch_live_provider_rows())
+        except Exception:
+            pass
     return {
         "ok": True,
         "configured": {

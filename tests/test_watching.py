@@ -7,8 +7,10 @@ sys.path.insert(0, str(ROOT / "helm" / "backend"))
 
 from app.watching import (  # noqa: E402
     art_proxy_path,
+    attach_live_providers,
     format_duration_ms,
     format_duration_ticks,
+    index_live_providers,
     media_base,
     parse_emby_sessions,
     parse_plex_sessions,
@@ -367,3 +369,141 @@ def test_emby_and_plex_expose_session_id():
     emby = parse_emby_sessions(EMBY_SAMPLE)
     assert emby[0]["session_id"] == "sess-friends"
     assert emby[1]["session_id"] == "sess-comedy"
+
+
+def test_live_session_gets_the_m3u_account_actually_serving_it():
+    """Library plays have no IPTV provider. Live cards show the active account."""
+    stats = {
+        "live": {
+            "channels": [
+                {
+                    "channel_id": "11111111-1111-1111-1111-111111111111",
+                    "channel_name": "Sky Sports Main Event",
+                    "stream_id": 9,
+                },
+                {
+                    "channel_id": "22222222-2222-2222-2222-222222222222",
+                    "channel_name": "Chelsea",
+                    "stream_id": 10,
+                },
+            ]
+        }
+    }
+    streams = [
+        {"id": 9, "m3u_account": 5},
+        {"id": 10, "m3u_account": {"id": 3, "name": "Lumen-direct"}},
+    ]
+    accounts = [{"id": 5, "name": "Strong8K"}, {"id": 3, "name": "Lumen-direct"}]
+    channels = [
+        {"uuid": "11111111-1111-1111-1111-111111111111", "channel_number": 401},
+        {"uuid": "22222222-2222-2222-2222-222222222222", "channel_number": 3000.0},
+    ]
+    rows = index_live_providers(stats, streams, accounts, channels)
+    sessions = [
+        {"kind": "episode", "title": "Lanterns", "channel": None},
+        {"kind": "channel", "title": "Sky Sports Main Event", "channel": "Sky Sports Main Event"},
+        {
+            "kind": "channel",
+            "title": "Moses Itauma vs Filip Hrgovic",
+            "channel": "3000",
+            "channel_number": "3000",
+        },
+        {
+            "kind": "channel",
+            "title": "Sky Sports Main Event",
+            "channel": "Sky Sports Main Event",
+            "channel_id": "11111111-1111-1111-1111-111111111111",
+        },
+        {
+            "kind": "episode",
+            "title": "UCL Soccer",
+            "channel_id": "11111111-1111-1111-1111-111111111111",
+        },
+    ]
+    attach_live_providers(sessions, rows)
+    assert "provider" not in sessions[0]
+    assert sessions[1]["provider"] == "Strong8K"
+    assert sessions[2]["provider"] == "Lumen-direct"
+    assert sessions[3]["provider"] == "Strong8K"
+    assert sessions[4]["provider"] == "Strong8K"
+
+
+def test_plex_livetv_program_uses_the_provider_on_that_channel():
+    """Plex live TV is type=movie with no channel fields. The guide title identifies it."""
+    sessions = parse_plex_sessions({
+        "MediaContainer": {
+            "Metadata": [
+                {
+                    "type": "movie",
+                    "title": "Insidious: The Last Key",
+                    "year": 2018,
+                    "live": "1",
+                    "key": "/livetv/sessions/42cc5c96-6178-41b1-a50c-01613b9403aa",
+                    "User": {"title": "coutts99"},
+                    "Player": {"title": "Apple TV", "product": "Plex for Apple TV", "state": "playing"},
+                    "Media": [{
+                        "origin": "livetv",
+                        "videoResolution": "1080",
+                        "videoCodec": "h264",
+                        "audioCodec": "aac",
+                    }],
+                },
+                {
+                    "type": "movie",
+                    "title": "Insidious: The Last Key",
+                    "year": 2018,
+                    "User": {"title": "coutts99"},
+                    "Player": {"title": "Apple TV", "state": "playing"},
+                    "Media": [{"videoResolution": "1080", "Part": [{"file": "/movies/Insidious.mkv"}]}],
+                },
+            ],
+        }
+    })
+    live, library = sessions
+    assert live["kind"] == "channel"
+    assert live["program"] == "Insidious: The Last Key"
+    assert "(2018)" not in live["title"]
+    assert library["kind"] == "movie"
+    rows = index_live_providers(
+        {"live": {"channels": [{
+            "channel_id": "57e1a8b5-b4e9-45ce-9941-9c8d0d27f95b",
+            "channel_name": "SKY CINEMA HITS",
+            "stream_id": 28107,
+        }]}},
+        [{"id": 28107, "m3u_account": 5}],
+        [{"id": 5, "name": "Strong8K"}],
+        [{"uuid": "57e1a8b5-b4e9-45ce-9941-9c8d0d27f95b", "channel_number": 303}],
+        [{"channel_uuid": "57e1a8b5-b4e9-45ce-9941-9c8d0d27f95b", "title": "Insidious: The Last Key"}],
+    )
+    attach_live_providers(sessions, rows)
+    assert live["provider"] == "Strong8K"
+    assert live["title"] == "SKY CINEMA HITS — Insidious: The Last Key"
+    assert live["channel_number"] == "303"
+    assert "provider" not in library
+
+
+def test_parse_live_sessions_keep_tuner_channel_id_and_number():
+    plex = parse_plex_sessions({
+        "MediaContainer": {
+            "Metadata": [{
+                "type": "live",
+                "title": "UCL Soccer",
+                "channelTitle": "Sky Sports Main Event",
+                "channelIdentifier": "401",
+                "User": {"title": "steve"},
+                "Player": {"title": "Apple TV", "state": "playing"},
+                "Media": [{
+                    "Part": [{
+                        "file": "http://dispatcharr:9191/proxy/ts/stream/11111111-1111-1111-1111-111111111111",
+                    }],
+                }],
+            }]
+        }
+    })
+    assert plex[0]["kind"] == "channel"
+    assert plex[0]["channel_number"] == "401"
+    assert plex[0]["channel_id"] == "11111111-1111-1111-1111-111111111111"
+    emby = parse_emby_sessions(EMBY_SAMPLE)
+    boxing = next(r for r in emby if r["session_id"] == "sess-boxing")
+    assert boxing["channel_number"] == "3000"
+    assert emby[0]["channel_number"] is None
