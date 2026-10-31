@@ -1619,10 +1619,13 @@ const watchPanel = (w) => {
   const cards = sessions.map(s => {
     const server = s.server === 'plex' ? 'Plex' : 'Emby';
     const st = s.state === 'paused' ? 'paused' : 'playing';
+    const channelText = String(s.channel || '').trim();
+    const channelIsNumber = /^\d+(?:\.\d+)?$/.test(channelText);
     const showLine = s.kind === 'episode' && s.show
       ? `<div class="watch-card-show">${escHtml(s.show)}${s.season != null && s.episode != null ? ` · S${String(s.season).padStart(2,'0')}E${String(s.episode).padStart(2,'0')}` : ''}</div>`
-      : (s.kind === 'channel' && s.channel
-        ? `<div class="watch-card-show">Channel${s.channel !== s.title ? ` · ${escHtml(s.channel)}` : ''}</div>`
+      : (s.kind === 'channel' && channelText && !channelIsNumber
+          && !String(s.title || '').toLowerCase().startsWith(channelText.toLowerCase())
+        ? `<div class="watch-card-show">${escHtml(channelText)}</div>`
         : '');
     const meta = [];
     meta.push(`<span><b>${escHtml(s.user || 'unknown')}</b></span>`);
@@ -1636,8 +1639,9 @@ const watchPanel = (w) => {
       ...(s.stream ? [`<span class="watch-badge ${streamClass}">${escHtml(s.stream)}</span>`] : []),
     ].join('');
     const formatsRow = formatPills ? `<div class="watch-formats">${formatPills}</div>` : '';
-    const source = s.source
-      ? `<div class="watch-source" title="${escAttr(s.source)}">${escHtml(s.source)}</div>`
+    const sourceText = String(s.source || '').trim();
+    const source = sourceText && !/^\d+(?:\.\d+)?$/.test(sourceText)
+      ? `<div class="watch-source" title="${escAttr(sourceText)}">${escHtml(sourceText)}</div>`
       : '';
     let progress = '';
     if (s.progress != null || s.position_label || s.remaining_label) {

@@ -237,15 +237,9 @@ def index_live_providers(
             "number": number,
             "program": program_by_id.get(cid or ""),
             "provider": provider,
+            "logo_id": _logo_id(detail),
         })
     return indexed
-
-
-def _remember(bucket: dict[str, str | None], key: str | None, provider: str) -> None:
-    if not key:
-        return
-    current = bucket.get(key, provider)
-    bucket[key] = provider if current == provider else None
 
 
 def _remember_row(bucket: dict[str, dict | None], key: str | None, row: dict) -> None:
@@ -259,39 +253,56 @@ def _remember_row(bucket: dict[str, dict | None], key: str | None, row: dict) ->
         bucket[key] = None
 
 
+def _text_name(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text or _channel_number(text) == text:
+        return ""
+    return text
+
+
 def _label_live_program(session: dict, row: dict) -> None:
-    """Plex live sessions name the programme, not the channel."""
-    if session.get("channel"):
+    """Title live cards as channel name and programme, never the channel number."""
+    if session.get("kind") != "channel":
         return
-    name = str(row.get("name") or "").strip()
-    number = row.get("number")
-    program = str(session.get("program") or "").strip()
-    if not name:
-        return
-    session["channel"] = str(number) if number else name
-    if number:
-        session["channel_number"] = number
-    if program and _norm_channel_name(program) != _norm_channel_name(name):
+    name = _text_name(row.get("name")) or _text_name(session.get("channel"))
+    program = _text_name(row.get("program")) or _text_name(session.get("program"))
+    if name and program and _norm_channel_name(program) != _norm_channel_name(name):
         session["title"] = f"{name} — {program}"
-    else:
-        session["title"] = f"{number} — {name}" if number else name
+    elif name:
+        session["title"] = name
+    if name:
+        session["channel"] = name
+    elif _channel_number(session.get("channel")):
+        session["channel"] = None
+    if _channel_number(session.get("source")) == str(session.get("source") or "").strip():
+        session["source"] = None
+    if session.get("server") == "plex":
+        logo = dispatcharr_logo_path(row.get("logo_id"))
+        if logo:
+            session["art_url"] = logo
+
+
+def _matched_row(bucket: dict[str, dict | None], key: str | None) -> dict | None:
+    if not key:
+        return None
+    return bucket.get(key)
 
 
 def attach_live_providers(sessions: list[dict], rows: list[dict]) -> list[dict]:
     """Set provider on live sessions. Library plays are left alone."""
-    by_id: dict[str, str | None] = {}
-    by_number: dict[str, str | None] = {}
-    by_name: dict[str, str | None] = {}
+    by_id: dict[str, dict | None] = {}
+    by_number: dict[str, dict | None] = {}
+    by_name: dict[str, dict | None] = {}
     by_program: dict[str, dict | None] = {}
     for row in rows:
         provider = str(row.get("provider") or "").strip()
         if not provider:
             continue
-        _remember(by_id, str(row.get("channel_id") or "").strip().lower() or None, provider)
-        _remember(by_number, _channel_number(row.get("number")), provider)
+        _remember_row(by_id, str(row.get("channel_id") or "").strip().lower() or None, row)
+        _remember_row(by_number, _channel_number(row.get("number")), row)
         aliases = row.get("names") if isinstance(row.get("names"), list) else [row.get("name")]
         for alias in aliases:
-            _remember(by_name, _norm_channel_name(alias) or None, provider)
+            _remember_row(by_name, _norm_channel_name(alias) or None, row)
         _remember_row(by_program, _norm_channel_name(row.get("program")) or None, row)
     for session in sessions:
         # A library file has no tuner id. A live play can still carry one when
@@ -299,33 +310,19 @@ def attach_live_providers(sessions: list[dict], rows: list[dict]) -> list[dict]:
         if session.get("kind") != "channel" and not session.get("channel_id"):
             session.pop("provider", None)
             continue
-        provider = None
-        matched: dict | None = None
         channel_id = str(session.get("channel_id") or "").strip().lower()
-        if channel_id:
-            provider = by_id.get(channel_id)
-        if not provider:
-            number = _channel_number(session.get("channel_number")) or _channel_number(session.get("channel"))
-            if number:
-                provider = by_number.get(number)
-        if not provider:
-            name = _norm_channel_name(session.get("channel"))
-            if name:
-                provider = by_name.get(name)
-        if not provider:
-            head = str(session.get("title") or "").split(" — ")[0]
-            name = _norm_channel_name(head)
-            if name:
-                provider = by_name.get(name)
-        if not provider:
-            program = _norm_channel_name(session.get("program"))
-            if program and program in by_program:
-                matched = by_program[program]
-                provider = str(matched.get("provider") or "").strip() if matched else None
+        number = _channel_number(session.get("channel_number")) or _channel_number(session.get("channel"))
+        matched = (
+            _matched_row(by_id, channel_id)
+            or _matched_row(by_number, number)
+            or _matched_row(by_name, _norm_channel_name(session.get("channel")) or None)
+            or _matched_row(by_name, _norm_channel_name(str(session.get("title") or "").split(" — ")[0]) or None)
+            or _matched_row(by_program, _norm_channel_name(session.get("program")) or None)
+        )
+        provider = str(matched.get("provider") or "").strip() if matched else ""
         if provider:
             session["provider"] = provider
-            if matched:
-                _label_live_program(session, matched)
+            _label_live_program(session, matched)
         else:
             session.pop("provider", None)
     return sessions
@@ -338,6 +335,29 @@ def _basename(path: str | None) -> str | None:
     if not cleaned:
         return None
     return os.path.basename(cleaned) or cleaned
+
+
+def _logo_id(detail: dict) -> int | None:
+    raw = detail.get("effective_logo_id")
+    if raw is None:
+        raw = detail.get("logo_id")
+    if isinstance(raw, dict):
+        raw = raw.get("id")
+    try:
+        if raw is None or raw == "":
+            return None
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def dispatcharr_logo_path(logo_id: Any) -> str | None:
+    """Same-origin URL for a Dispatcharr channel logo."""
+    value = _logo_id({"logo_id": logo_id})
+    if value is None:
+        return None
+    return f"/api/watching/art/dispatcharr?logo_id={value}"
 
 
 def art_proxy_path(server: str, path: str | None) -> str | None:
@@ -608,8 +628,6 @@ def parse_plex_sessions(payload: dict) -> list[dict]:
                     tuner_paths.append(part.get("file") or part.get("key"))
         channel_id, tuner_number = _first_tuner(tuner_paths)
         channel_number = _channel_number(item.get("channelIdentifier")) or tuner_number
-        if kind == "channel" and not source:
-            source = channel or (item.get("channelIdentifier") or None)
 
         rows.append({
             "server": "plex",
@@ -772,18 +790,18 @@ def parse_emby_sessions(payload: list | dict) -> list[dict]:
         show = (now.get("SeriesName") or "").strip() or None
         season = now.get("ParentIndexNumber")
         episode = now.get("IndexNumber")
-        channel = (
-            (now.get("ChannelName") or now.get("ChannelNumber") or item.get("NowPlayingChannelName") or "")
-            .strip()
-            or None
-        )
+        named = _text_name(now.get("ChannelName") or item.get("NowPlayingChannelName"))
+        channel = named or None
         if kind_raw in {"tvchannel", "livetvprogram", "channel"} or (
-            channel and kind_raw in {"", "program"}
+            named and kind_raw in {"", "program"}
         ):
             kind = "channel"
-            display = channel or title
-            if title and channel and title != channel:
-                display = f"{channel} — {title}"
+            # TvChannel.Name is the channel when Emby has no separate programme.
+            channel = named or _text_name(title)
+            if named and title and _norm_channel_name(title) != _norm_channel_name(named):
+                display = f"{named} — {title}"
+            else:
+                display = channel or title
         elif kind_raw == "episode":
             kind = "episode"
             ep = _season_episode(season, episode, title)
@@ -815,9 +833,11 @@ def parse_emby_sessions(payload: list | dict) -> list[dict]:
             if isinstance(src, dict):
                 tuner_paths.append(src.get("Path"))
         channel_id, tuner_number = _first_tuner(tuner_paths)
-        channel_number = _channel_number(now.get("ChannelNumber")) or tuner_number
-        if kind == "channel" and not source:
-            source = channel
+        channel_number = (
+            _channel_number(now.get("ChannelNumber"))
+            or _channel_number(now.get("Number"))
+            or tuner_number
+        )
 
         rows.append({
             "server": "emby",
@@ -915,8 +935,9 @@ async def fetch_art(
     item_id: str | None = None,
     tag: str | None = None,
     image: str | None = None,
+    logo_id: str | None = None,
 ) -> tuple[bytes, str]:
-    """Fetch poster/logo bytes from Plex or Emby using Settings credentials."""
+    """Fetch poster/logo bytes from Plex, Emby, or Dispatcharr."""
     env = config.read()
     try:
         if server == "plex":
@@ -973,6 +994,17 @@ async def fetch_art(
                     except httpx.HTTPError as exc:
                         last_error = exc
             raise LookupError(str(last_error) if last_error else "emby art unavailable")
+        if server == "dispatcharr":
+            if dispatcharr_logo_path(logo_id) is None:
+                raise ValueError("invalid dispatcharr logo")
+            from . import dispatcharr_sources as sources
+
+            if not sources.enabled() or not sources.configured():
+                raise LookupError("dispatcharr not configured")
+            return await _get_bytes(
+                f"{sources.dispatcharr_base()}/api/channels/logos/{int(logo_id)}/cache/",
+                sources._headers(),
+            )
         raise ValueError("unknown art server")
     except httpx.HTTPError as exc:
         raise LookupError(str(exc)) from exc

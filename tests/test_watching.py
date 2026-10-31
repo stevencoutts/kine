@@ -8,6 +8,7 @@ sys.path.insert(0, str(ROOT / "helm" / "backend"))
 from app.watching import (  # noqa: E402
     art_proxy_path,
     attach_live_providers,
+    dispatcharr_logo_path,
     format_duration_ms,
     format_duration_ticks,
     index_live_providers,
@@ -472,14 +473,59 @@ def test_plex_livetv_program_uses_the_provider_on_that_channel():
         }]}},
         [{"id": 28107, "m3u_account": 5}],
         [{"id": 5, "name": "Strong8K"}],
-        [{"uuid": "57e1a8b5-b4e9-45ce-9941-9c8d0d27f95b", "channel_number": 303}],
+        [{"uuid": "57e1a8b5-b4e9-45ce-9941-9c8d0d27f95b", "channel_number": 303, "logo_id": 260}],
         [{"channel_uuid": "57e1a8b5-b4e9-45ce-9941-9c8d0d27f95b", "title": "Insidious: The Last Key"}],
     )
     attach_live_providers(sessions, rows)
     assert live["provider"] == "Strong8K"
     assert live["title"] == "SKY CINEMA HITS — Insidious: The Last Key"
-    assert live["channel_number"] == "303"
+    assert live["channel"] == "SKY CINEMA HITS"
+    assert live["channel_number"] != "303"
+    assert live["art_url"] == "/api/watching/art/dispatcharr?logo_id=260"
     assert "provider" not in library
+    assert library["art_url"] != live["art_url"]
+
+
+def test_emby_live_title_is_channel_and_programme_without_the_number():
+    sessions = parse_emby_sessions([{
+        "Id": "sess-bbc",
+        "UserName": "paula",
+        "Client": "Emby for Apple TV",
+        "DeviceName": "Living Room Apple TV",
+        "NowPlayingItem": {
+            "Id": "3689240",
+            "Name": "BBC 1",
+            "Type": "TvChannel",
+            "ChannelNumber": "101",
+            "Number": "101",
+        },
+        "PlayState": {"IsPaused": False},
+    }])
+    bbc = sessions[0]
+    assert bbc["title"] == "BBC 1"
+    assert bbc["channel"] == "BBC 1"
+    assert bbc["channel_number"] == "101"
+    assert bbc.get("source") != "101"
+    rows = index_live_providers(
+        {"live": {"channels": [{
+            "channel_id": "2a800fd4-44c0-4366-9400-5dd5d0d5d9e8",
+            "channel_name": "BBC 1",
+            "stream_id": 24978,
+        }]}},
+        [{"id": 24978, "m3u_account": 5}],
+        [{"id": 5, "name": "Strong8K"}],
+        [{"uuid": "2a800fd4-44c0-4366-9400-5dd5d0d5d9e8", "channel_number": 101, "logo_id": 12}],
+        [{"channel_uuid": "2a800fd4-44c0-4366-9400-5dd5d0d5d9e8", "title": "The Celebrity Inner Circle"}],
+    )
+    attach_live_providers(sessions, rows)
+    assert bbc["provider"] == "Strong8K"
+    assert bbc["title"] == "BBC 1 — The Celebrity Inner Circle"
+    assert bbc["channel"] == "BBC 1"
+    assert "101" not in bbc["title"]
+    assert dispatcharr_logo_path(12) == "/api/watching/art/dispatcharr?logo_id=12"
+    assert dispatcharr_logo_path("nope") is None
+    # Emby already has its own channel image; don't replace it with the playlist logo.
+    assert not str(bbc.get("art_url") or "").startswith("/api/watching/art/dispatcharr")
 
 
 def test_parse_live_sessions_keep_tuner_channel_id_and_number():
