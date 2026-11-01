@@ -97,3 +97,9 @@ Seerr reaches tunnelled Sonarr/Radarr at each app's assigned tunnel
 host (for example `gluetun:8989` / `gluetun:7878` when both are on the
 primary). Emby reaches Dispatcharr HDHomeRun at
 `<tunnel_service(dispatcharr)>:9191/hdhr`.
+
+# Client VPN
+
+| Port | Service | Notes |
+|---|---|---|
+| `${WG_ACCESS_PORT}` (default 51820)/udp | kine-wg-access | Laptop WireGuard. Forward this UDP port on the router when away from home. Not inside the gluetun namespace. |

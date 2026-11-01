@@ -430,6 +430,8 @@ details.settings-group[open] > summary.settings-group-title::before{transform:ro
 .vpn-move-menu button:hover,.vpn-move-menu button:focus-visible{
   background:color-mix(in srgb, var(--accent) 16%, transparent);outline:none}
 .vpn-card-err{color:var(--bad);font-size:.8rem;margin:.55rem 0 0;min-height:0}
+#client-vpn label{display:block;margin:.65rem 0 .25rem;font-size:.8rem;color:var(--muted)}
+#client-vpn input:not([type=checkbox]){width:100%;box-sizing:border-box}
 .vpn-profiles-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;
   margin:0 0 .75rem}
 .vpn-profiles-head h2,.vpn-profiles-head h3{margin:0;font-size:1.05rem;font-weight:650}
@@ -2641,8 +2643,73 @@ const promptVpnProfile = ({title, name='', conf='', submitLabel='Save'}={}) => n
   });
 });
 
+const clientVpnCard = (c) => {
+  const exitLine = {
+    vpn: 'Laptop internet is leaving through the VPN.',
+    wan: 'Laptop internet is leaving through the home connection.',
+    off: 'Client VPN is off.',
+    starting: 'Starting the client VPN.',
+  }[c.exit] || 'Waiting for status.';
+  const peers = (c.peers || []).map(p => `
+    <div class="row" style="gap:.45rem;flex-wrap:wrap;align-items:center;margin-top:.45rem">
+      <b>${escHtml(p.name || 'Device')}</b>
+      <span style="color:var(--muted);font-size:.8rem">${escHtml(p.address || '')}</span>
+      <button type="button" class="act" data-client-vpn-conf="${escAttr(p.id)}" data-where="lan" data-name="${escAttr(p.name || 'device')}">Home config</button>
+      <button type="button" class="act" data-client-vpn-conf="${escAttr(p.id)}" data-where="wan" data-name="${escAttr(p.name || 'device')}">Away config</button>
+      <button type="button" class="act" data-client-vpn-remove="${escAttr(p.id)}">Remove</button>
+    </div>`).join('');
+  return `
+    <div class="section vpn-profiles" id="client-vpn">
+      <div class="vpn-profiles-head">
+        <h2>Laptop VPN</h2>
+      </div>
+      <article class="vpn-card">
+        <p class="vpn-apps-hint">Connect a laptop to Kine with WireGuard. At home, use the home config. Away from home, forward the UDP port on the router to this machine and use the away config. Internet from the laptop leaves through Kine's VPN when that VPN is up, and through the home connection when it is not. The house stays reachable either way. Connecting the laptop does not restart the VPN the rest of Kine is using.</p>
+        <p id="client-vpn-status">${escHtml(c.detail || exitLine)}</p>
+        ${c.error ? `<p class="vpn-card-err">${escHtml(c.error)}</p>` : ''}
+        <label for="client-vpn-enabled" style="display:flex;gap:.5rem;align-items:center;margin:.7rem 0">
+          <input id="client-vpn-enabled" type="checkbox" ${c.enabled ? 'checked' : ''} style="width:auto">
+          Use the client VPN
+        </label>
+        <div class="row" style="gap:.6rem;flex-wrap:wrap">
+          <label style="flex:1;min-width:12rem">LAN address
+            <input id="client-vpn-lan" value="${escAttr(c.lan_endpoint || '')}" placeholder="192.168.1.10" autocomplete="off">
+          </label>
+          <label style="flex:1;min-width:12rem">Public address
+            <input id="client-vpn-wan" value="${escAttr(c.wan_endpoint || '')}" placeholder="home.example.com" autocomplete="off">
+          </label>
+          <label style="width:8rem">UDP port
+            <input id="client-vpn-port" value="${escAttr(String(c.host_port || 51820))}" inputmode="numeric">
+          </label>
+        </div>
+        <label for="client-vpn-domain">Names that resolve to the LAN address
+          <input id="client-vpn-domain" value="${escAttr(c.lan_domain || 'kine.local')}" autocomplete="off">
+        </label>
+        <p class="vpn-apps-hint">Other devices in the house are reached by their IP address. Kine's own app names, such as emby.${escHtml(c.lan_domain || 'kine.local')}, resolve to the LAN address above.</p>
+        <div class="vpn-card-actions">
+          <button type="button" class="act primary" id="client-vpn-save">Save</button>
+        </div>
+        <h3 class="vpn-card-title" style="margin-top:1rem">Devices</h3>
+        <div class="row" style="gap:.5rem;flex-wrap:wrap;margin-top:.45rem">
+          <input id="client-vpn-peer-name" placeholder="Laptop" autocomplete="off" style="flex:1;min-width:10rem">
+          <button type="button" class="act" id="client-vpn-add">Add device</button>
+        </div>
+        ${peers || '<p class="vpn-apps-hint">No devices yet.</p>'}
+      </article>
+    </div>`;
+};
+
 render.vpn = async () => {
   const v = await api('/vpn');
+  let clients = {
+    enabled: false, peers: [], lan_endpoint: '', wan_endpoint: '',
+    host_port: 51820, lan_domain: 'kine.local', exit: 'off', detail: '',
+  };
+  try {
+    clients = await api('/vpn/clients');
+  } catch (e) {
+    clients.error = e.message || String(e);
+  }
   const profiles = Array.isArray(v.profiles) ? v.profiles : [];
   const assignableApps = Array.isArray(v.assignable_apps) ? v.assignable_apps : [];
   const typeLabel = (t) => (t === 'openvpn' ? 'OpenVPN' : 'WireGuard');
@@ -2789,6 +2856,7 @@ render.vpn = async () => {
       </article>`
     : '';
   render.shell(`
+    ${clientVpnCard(clients)}
     <div class="section vpn-profiles">
       <div class="vpn-profiles-head">
         <h2>Profiles</h2>
@@ -2800,6 +2868,70 @@ render.vpn = async () => {
     </div>`);
   const out = $('#out');
   const setOut = (t) => { if (out) out.textContent = t || ''; };
+  const downloadClientConf = async (id, where, name) => {
+    const r = await fetch(`/api/vpn/clients/peers/${encodeURIComponent(id)}/conf?where=${encodeURIComponent(where)}`, {credentials:'same-origin'});
+    if (r.status === 401) { render.login(); return; }
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      throw new Error(data.detail || 'Could not download the config');
+    }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    a.href = url;
+    a.download = `kine-${(name || 'device').replace(/[^A-Za-z0-9._-]+/g, '-')}-${where === 'lan' ? 'home' : 'away'}.conf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+  const saveBtn = $('#client-vpn-save');
+  if (saveBtn) saveBtn.onclick = async () => {
+    setOut('saving client VPN...');
+    try {
+      const r = await api('/vpn/clients/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          enabled: $('#client-vpn-enabled').checked,
+          lan_endpoint: $('#client-vpn-lan').value.trim(),
+          wan_endpoint: $('#client-vpn-wan').value.trim(),
+          host_port: Number($('#client-vpn-port').value),
+          lan_domain: $('#client-vpn-domain').value.trim(),
+        }),
+      });
+      setOut(r.log || 'saved');
+      await render.vpn();
+    } catch (e) { setOut(e.message || String(e)); }
+  };
+  const addBtn = $('#client-vpn-add');
+  if (addBtn) addBtn.onclick = async () => {
+    setOut('adding device...');
+    try {
+      await api('/vpn/clients/peers', {
+        method: 'POST',
+        body: JSON.stringify({name: $('#client-vpn-peer-name').value.trim()}),
+      });
+      setOut('device added');
+      await render.vpn();
+    } catch (e) { setOut(e.message || String(e)); }
+  };
+  document.querySelectorAll('[data-client-vpn-conf]').forEach(btn => {
+    btn.onclick = async () => {
+      setOut('preparing config...');
+      try {
+        await downloadClientConf(btn.dataset.clientVpnConf, btn.dataset.where, btn.dataset.name);
+        setOut('');
+      } catch (e) { setOut(e.message || String(e)); }
+    };
+  });
+  document.querySelectorAll('[data-client-vpn-remove]').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('Remove this device? Its WireGuard config will stop working.')) return;
+      setOut('removing...');
+      try {
+        await api(`/vpn/clients/peers/${encodeURIComponent(btn.dataset.clientVpnRemove)}`, {method:'DELETE'});
+        await render.vpn();
+      } catch (e) { setOut(e.message || String(e)); }
+    };
+  });
   document.querySelectorAll('[data-vpn-leak]').forEach(btn => {
     btn.onclick = async () => {
       const service = btn.dataset.vpnLeak || 'gluetun';

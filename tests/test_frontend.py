@@ -501,3 +501,16 @@ def test_stats_endpoints_exist_in_the_backend():
     assert '"/api/stats/cards"' in BACKEND
     assert '"/api/stats/overview"' in BACKEND
     assert '"/api/metrics"' in BACKEND
+
+
+def test_client_vpn_card_does_not_restart_the_tunnel():
+    assert 'id="client-vpn"' in FRONTEND
+    assert "Laptop VPN" in FRONTEND
+    card = FRONTEND.split("const clientVpnCard", 1)[1].split("render.vpn = async", 1)[0]
+    assert "/vpn/restart" not in card
+    assert "data-vpn-restart" not in card
+    handlers = FRONTEND.split("const saveBtn = $('#client-vpn-save')", 1)[1].split("document.querySelectorAll('[data-vpn-leak]')", 1)[0]
+    assert "/vpn/clients" in handlers
+    assert "/vpn/restart" not in handlers
+    assert '@app.get("/api/vpn/clients")' in (ROOT / "helm" / "backend" / "app" / "client_vpn_http.py").read_text()
+    assert "client_vpn_http.install(app, require_user)" in BACKEND

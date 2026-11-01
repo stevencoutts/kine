@@ -15,7 +15,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, WebSocke
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import acme_env, appkeys, auth, backups, catalogue, channels, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, mdns_policy, media_servers, metrics, nfs_exports, nzbget_news, pihole_dns, profile_reconcile, prowlarr_newznab, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, tunnel_hosts, updates_info, vpn_profiles, vpn_routing, watching
+from . import acme_env, appkeys, auth, backups, catalogue, channels, client_vpn_http, compose, config, dispatcharr_sources, dispatcharr_token, downloads, ecm_setup, embed_proxy, launch, library_rescan, mdns_policy, media_servers, metrics, nfs_exports, nzbget_news, pihole_dns, profile_reconcile, prowlarr_newznab, promquery, provision_lock, scheduler, teamarr_setup, tunnel_heal, tunnel_hosts, updates_info, vpn_profiles, vpn_routing, watching
 import sys
 from .gluetun import connection_label as _connection_label
 from .gluetun import coalesce_forwarded_port as _coalesce_forwarded_port
@@ -391,6 +391,7 @@ def require_user(request: Request) -> str:
 
 # Same-origin app embeds (/view/sonarr/ …) — after require_user exists.
 embed_proxy.mount(app, require_user)
+client_vpn_http.install(app, require_user)
 
 
 @app.get("/api/health")

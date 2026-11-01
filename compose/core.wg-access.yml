@@ -1,0 +1,33 @@
+# Laptop WireGuard. It does not join gluetun and it does not depend on it.
+# Turning this on must not recreate the tunnel the rest of Kine is using.
+# The profile stays out of COMPOSE_PROFILES; Helm starts this service by name.
+services:
+  wg-access:
+    build:
+      context: ..
+      dockerfile: wg-access/Dockerfile
+    image: kine/wg-access:local
+    container_name: kine-wg-access
+    profiles: ["wg-access"]
+    restart: unless-stopped
+    cap_add: [NET_ADMIN, SYS_ADMIN]
+    # Host PIDs so the relay can enter gluetun's network namespace.
+    # It signals only its own sing-box processes, never gluetun's init.
+    pid: host
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      net.ipv4.ip_forward: "1"
+    environment:
+      TZ: ${KINE_TIMEZONE}
+    volumes:
+      - ${STACK_ROOT}/config/wg-access:/config
+    networks: [kine_edge, kine_internal]
+    ports:
+      - "${WG_ACCESS_PORT:-51820}:51820/udp"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import pathlib,sys; sys.exit(0 if pathlib.Path('/config/status.json').is_file() else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
