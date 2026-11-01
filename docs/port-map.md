@@ -102,4 +102,4 @@ primary). Emby reaches Dispatcharr HDHomeRun at
 
 | Port | Service | Notes |
 |---|---|---|
-| `${WG_ACCESS_PORT}` (default 51820)/udp | kine-wg-access | Laptop WireGuard. Forward this UDP port on the router when away from home. Not inside the gluetun namespace. |
+| `${WG_ACCESS_PORT}` (default 51820)/udp | kine-wg-access | Client VPN (WireGuard). Forward this UDP port on the router when away from home. Not inside the gluetun namespace. |

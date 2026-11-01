@@ -505,9 +505,14 @@ def test_stats_endpoints_exist_in_the_backend():
 
 def test_client_vpn_card_does_not_restart_the_tunnel():
     assert 'id="client-vpn"' in FRONTEND
-    assert "Laptop VPN" in FRONTEND
+    assert "Client VPN" in FRONTEND
+    assert not re.search(r"laptop", FRONTEND, re.I)
     card = FRONTEND.split("const clientVpnCard", 1)[1].split("render.vpn = async", 1)[0]
-    assert "Connect a laptop to Kine with WireGuard. Use one config." in card
+    assert "Connect a client device to Kine with WireGuard. Use one config." in card
+    assert "Client internet is leaving through the VPN." in card
+    assert 'placeholder="Device name"' in card
+    assert "Client subnet" in card
+    assert "download the config again" in card
     assert "Home config" not in card
     assert "Away config" not in card
     assert not re.search(r"\bhome\b", card, re.I)

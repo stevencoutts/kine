@@ -1,10 +1,11 @@
-"""Laptop VPN HTTP API.
+"""Client VPN HTTP API.
 
 Compose is only asked to start, stop, or remove wg-access. It does not
 build an image: the socket proxy rejects the build API.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import pathlib
 import threading
@@ -15,6 +16,7 @@ from fastapi.responses import PlainTextResponse
 from . import client_vpn, compose, config
 
 _lock = threading.Lock()
+_KINE_NETWORKS = ("kine_edge", "kine_internal", "kine_ctrl", "kine_dns")
 
 
 def install(app, require_user) -> None:
@@ -27,6 +29,10 @@ def install(app, require_user) -> None:
     async def client_vpn_settings(request: Request, user: str = Depends(require_user)):
         body = await request.json()
         current = _load(create=True)
+        raw_cidr = body.get("client_cidr", None)
+        reserved = []
+        if raw_cidr is not None and str(raw_cidr).strip() != str(client_vpn.client_network(current)):
+            reserved = await _reserved_networks()
         try:
             raw_host = body.get("endpoint_host", None)
             updated = client_vpn.apply_settings(
@@ -34,6 +40,8 @@ def install(app, require_user) -> None:
                 enabled=bool(body.get("enabled")),
                 endpoint_host=None if raw_host is None else str(raw_host),
                 host_port=body.get("host_port") or client_vpn.INTERNAL_LISTEN_PORT,
+                client_cidr=None if raw_cidr is None else str(raw_cidr),
+                reserved=reserved,
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -75,6 +83,8 @@ def install(app, require_user) -> None:
             text = client_vpn.client_config(state, peer)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
+        if client_vpn.config_fetched(state, peer_id):
+            _save(state)
         filename = client_vpn.config_filename(peer)
         return PlainTextResponse(
             text,
@@ -107,6 +117,34 @@ def _save(state: dict) -> None:
         client_vpn.save_state(client_vpn.state_path(_stack()), state)
 
 
+async def _docker_networks() -> str:
+    """``name subnet...`` per Kine network. Missing networks are skipped."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "docker", "network", "inspect",
+            "-f", "{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}}",
+            *_KINE_NETWORKS,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except OSError:
+        return ""
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+    except asyncio.TimeoutError:
+        proc.kill()
+        return ""
+    return out.decode(errors="replace")
+
+
+async def _reserved_networks() -> list[tuple[str, str]]:
+    return client_vpn.reserved_networks(
+        docker_text=await _docker_networks(),
+        env=config.read(),
+        status=_read_status(),
+    )
+
+
 def _read_status() -> dict | None:
     path = client_vpn.status_path(_stack())
     try:
@@ -121,6 +159,16 @@ async def _apply(action: str | None, host_port: int) -> str:
         return ""
     if action == "up":
         config.write({"WG_ACCESS_PORT": str(host_port)})
+        code, out = await compose.run(*client_vpn.COMPOSE_UP, timeout=900)
+        if code != 0:
+            raise HTTPException(502, (out or "could not start the client VPN")[-800:])
+        return out
+    if action == "recreate":
+        config.write({"WG_ACCESS_PORT": str(host_port)})
+        await compose.run(*client_vpn.COMPOSE_STOP, timeout=120)
+        code, removed = await compose.run(*client_vpn.COMPOSE_RM, timeout=120)
+        if code != 0:
+            raise HTTPException(502, (removed or "could not restart the client VPN")[-800:])
         code, out = await compose.run(*client_vpn.COMPOSE_UP, timeout=900)
         if code != 0:
             raise HTTPException(502, (out or "could not start the client VPN")[-800:])

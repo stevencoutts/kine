@@ -2645,8 +2645,8 @@ const promptVpnProfile = ({title, name='', conf='', submitLabel='Save'}={}) => n
 
 const clientVpnCard = (c) => {
   const exitLine = {
-    vpn: 'Laptop internet is leaving through the VPN.',
-    wan: 'Laptop internet is leaving through the internal network connection.',
+    vpn: 'Client internet is leaving through the VPN.',
+    wan: 'Client internet is leaving through the internal network connection.',
     off: 'Client VPN is off.',
     starting: 'Starting the client VPN.',
   }[c.exit] || 'Waiting for status.';
@@ -2654,16 +2654,18 @@ const clientVpnCard = (c) => {
     <div class="row" style="gap:.45rem;flex-wrap:wrap;align-items:center;margin-top:.45rem">
       <b>${escHtml(p.name || 'Device')}</b>
       <span style="color:var(--muted);font-size:.8rem">${escHtml(p.address || '')}</span>
-      <button type="button" class="act" data-client-vpn-conf="${escAttr(p.id)}" data-name="${escAttr(p.name || 'device')}">Config</button>
+      ${p.needs_config ? '<span class="vpn-card-err" style="font-size:.8rem">New address: download this config again</span>' : ''}
+      <button type="button" class="act" data-client-vpn-conf="${escAttr(p.id)}" data-name="${escAttr(p.name || 'device')}"${p.needs_config ? ' data-stale="1"' : ''}>Config</button>
       <button type="button" class="act" data-client-vpn-remove="${escAttr(p.id)}">Remove</button>
     </div>`).join('');
+  const stale = (c.peers || []).filter(p => p.needs_config).length;
   return `
     <div class="section vpn-profiles" id="client-vpn">
       <div class="vpn-profiles-head">
-        <h2>Laptop VPN</h2>
+        <h2>Client VPN</h2>
       </div>
       <article class="vpn-card">
-        <p class="vpn-apps-hint">Connect a laptop to Kine with WireGuard. Use one config. DNS should resolve its endpoint to this machine on the internal network, and to the public address from outside. Forward the UDP port on the router to this machine. Internet from the laptop leaves through Kine's VPN when that VPN is up, and through the internal network connection when it is not. The internal network stays reachable either way. Connecting the laptop does not restart the VPN the rest of Kine is using.</p>
+        <p class="vpn-apps-hint">Connect a client device to Kine with WireGuard. Use one config. DNS should resolve its endpoint to this machine on the internal network, and to the public address from outside. Forward the UDP port on the router to this machine. Internet from the device leaves through Kine's VPN when that VPN is up, and through the internal network connection when it is not. The internal network stays reachable either way. Connecting a device does not restart the VPN the rest of Kine is using.</p>
         <p id="client-vpn-status">${escHtml(c.detail || exitLine)}</p>
         ${c.error ? `<p class="vpn-card-err">${escHtml(c.error)}</p>` : ''}
         <label for="client-vpn-enabled" style="display:flex;gap:.5rem;align-items:center;margin:.7rem 0">
@@ -2677,14 +2679,19 @@ const clientVpnCard = (c) => {
           <label style="width:8rem">UDP port
             <input id="client-vpn-port" value="${escAttr(String(c.host_port || 51820))}" inputmode="numeric">
           </label>
+          <label style="width:11rem">Client subnet
+            <input id="client-vpn-cidr" value="${escAttr(c.client_cidr || '10.66.66.0/24')}" placeholder="10.66.66.0/24" autocomplete="off">
+          </label>
         </div>
+        <p class="vpn-apps-hint">Client subnet is a private IPv4 network from /16 to /29 that does not overlap the internal network or Kine's Docker networks. The server takes the first address${c.server_address ? ` (now ${escHtml(c.server_address)})` : ''} and devices the ones after it. Changing it gives every device a new address, and each device must download its config again.</p>
         <p class="vpn-apps-hint">Names in the internal zone are looked up on the internal DNS server, over the tunnel toward the internal network. Other names follow the VPN when it is up.</p>
         <div class="vpn-card-actions">
           <button type="button" class="act primary" id="client-vpn-save">Save</button>
         </div>
         <h3 class="vpn-card-title" style="margin-top:1rem">Devices</h3>
+        ${stale ? `<p class="vpn-card-err">The client subnet changed. ${stale === 1 ? 'One device has' : `${stale} devices have`} a new address and must download the config again before it can connect.</p>` : ''}
         <div class="row" style="gap:.5rem;flex-wrap:wrap;margin-top:.45rem">
-          <input id="client-vpn-peer-name" placeholder="Laptop" autocomplete="off" style="flex:1;min-width:10rem">
+          <input id="client-vpn-peer-name" placeholder="Device name" autocomplete="off" style="flex:1;min-width:10rem">
           <button type="button" class="act" id="client-vpn-add">Add device</button>
         </div>
         ${peers || '<p class="vpn-apps-hint">No devices yet.</p>'}
@@ -2696,7 +2703,7 @@ render.vpn = async () => {
   const v = await api('/vpn');
   let clients = {
     enabled: false, peers: [], endpoint_host: '',
-    host_port: 51820, exit: 'off', detail: '',
+    host_port: 51820, client_cidr: '', server_address: '', exit: 'off', detail: '',
   };
   try {
     clients = await api('/vpn/clients');
@@ -2886,6 +2893,7 @@ render.vpn = async () => {
           enabled: $('#client-vpn-enabled').checked,
           endpoint_host: $('#client-vpn-endpoint').value.trim(),
           host_port: Number($('#client-vpn-port').value),
+          client_cidr: $('#client-vpn-cidr').value.trim(),
         }),
       });
       setOut(r.log || 'saved');
@@ -2910,6 +2918,7 @@ render.vpn = async () => {
       try {
         await downloadClientConf(btn.dataset.clientVpnConf, btn.dataset.name);
         setOut('');
+        if (btn.dataset.stale) await render.vpn();
       } catch (e) { setOut(e.message || String(e)); }
     };
   });

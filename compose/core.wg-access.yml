@@ -1,4 +1,4 @@
-# Laptop WireGuard. It does not join gluetun and it does not depend on it.
+# Client VPN (WireGuard). It does not join gluetun and it does not depend on it.
 # Turning this on must not recreate the tunnel the rest of Kine is using.
 # The profile stays out of COMPOSE_PROFILES; Helm starts this service by name.
 #

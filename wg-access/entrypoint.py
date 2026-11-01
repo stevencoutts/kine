@@ -1,10 +1,10 @@
-"""WireGuard server for laptops, beside gluetun.
+"""WireGuard server for client devices, beside gluetun.
 
 This process never restarts gluetun and never changes its firewall.
 The only contact with that container is a read of its VPN status and,
 when the status is up, a new process placed in its network namespace
-so the laptop's internet can leave through the tunnel that is already
-up. If that path is missing, the laptop uses the internal network connection.
+so a client's internet can leave through the tunnel that is already
+up. If that path is missing, the client uses the internal network connection.
 """
 from __future__ import annotations
 
@@ -36,6 +36,8 @@ RUNTIME = {
     "resolver": "",
     "vpn_exit": False,
     "socks_ip": "",
+    "server": "",
+    "host_networks": [],
 }
 
 
@@ -139,7 +141,9 @@ def write_json(path: pathlib.Path, payload: dict) -> bool:
 
 
 def write_status(exit_mode: str, detail: str) -> None:
-    write_json(STATUS, {"exit": exit_mode, "detail": detail})
+    with RUNTIME["lock"]:
+        networks = list(RUNTIME["host_networks"])
+    write_json(STATUS, {"exit": exit_mode, "detail": detail, "host_networks": networks})
 
 
 def ensure_forwarding() -> None:
@@ -155,14 +159,18 @@ def ensure_wg(state: dict, previous: str) -> str:
         if created.returncode != 0:
             raise RuntimeError(created.stdout.strip() or "could not create wg0")
         run(["ip", "link", "set", "wg0", "mtu", str(client_vpn.CLIENT_MTU), "up"])
-    run(["ip", "addr", "replace", f"{client_vpn.SERVER_ADDRESS}/24", "dev", "wg0"])
+    network = client_vpn.client_network(state)
+    run([
+        "ip", "addr", "replace",
+        f"{client_vpn.server_address(state)}/{network.prefixlen}", "dev", "wg0",
+    ])
     if not link_exists("wg0"):
         raise RuntimeError("wg0 did not come up")
     if conf != previous or not previous:
         WG_CONF.write_text(conf)
         os.chmod(WG_CONF, 0o600)
         # setconf the first time. After that syncconf so a new device
-        # does not drop a laptop that is already connected.
+        # does not drop a device that is already connected.
         tool = "setconf" if not previous else "syncconf"
         synced = run(["wg", tool, "wg0", str(WG_CONF)])
         if synced.returncode != 0:
@@ -210,13 +218,13 @@ def ensure_router(socks_ip: str) -> None:
     start_helper(["/usr/local/bin/sing-box", "run", "-c", "/config/router.json"])
 
 
-def apply_routes(vpn_exit: bool) -> str | None:
+def apply_routes(vpn_exit: bool, cidr: str) -> str | None:
     gateway = default_gateway()
     if gateway is None:
         return "no default route in the access container"
     gw, iface = gateway
     try:
-        plan = client_vpn.desired_routes(vpn_exit=vpn_exit, gateway=gw, iface=iface)
+        plan = client_vpn.desired_routes(vpn_exit=vpn_exit, gateway=gw, iface=iface, cidr=cidr)
     except ValueError as exc:
         return str(exc)
     rules = run(["ip", "rule", "show"]).stdout or ""
@@ -234,7 +242,7 @@ def apply_routes(vpn_exit: bool) -> str | None:
         result = run(cmd)
         if route["dest"] == "default" and result.returncode != 0:
             if vpn_exit:
-                return apply_routes(False)
+                return apply_routes(False, cidr)
             return result.stdout.strip() or "could not install the default route"
     nat = plan["nat"]
     check = [
@@ -336,16 +344,24 @@ def forward_socks(query: bytes, socks_ip: str) -> bytes | None:
 
 def dns_loop() -> None:
     while not STOP.is_set():
+        with RUNTIME["lock"]:
+            bind_ip = RUNTIME["server"]
+        if not bind_ip:
+            STOP.wait(1)
+            continue
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            sock.bind((client_vpn.SERVER_ADDRESS, 53))
+            sock.bind((bind_ip, 53))
         except OSError:
             sock.close()
             STOP.wait(1)
             continue
         sock.settimeout(1)
         while not STOP.is_set():
+            with RUNTIME["lock"]:
+                if RUNTIME["server"] != bind_ip:
+                    break
             try:
                 query, addr = sock.recvfrom(2048)
             except socket.timeout:
@@ -389,11 +405,14 @@ def publish_runtime(state: dict, vpn_exit: bool, socks_ip: str) -> None:
     resolv, addrs = host_resolver_inputs()
     zones = tuple(client_vpn.internal_zones(str(state.get("lan_domain") or ""), resolv))
     resolver = client_vpn.internal_resolver(resolv, addrs) or ""
+    networks = client_vpn.host_networks_from_addrs(addrs)
     with RUNTIME["lock"]:
         RUNTIME["zones"] = zones
         RUNTIME["resolver"] = resolver
         RUNTIME["vpn_exit"] = vpn_exit
         RUNTIME["socks_ip"] = socks_ip
+        RUNTIME["server"] = client_vpn.server_address(state)
+        RUNTIME["host_networks"] = networks
 
 
 def tick(previous_conf: str) -> str:
@@ -409,14 +428,14 @@ def tick(previous_conf: str) -> str:
     tun_up = link_exists(client_vpn.TUN_INTERFACE)
     socks_up = helper_alive(b"/config/socks.json")
     vpn_exit = bool(ip) and vpn_running() and tun_up and socks_up
-    problem = apply_routes(vpn_exit and tun_up)
+    problem = apply_routes(vpn_exit and tun_up, str(client_vpn.client_network(state)))
     publish_runtime(state, vpn_exit, ip or "")
     if problem:
         write_status("wan", problem)
     elif vpn_exit:
-        write_status("vpn", "Laptop internet is leaving through the VPN.")
+        write_status("vpn", "Client internet is leaving through the VPN.")
     else:
-        write_status("wan", "Laptop internet is leaving through the internal network connection.")
+        write_status("wan", "Client internet is leaving through the internal network connection.")
     return conf
 
 

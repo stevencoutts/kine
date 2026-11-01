@@ -1,6 +1,6 @@
-"""Laptop VPN plans. These must stay true so the feature cannot take
+"""Client VPN plans. These must stay true so the feature cannot take
 the live tunnel down with it: compose never names gluetun, routing is
-only for the laptop subnet, and the relay refuses pid 1."""
+only for the client subnet, and the relay refuses pid 1."""
 import base64
 import pathlib
 import sys
@@ -114,7 +114,7 @@ def test_adding_a_peer_does_not_call_compose():
     state["endpoint_host"] = "vpn.example.net"
     state = client_vpn.apply_settings(state, enabled=True, host_port=51820)
     before = dict(state)
-    client_vpn.add_peer(state, "Laptop")
+    client_vpn.add_peer(state, "Tablet")
     assert client_vpn.needs_compose(before, state) is None
 
 
@@ -264,12 +264,12 @@ def test_internal_resolver_uses_this_machine_when_the_host_resolver_is_loopback(
 
 def test_summary_hides_keys():
     state = client_vpn.fresh_state("kine.local", [])
-    client_vpn.add_peer(state, "Laptop")
+    client_vpn.add_peer(state, "Tablet")
     public = client_vpn.summary(state, {"exit": "wan", "detail": "home"})
     blob = repr(public)
     assert state["server_private"] not in blob
     assert state["peers"][0]["private_key"] not in blob
-    assert public["peers"][0]["name"] == "Laptop"
+    assert public["peers"][0]["name"] == "Tablet"
     assert public["exit"] == "off"  # feature is not enabled
 
 
@@ -297,3 +297,221 @@ def test_compose_fragment_does_not_attach_to_gluetun():
     http = (ROOT / "helm" / "backend" / "app" / "client_vpn_http.py").read_text()
     assert "lan_endpoint" not in http
     assert "wan_endpoint" not in http
+
+
+# Values read from osiris: Kine's Docker networks, the gluetun tunnel and
+# the host's interfaces as wg-access reports them.
+DOCKER_TEXT = (
+    "kine_edge 192.168.144.0/20 \n"
+    "kine_internal 192.168.128.0/20 \n"
+    "kine_ctrl 192.168.160.0/20 \n"
+    "kine_dns 172.16.53.0/27 \n"
+)
+ENV = {
+    "KINE_DNS_SUBNET": "172.16.53.0/27",
+    "WIREGUARD_ADDRESSES": "10.13.37.143/24",
+    "KINE_LAN_IP": "10.100.100.34",
+}
+HOST_ADDRS = (
+    "4: br0    inet 10.100.100.34/24 brd 10.100.100.255 scope global br0\n"
+    "19: docker0    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0\n"
+)
+STATUS = {"exit": "vpn", "host_networks": client_vpn.host_networks_from_addrs(HOST_ADDRS)}
+
+
+def _reserved(**overrides):
+    kwargs = {"docker_text": DOCKER_TEXT, "env": ENV, "status": STATUS}
+    kwargs.update(overrides)
+    return client_vpn.reserved_networks(**kwargs)
+
+
+def _rejects(cidr, needle, reserved=None, devices=0):
+    try:
+        client_vpn.validate_client_cidr(
+            cidr, _reserved() if reserved is None else reserved, devices=devices,
+        )
+    except ValueError as exc:
+        assert needle in str(exc), str(exc)
+        return str(exc)
+    raise AssertionError(f"{cidr} should be rejected")
+
+
+def test_default_subnet_is_unchanged_for_existing_state():
+    legacy = client_vpn.fresh_state("couttsnet.com")
+    legacy.pop("client_cidr")
+    legacy["endpoint_host"] = "vpn.example.net"
+    peer = client_vpn.add_peer(legacy, "steven macbook")
+    assert peer["address"] == "10.66.66.2"
+    assert client_vpn.server_address(legacy) == "10.66.66.1" == client_vpn.SERVER_ADDRESS
+    assert str(client_vpn.client_network(legacy)) == client_vpn.CLIENT_CIDR == "10.66.66.0/24"
+    saved = client_vpn.apply_settings(
+        legacy, enabled=True, host_port=51820, client_cidr="10.66.66.0/24", reserved=_reserved(),
+    )
+    assert saved["peers"][0]["address"] == "10.66.66.2"
+    assert "needs_config" not in saved["peers"][0]
+    assert client_vpn.needs_compose(saved, saved) is None
+    text = client_vpn.client_config(saved, saved["peers"][0])
+    assert "Address = 10.66.66.2/32" in text
+    assert "DNS = 10.66.66.1" in text
+    routes = client_vpn.desired_routes(vpn_exit=True, gateway="192.168.144.1", iface="eth0")
+    assert routes["rule_from"] == routes["nat"]["source"] == "10.66.66.0/24"
+    assert client_vpn.summary(saved, None)["client_cidr"] == "10.66.66.0/24"
+
+
+def test_custom_subnet_is_used_everywhere():
+    state = client_vpn.fresh_state("couttsnet.com")
+    state["endpoint_host"] = "vpn.example.net"
+    state = client_vpn.apply_settings(
+        state, enabled=True, host_port=51820, client_cidr="10.77.0.0/24", reserved=_reserved(),
+    )
+    assert state["client_cidr"] == "10.77.0.0/24"
+    first = client_vpn.add_peer(state, "Phone")
+    second = client_vpn.add_peer(state, "Tablet")
+    assert client_vpn.server_address(state) == "10.77.0.1"
+    assert (first["address"], second["address"]) == ("10.77.0.2", "10.77.0.3")
+    conf = client_vpn.client_config(state, first)
+    assert "DNS = 10.77.0.1" in conf and "Address = 10.77.0.2/32" in conf
+    assert "AllowedIPs = 10.77.0.3/32" in client_vpn.server_config(state)
+    plan = client_vpn.desired_routes(
+        vpn_exit=False, gateway="192.168.144.1", iface="eth0", cidr=state["client_cidr"],
+    )
+    assert plan["rule_from"] == plan["nat"]["source"] == "10.77.0.0/24"
+    assert {"dest": "10.77.0.0/24", "dev": "wg0"} in plan["routes"]
+    assert "10.66.66" not in repr(plan) + conf
+    small = client_vpn.validate_client_cidr("192.168.200.0/29", _reserved())
+    assert small == "192.168.200.0/29"
+    assert client_vpn.validate_client_cidr("10.200.0.0/16", _reserved()) == "10.200.0.0/16"
+
+
+def test_subnet_must_be_private_sized_and_a_network_address():
+    _rejects("8.8.8.0/24", "private")
+    _rejects("100.64.0.0/24", "private")
+    _rejects("10.66.0.0/15", "/16")
+    _rejects("10.66.66.0/30", "/29")
+    _rejects("10.66.66.5/24", "10.66.66.0/24")
+    _rejects("10.66.66.0", "prefix")
+    _rejects("not a subnet", "IPv4 network")
+    _rejects("192.168.0.0/16", "whole private range")
+
+
+def test_subnet_too_small_for_the_devices_is_rejected():
+    _rejects("10.66.70.0/29", "too small for the server and 6 device(s)", devices=6)
+    assert client_vpn.validate_client_cidr("10.66.70.0/29", _reserved(), devices=5)
+    state = client_vpn.fresh_state("kine.local")
+    for n in range(6):
+        client_vpn.add_peer(state, f"dev{n}")
+    try:
+        client_vpn.apply_settings(state, enabled=False, host_port=51820, client_cidr="10.66.70.0/29")
+    except ValueError as exc:
+        assert "too small" in str(exc)
+    else:
+        raise AssertionError("six devices do not fit in a /29 with the server")
+    assert [p["address"] for p in state["peers"]][0] == "10.66.66.2"
+
+
+def test_subnet_overlap_names_each_network():
+    reserved = _reserved()
+    assert "kine_edge" in _rejects("192.168.150.0/24", "kine_edge (192.168.144.0/20)", reserved)
+    _rejects("192.168.130.0/24", "kine_internal (192.168.128.0/20)", reserved)
+    _rejects("192.168.160.0/24", "kine_ctrl (192.168.160.0/20)", reserved)
+    _rejects("172.16.53.0/24", "kine_dns (172.16.53.0/27)", reserved)
+    _rejects("10.13.37.0/24", "the gluetun tunnel address (10.13.37.0/24)", reserved)
+    _rejects("10.100.100.128/25", "the host network on br0 (10.100.100.0/24)", reserved)
+    _rejects("172.17.4.0/24", "the host network on docker0 (172.17.0.0/16)", reserved)
+    _rejects("172.31.255.0/24", "tun link", reserved)
+    # Docker unreachable and no host report yet: the env values still apply.
+    bare = _reserved(docker_text="", status=None)
+    _rejects("172.16.53.0/28", "KINE_DNS_SUBNET", bare)
+    _rejects("10.100.100.0/24", "KINE_LAN_IP", bare)
+    _rejects("10.13.0.0/16", "gluetun tunnel", bare)
+
+
+def test_overlap_is_checked_only_when_the_subnet_changes():
+    state = client_vpn.fresh_state("kine.local")
+    blocking = [("pretend", "10.66.0.0/16")]
+    kept = client_vpn.apply_settings(
+        state, enabled=False, host_port=51820, client_cidr="10.66.66.0/24", reserved=blocking,
+    )
+    assert kept["client_cidr"] == "10.66.66.0/24"
+    try:
+        client_vpn.apply_settings(
+            state, enabled=False, host_port=51820, client_cidr="10.66.67.0/24", reserved=blocking,
+        )
+    except ValueError as exc:
+        assert "overlaps pretend (10.66.0.0/16)" in str(exc)
+    else:
+        raise AssertionError("a new subnet is checked")
+
+
+def test_readdressing_keeps_keys_and_flags_each_device():
+    state = client_vpn.fresh_state("couttsnet.com")
+    state["endpoint_host"] = "vpn.example.net"
+    state["enabled"] = True
+    mac = client_vpn.add_peer(state, "steven macbook")
+    phone = client_vpn.add_peer(state, "Phone")
+    client_vpn.remove_peer(state, mac["id"])
+    state["peers"].insert(0, mac)
+    before = {p["id"]: dict(p) for p in state["peers"]}
+    updated = client_vpn.apply_settings(
+        state, enabled=True, host_port=51820, client_cidr="10.88.1.0/28", reserved=_reserved(),
+    )
+    assert [p["name"] for p in updated["peers"]] == ["steven macbook", "Phone"]
+    assert [p["address"] for p in updated["peers"]] == ["10.88.1.2", "10.88.1.3"]
+    for peer in updated["peers"]:
+        old = before[peer["id"]]
+        for key in ("private_key", "public_key", "preshared_key", "name"):
+            assert peer[key] == old[key]
+        assert peer["needs_config"] is True
+    assert updated["server_private"] == state["server_private"]
+    assert state["peers"][0]["address"] == "10.66.66.2"  # input is not mutated
+    assert client_vpn.needs_compose(state, updated) == "recreate"
+    public = client_vpn.summary(updated, None)
+    assert all(p["needs_config"] for p in public["peers"])
+    assert phone["private_key"] not in repr(public)
+    assert client_vpn.config_fetched(updated, mac["id"]) is True
+    assert client_vpn.config_fetched(updated, mac["id"]) is False
+    assert [p.get("needs_config", False) for p in updated["peers"]] == [False, True]
+    assert "Address = 10.88.1.2/32" in client_vpn.client_config(updated, updated["peers"][0])
+
+
+def test_subnet_change_only_recreates_wg_access_and_only_when_on():
+    state = client_vpn.fresh_state("kine.local")
+    state["endpoint_host"] = "vpn.example.net"
+    off = client_vpn.apply_settings(state, enabled=False, host_port=51820, client_cidr="10.70.0.0/24")
+    assert client_vpn.needs_compose(state, off) is None
+    on = dict(state, enabled=True)
+    moved = client_vpn.apply_settings(on, enabled=True, host_port=51820, client_cidr="10.70.0.0/24")
+    assert client_vpn.needs_compose(on, moved) == "recreate"
+    failed = client_vpn.failed_start_state(on, moved)
+    assert failed["enabled"] is False
+    assert failed["client_cidr"] == "10.70.0.0/24"
+    assert client_vpn.needs_compose(failed, dict(failed, enabled=True)) == "up"
+    http = (ROOT / "helm" / "backend" / "app" / "client_vpn_http.py").read_text()
+    recreate = http.split('if action == "recreate":', 1)[1].split('if action == "stop":', 1)[0]
+    assert "COMPOSE_STOP" in recreate and "COMPOSE_RM" in recreate and "COMPOSE_UP" in recreate
+    assert "gluetun" not in http
+
+
+def test_host_networks_keep_bridges_and_skip_loopback():
+    text = (
+        "1: lo    inet 127.0.0.1/8 scope host lo\n"
+        "4: br0    inet 10.100.100.34/24 brd 10.100.100.255 scope global br0\\ valid_lft forever\n"
+        "4: br0    inet 10.100.100.4/32 scope global br0\\ valid_lft forever\n"
+        "8: br-859e532cb396    inet 192.168.144.1/20 scope global br-859e532cb396\n"
+    )
+    assert client_vpn.host_networks_from_addrs(text) == [
+        {"name": "br0", "cidr": "10.100.100.0/24"},
+        {"name": "br0", "cidr": "10.100.100.4/32"},
+        {"name": "br-859e532cb396", "cidr": "192.168.144.0/20"},
+    ]
+
+
+def test_entrypoint_reads_the_saved_subnet():
+    entry = (ROOT / "wg-access" / "entrypoint.py").read_text()
+    assert "SERVER_ADDRESS" not in entry
+    assert "CLIENT_CIDR" not in entry
+    assert "/24" not in entry
+    assert "client_vpn.server_address(state)" in entry
+    assert "client_vpn.client_network(state)" in entry
+    assert "host_networks" in entry
+    assert "Laptop" not in entry

@@ -1,11 +1,11 @@
-"""Laptop WireGuard in front of the VPN Kine already has.
+"""Client VPN: WireGuard for devices, in front of the VPN Kine already has.
 
 Pure data and command plans. Nothing here talks to Docker or to gluetun.
 The access container is the only process that enters gluetun's network
 namespace, and it never restarts that container.
 
 Streaming stays on the existing tunnel: compose actions name only
-``wg-access``, and routing policy exists only for the laptop subnet.
+``wg-access``, and routing policy exists only for the client subnet.
 """
 from __future__ import annotations
 
@@ -17,8 +17,12 @@ import pathlib
 import re
 import uuid
 
+# Default client subnet. A saved ``client_cidr`` replaces it; the server
+# is always the first host address and devices take the ones after it.
 CLIENT_CIDR = "10.66.66.0/24"
 SERVER_ADDRESS = "10.66.66.1"
+CLIENT_PREFIX_MIN = 16
+CLIENT_PREFIX_MAX = 29
 INTERNAL_LISTEN_PORT = 51820
 SOCKS_PORT = 10808
 TUN_ADDRESS = "172.31.255.1/30"
@@ -162,6 +166,7 @@ def fresh_state(lan_domain: str, subdomains: list[str] | None = None) -> dict:
         "endpoint_host": "",
         "host_port": INTERNAL_LISTEN_PORT,
         "lan_domain": domain,
+        "client_cidr": CLIENT_CIDR,
         "server_private": private,
         "server_public": public,
         "peers": [],
@@ -196,20 +201,126 @@ def save_state(path: pathlib.Path, state: dict) -> None:
     os.chmod(path, 0o600)
 
 
-def _next_address(peers: list[dict]) -> str:
+def client_network(state: dict) -> ipaddress.IPv4Network:
+    return ipaddress.IPv4Network(str(state.get("client_cidr") or CLIENT_CIDR))
+
+
+def server_address(state: dict) -> str:
+    return str(next(client_network(state).hosts()))
+
+
+def _next_address(peers: list[dict], network: ipaddress.IPv4Network) -> str:
     used = set()
     for peer in peers:
         try:
             used.add(ipaddress.IPv4Address(str(peer.get("address"))))
         except ipaddress.AddressValueError:
             continue
-    network = ipaddress.IPv4Network(CLIENT_CIDR)
-    server = ipaddress.IPv4Address(SERVER_ADDRESS)
-    for host in network.hosts():
-        if host == server or host in used:
-            continue
-        return str(host)
+    hosts = network.hosts()
+    next(hosts)
+    for host in hosts:
+        if host not in used:
+            return str(host)
     raise ValueError("No free addresses left in the client VPN subnet")
+
+
+def reserved_networks(
+    *,
+    docker_text: str = "",
+    env: dict | None = None,
+    status: dict | None = None,
+) -> list[tuple[str, str]]:
+    """Networks a client subnet must not overlap, as (label, cidr).
+
+    ``docker_text`` is ``docker network inspect`` output, one
+    ``name subnet...`` line per network. ``status`` is what wg-access
+    last reported about the host's own interfaces.
+    """
+    env = env or {}
+    found: list[tuple[str, str]] = []
+
+    def add(label: str, value: str, *, strict: bool = True) -> None:
+        try:
+            net = ipaddress.ip_network(str(value).strip(), strict=strict)
+        except ValueError:
+            return
+        if net.version == 4:
+            found.append((label, str(net)))
+
+    for raw in (docker_text or "").splitlines():
+        parts = raw.split()
+        for subnet in parts[1:]:
+            add(parts[0], subnet)
+    add("kine_dns (KINE_DNS_SUBNET)", env.get("KINE_DNS_SUBNET") or "")
+    for item in str(env.get("WIREGUARD_ADDRESSES") or "").split(","):
+        add("the gluetun tunnel address", item, strict=False)
+    if isinstance(status, dict):
+        for entry in status.get("host_networks") or []:
+            if isinstance(entry, dict):
+                add(f"the host network on {entry.get('name') or 'an interface'}", str(entry.get("cidr") or ""))
+    if env.get("KINE_LAN_IP"):
+        add("the host's internal address (KINE_LAN_IP)", f"{env['KINE_LAN_IP']}/32")
+    add("the access container's tun link", TUN_ADDRESS, strict=False)
+    return found
+
+
+def validate_client_cidr(
+    value: str,
+    reserved: list[tuple[str, str]] | tuple = (),
+    *,
+    devices: int = 0,
+) -> str:
+    """A private IPv4 network for the server plus ``devices`` clients."""
+    text = (value or "").strip()
+    try:
+        net = ipaddress.IPv4Network(text)
+    except ipaddress.NetmaskValueError as exc:
+        raise ValueError("Client subnet must be an IPv4 network like 10.66.66.0/24") from exc
+    except ValueError as exc:
+        try:
+            loose = ipaddress.IPv4Network(text, strict=False)
+        except ValueError:
+            raise ValueError("Client subnet must be an IPv4 network like 10.66.66.0/24") from exc
+        raise ValueError(f"Client subnet must start on its network address: {loose}") from exc
+    if "/" not in text:
+        raise ValueError("Client subnet needs a prefix length, like 10.66.66.0/24")
+    if not CLIENT_PREFIX_MIN <= net.prefixlen <= CLIENT_PREFIX_MAX:
+        raise ValueError(
+            f"Client subnet must be between /{CLIENT_PREFIX_MIN} and /{CLIENT_PREFIX_MAX}"
+        )
+    private = [ipaddress.IPv4Network(p) for p in LAN_PREFIXES]
+    if not any(net.subnet_of(p) for p in private):
+        raise ValueError("Client subnet must be a private network inside 10.0.0.0/8, 172.16.0.0/12 or 192.168.0.0/16")
+    if net in private:
+        raise ValueError(f"Client subnet must be smaller than {net}, which is a whole private range")
+    needed = 1 + max(devices, 1)
+    if net.num_addresses - 2 < needed:
+        raise ValueError(
+            f"Client subnet {net} is too small for the server and {max(devices, 1)} device(s)"
+        )
+    for label, cidr in reserved:
+        try:
+            other = ipaddress.IPv4Network(cidr, strict=False)
+        except ValueError:
+            continue
+        if net.overlaps(other):
+            raise ValueError(f"Client subnet {net} overlaps {label} ({other})")
+    return str(net)
+
+
+def readdress(state: dict, cidr: str) -> dict:
+    """Move every device into ``cidr``. Keys stay; each config must be fetched again."""
+    updated = dict(state)
+    updated["client_cidr"] = cidr
+    network = ipaddress.IPv4Network(cidr)
+    moved: list[dict] = []
+    for peer in state.get("peers") or []:
+        entry = dict(peer)
+        entry["address"] = _next_address(moved, network)
+        entry["needs_config"] = True
+        moved.append(entry)
+    updated["peers"] = moved
+    return updated
 
 
 def add_peer(state: dict, name: str) -> dict:
@@ -220,7 +331,7 @@ def add_peer(state: dict, name: str) -> dict:
     peer = {
         "id": uuid.uuid4().hex,
         "name": clean,
-        "address": _next_address(list(state.get("peers") or [])),
+        "address": _next_address(list(state.get("peers") or []), client_network(state)),
         "private_key": private,
         "public_key": public,
         "preshared_key": generate_preshared(),
@@ -244,21 +355,42 @@ def find_peer(state: dict, peer_id: str) -> dict:
     raise ValueError("No device with that id")
 
 
+def config_fetched(state: dict, peer_id: str) -> bool:
+    """Clear the re-download notice. True when the state changed."""
+    peer = find_peer(state, peer_id)
+    if not peer.get("needs_config"):
+        return False
+    peer.pop("needs_config", None)
+    return True
+
+
 def apply_settings(
     state: dict,
     *,
     enabled: bool,
     host_port: object,
     endpoint_host: str | None = None,
+    client_cidr: str | None = None,
+    reserved: list[tuple[str, str]] | tuple = (),
 ) -> dict:
     """Return a new state. Enabling requires the endpoint hostname.
 
-    Addresses are not inputs. A hostname already stored is left as it
-    is when ``endpoint_host`` is omitted, including a placeholder the
-    operator has not replaced yet. The internal zone stays whatever was
-    stored; the form does not edit it.
+    Endpoint addresses are not inputs. A hostname already stored is left
+    as it is when ``endpoint_host`` is omitted, including a placeholder
+    the operator has not replaced yet. The internal zone stays whatever
+    was stored; the form does not edit it.
+
+    A new ``client_cidr`` is checked against ``reserved`` and moves
+    every device into it. The same subnet again is not a change.
     """
     updated = dict(state)
+    current = str(client_network(state))
+    if client_cidr is not None and client_cidr.strip() and client_cidr.strip() != current:
+        cidr = validate_client_cidr(
+            client_cidr, reserved, devices=len(state.get("peers") or []),
+        )
+        if cidr != current:
+            updated = readdress(updated, cidr)
     if endpoint_host is None:
         host = str(state.get("endpoint_host") or "")
     else:
@@ -279,10 +411,14 @@ def apply_settings(
 def failed_start_state(previous: dict, updated: dict) -> dict:
     """Container did not start. Keep the hostname and devices already stored.
 
-    Only the on/off flag returns to what it was.
+    Only the on/off flag returns to what it was. A failed recreate has
+    already removed wg-access, so it is off, and the next save starts it.
     """
     kept = dict(updated)
-    kept["enabled"] = bool(previous.get("enabled"))
+    if needs_compose(previous, updated) == "recreate":
+        kept["enabled"] = False
+    else:
+        kept["enabled"] = bool(previous.get("enabled"))
     return kept
 
 
@@ -291,11 +427,16 @@ def needs_compose(previous: dict, updated: dict) -> str | None:
 
     Peer edits are not a compose action: the access container reloads
     them. Turning the feature on or moving its host port is the only
-    reason to call compose, and then only to start wg-access. Never
-    build: Helm's socket proxy rejects the build API.
+    reason to start wg-access. A new client subnet while it is running
+    recreates wg-access, so no route, rule or address from the old
+    subnet is left in its network namespace. Never build: Helm's socket
+    proxy rejects the build API.
     """
     turning_on = updated.get("enabled") and not previous.get("enabled")
     port_moved = updated.get("enabled") and previous.get("host_port") != updated.get("host_port")
+    subnet_moved = client_network(previous) != client_network(updated)
+    if previous.get("enabled") and updated.get("enabled") and subnet_moved:
+        return "recreate"
     if turning_on or port_moved:
         return "up"
     if previous.get("enabled") and not updated.get("enabled"):
@@ -337,7 +478,7 @@ def client_config(state: dict, peer: dict) -> str:
         "[Interface]",
         f"PrivateKey = {peer['private_key']}",
         f"Address = {peer['address']}/32",
-        f"DNS = {SERVER_ADDRESS}",
+        f"DNS = {server_address(state)}",
         f"MTU = {CLIENT_MTU}",
         "",
         "[Peer]",
@@ -368,11 +509,14 @@ def summary(state: dict, status: dict | None) -> dict:
             "id": peer.get("id"),
             "name": peer.get("name"),
             "address": peer.get("address"),
+            "needs_config": bool(peer.get("needs_config")),
         })
     return {
         "enabled": bool(state.get("enabled")),
         "endpoint_host": state.get("endpoint_host") or "",
         "host_port": int(state.get("host_port") or INTERNAL_LISTEN_PORT),
+        "client_cidr": str(client_network(state)),
+        "server_address": server_address(state),
         "exit": exit_mode,
         "detail": detail,
         "peers": peers,
@@ -409,7 +553,7 @@ def socks_config(listen_ip: str) -> dict:
 
 
 def router_config(socks_ip: str) -> dict:
-    """Tun for the laptop subnet only. auto_route stays off so this
+    """Tun for the client subnet only. auto_route stays off so this
     process cannot take the container's, the host's, or gluetun's default route.
     """
     ipaddress.IPv4Address(socks_ip)
@@ -459,13 +603,16 @@ def is_our_helper(pid: int, cmdline: bytes) -> bool:
     return any(marker in text for marker in HELPER_MARKERS)
 
 
-def desired_routes(*, vpn_exit: bool, gateway: str, iface: str) -> dict:
-    """Routes inside the access container, looked up only for the laptop subnet."""
+def desired_routes(
+    *, vpn_exit: bool, gateway: str, iface: str, cidr: str = CLIENT_CIDR,
+) -> dict:
+    """Routes inside the access container, looked up only for the client subnet."""
     ipaddress.IPv4Address(gateway)
+    cidr = str(ipaddress.IPv4Network(cidr))
     if not iface or iface in {TUN_INTERFACE, "wg0", "lo"}:
         raise ValueError("gateway interface must be the container's normal NIC")
     routes = [
-        {"dest": CLIENT_CIDR, "dev": "wg0"},
+        {"dest": cidr, "dev": "wg0"},
     ]
     for prefix in LAN_PREFIXES:
         routes.append({"dest": prefix, "via": gateway, "dev": iface})
@@ -474,11 +621,11 @@ def desired_routes(*, vpn_exit: bool, gateway: str, iface: str) -> dict:
     else:
         default = {"dest": "default", "via": gateway, "dev": iface}
     return {
-        "rule_from": CLIENT_CIDR,
+        "rule_from": cidr,
         "table": 100,
         "routes": routes,
         "default": default,
-        "nat": {"source": CLIENT_CIDR, "iface": iface},
+        "nat": {"source": cidr, "iface": iface},
     }
 
 
@@ -540,7 +687,7 @@ _SKIP_IFACE = re.compile(
 
 
 def internal_zones(lan_domain: str, resolv_text: str) -> list[str]:
-    """Zones the laptop asks the internal DNS server about.
+    """Zones a client device asks the internal DNS server about.
 
     The appliance domain is one. Search domains from the host resolver
     are the others. This is not a list of names to answer ourselves.
@@ -577,7 +724,7 @@ def name_in_internal_zone(name: str, zones: list[str] | tuple[str, ...]) -> bool
 
 
 def dns_exit(name: str, zones: list[str] | tuple[str, ...], *, vpn_exit: bool) -> str:
-    """Where a laptop lookup is sent.
+    """Where a client device lookup is sent.
 
     ``internal`` is the LAN resolver, reached toward the internal network.
     It never follows the provider exit. ``vpn`` is that exit, and only for
@@ -606,7 +753,7 @@ def nameservers_from_resolv(text: str) -> list[str]:
 def internal_address_from_addrs(addr_text: str) -> str | None:
     """This machine's internal address, from ``ip -4 -o addr`` text.
 
-    Docker bridges and the laptop tunnel are skipped. A route or a DNS
+    Docker bridges and the client tunnel are skipped. A route or a DNS
     query uses this only when the host resolver is on the machine itself.
     """
     private: list[str] = []
@@ -634,6 +781,27 @@ def internal_address_from_addrs(addr_text: str) -> str | None:
     if private:
         return private[0]
     return other[0] if other else None
+
+
+def host_networks_from_addrs(addr_text: str) -> list[dict]:
+    """Every IPv4 network on the host's interfaces, from ``ip -4 -o addr``.
+
+    Unlike ``internal_address_from_addrs`` this keeps Docker bridges:
+    a client subnet that overlaps any of them would hide it from devices.
+    """
+    found: list[dict] = []
+    for raw in (addr_text or "").splitlines():
+        match = re.search(r"^\d+:\s+(\S+)\s+inet\s+(\d+\.\d+\.\d+\.\d+/\d+)", raw.strip())
+        if not match or match.group(1) == "lo":
+            continue
+        try:
+            net = ipaddress.IPv4Interface(match.group(2)).network
+        except ValueError:
+            continue
+        entry = {"name": match.group(1), "cidr": str(net)}
+        if entry not in found:
+            found.append(entry)
+    return found
 
 
 def internal_resolver(resolv_text: str, addr_text: str) -> str | None:
