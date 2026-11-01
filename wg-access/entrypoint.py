@@ -91,9 +91,10 @@ def gluetun_pid() -> int | None:
             continue
         try:
             environ = pathlib.Path(f"/proc/{pid}/environ").read_bytes()
+            cmdline = pathlib.Path(f"/proc/{pid}/cmdline").read_bytes()
         except OSError:
             continue
-        if client_vpn.hostname_is_gluetun(environ):
+        if client_vpn.process_is_gluetun(environ, cmdline):
             found.append(pid)
     return min(found) if found else None
 
@@ -381,7 +382,7 @@ def tick(previous_conf: str) -> str:
     elif vpn_exit:
         write_status("vpn", "Laptop internet is leaving through the VPN.")
     else:
-        write_status("wan", "Laptop internet is leaving through the home connection.")
+        write_status("wan", "Laptop internet is leaving through the internal network connection.")
     return conf
 
 

@@ -507,6 +507,12 @@ def test_client_vpn_card_does_not_restart_the_tunnel():
     assert 'id="client-vpn"' in FRONTEND
     assert "Laptop VPN" in FRONTEND
     card = FRONTEND.split("const clientVpnCard", 1)[1].split("render.vpn = async", 1)[0]
+    assert "Connect a laptop to Kine with WireGuard. Use one config." in card
+    assert "Home config" not in card
+    assert "Away config" not in card
+    assert not re.search(r"\bhome\b", card, re.I)
+    assert not re.search(r"\bhouse\b", card, re.I)
+    assert card.count(">Config</button>") == 1
     assert "/vpn/restart" not in card
     assert "data-vpn-restart" not in card
     handlers = FRONTEND.split("const saveBtn = $('#client-vpn-save')", 1)[1].split("document.querySelectorAll('[data-vpn-leak]')", 1)[0]

@@ -29,25 +29,68 @@ def test_generated_keypair_round_trips():
     assert len(base64.b64decode(private)) == 32
 
 
-def test_client_config_is_a_full_tunnel_with_two_endpoints():
-    state = client_vpn.fresh_state("kine.local", ["emby"])
-    state["lan_endpoint"] = "192.168.1.20"
-    state["wan_endpoint"] = "home.example.com"
+def test_client_config_is_one_full_tunnel_to_a_hostname():
+    state = client_vpn.fresh_state("couttsnet.com", ["emby"])
+    state["lan_endpoint"] = "10.100.100.34"
+    state["wan_endpoint"] = "203.0.113.10"
     state["host_port"] = 51820
-    peer = client_vpn.add_peer(state, "Laptop")
-    home = client_vpn.client_config(state, peer, "lan")
-    away = client_vpn.client_config(state, peer, "wan")
-    assert "Endpoint = 192.168.1.20:51820" in home
-    assert "Endpoint = home.example.com:51820" in away
-    assert "AllowedIPs = 0.0.0.0/0" in home
-    assert f"DNS = {client_vpn.SERVER_ADDRESS}" in home
-    assert state["server_private"] not in home
-    assert peer["private_key"] in home
+    peer = client_vpn.add_peer(state, "steven macbook")
+    assert state["endpoint_host"] == ""
+    try:
+        client_vpn.client_config(state, peer)
+    except ValueError as exc:
+        assert "hostname" in str(exc).lower()
+    else:
+        raise AssertionError("a missing hostname must not invent an address")
+    try:
+        client_vpn.validate_endpoint_host("10.100.100.34")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("an IP is not an endpoint hostname")
+    state["endpoint_host"] = "vpn.example.net"
+    text = client_vpn.client_config(state, peer)
+    assert "Endpoint = vpn.example.net:51820" in text
+    assert "10.100.100.34" not in text
+    assert "203.0.113.10" not in text
+    assert "couttsnet.com" not in text.split("Endpoint = ", 1)[1]
+    assert "AllowedIPs = 0.0.0.0/0" in text
+    assert f"DNS = {client_vpn.SERVER_ADDRESS}" in text
+    assert state["server_private"] not in text
+    assert peer["private_key"] in text
+    assert client_vpn.config_filename(peer) == "kine-steven-macbook.conf"
     other = client_vpn.add_peer(state, "Phone")
     assert other["address"] != peer["address"]
-    assert other["private_key"] != peer["private_key"]
-    again = client_vpn.client_config(state, peer, "lan")
+    again = client_vpn.client_config(state, peer)
     assert peer["private_key"] in again
+
+
+def test_search_domain_is_not_copied_into_the_endpoint_hostname():
+    state = client_vpn.fresh_state("couttsnet.com", [])
+    state["endpoint_host"] = "wg.example.net"
+    kept = client_vpn.apply_settings(
+        state,
+        enabled=True,
+        lan_endpoint="10.100.100.34",
+        wan_endpoint="",
+        host_port=51820,
+        lan_domain="couttsnet.com",
+        subdomains=[],
+    )
+    assert kept["endpoint_host"] == "wg.example.net"
+    assert kept["lan_domain"] == "couttsnet.com"
+    named = client_vpn.apply_settings(
+        state,
+        enabled=True,
+        lan_endpoint="10.100.100.34",
+        wan_endpoint="",
+        host_port=51820,
+        lan_domain="couttsnet.com",
+        subdomains=[],
+        endpoint_host="vpn.example.net",
+    )
+    assert named["endpoint_host"] == "vpn.example.net"
+    assert named["lan_endpoint"] == "10.100.100.34"
 
 
 def test_adding_a_peer_does_not_call_compose():
@@ -66,7 +109,7 @@ def test_adding_a_peer_does_not_call_compose():
     assert client_vpn.needs_compose(before, state) is None
 
 
-def test_enable_builds_only_the_access_container():
+def test_enable_starts_only_the_access_container():
     state = client_vpn.fresh_state("kine.local", [])
     updated = client_vpn.apply_settings(
         state,
@@ -77,12 +120,53 @@ def test_enable_builds_only_the_access_container():
         lan_domain="kine.local",
         subdomains=[],
     )
-    assert client_vpn.needs_compose(state, updated) == "build"
+    assert client_vpn.needs_compose(state, updated) == "up"
     for cmd in client_vpn.COMPOSE_ACTIONS:
+        assert "--build" not in cmd
+        assert "build" not in cmd
         assert "gluetun" not in cmd
         assert "--force-recreate" not in cmd
         assert "restart" not in cmd
         assert cmd[-1] == "wg-access"
+
+
+def test_port_change_starts_only_the_access_container():
+    state = client_vpn.fresh_state("kine.local", [])
+    state["enabled"] = True
+    state["lan_endpoint"] = "192.168.1.9"
+    state["host_port"] = 51820
+    updated = client_vpn.apply_settings(
+        state,
+        enabled=True,
+        lan_endpoint="192.168.1.9",
+        wan_endpoint="",
+        host_port=51821,
+        lan_domain="kine.local",
+        subdomains=[],
+    )
+    assert client_vpn.needs_compose(state, updated) == "up"
+
+
+def test_failed_start_keeps_lan_and_devices():
+    state = client_vpn.fresh_state("couttsnet.com", ["emby"])
+    client_vpn.add_peer(state, "steven macbook")
+    updated = client_vpn.apply_settings(
+        state,
+        enabled=True,
+        lan_endpoint="10.100.100.34",
+        wan_endpoint="",
+        host_port=51820,
+        lan_domain="couttsnet.com",
+        subdomains=["emby"],
+    )
+    kept = client_vpn.failed_start_state(state, updated)
+    assert kept["enabled"] is False
+    assert kept["lan_endpoint"] == "10.100.100.34"
+    assert kept["wan_endpoint"] == ""
+    assert kept["lan_domain"] == "couttsnet.com"
+    assert kept["peers"][0]["name"] == "steven macbook"
+    assert kept["peers"][0]["address"] == state["peers"][0]["address"]
+    assert kept["server_private"] == state["server_private"]
 
 
 def test_disable_stops_only_the_access_container():
@@ -123,6 +207,17 @@ def test_router_does_not_take_the_default_route():
     socks = client_vpn.socks_config("172.18.0.8")
     assert socks["inbounds"][0]["listen"] == "172.18.0.8"
     assert socks["inbounds"][0]["listen"] != "0.0.0.0"
+
+
+def test_gluetun_process_matches_entrypoint_or_hostname():
+    assert client_vpn.process_is_gluetun(
+        b"HOSTNAME=1bb4cabdc64f\0PATH=/\0", b"/gluetun-entrypoint\0"
+    )
+    assert client_vpn.process_is_gluetun(
+        b"HOSTNAME=kine-gluetun\0", b"/bin/sh\0"
+    )
+    assert client_vpn.process_is_gluetun(b"HOSTNAME=kine-helm\0", b"/usr/bin/python\0") is False
+    assert client_vpn.process_is_gluetun(b"", b"/usr/bin/gluetun-entrypoint-helper\0") is False
 
 
 def test_relay_refuses_pid_1_and_only_matches_our_helpers():
@@ -178,6 +273,9 @@ def test_compose_fragment_does_not_attach_to_gluetun():
     data = yaml.safe_load((ROOT / "compose" / "core.wg-access.yml").read_text())
     svc = data["services"]["wg-access"]
     assert svc["profiles"] == ["wg-access"]
+    assert "build" not in svc
+    assert svc["image"] == "kine/wg-access:local"
+    assert svc["pull_policy"] == "never"
     assert "network_mode" not in svc
     assert "depends_on" not in svc
     assert "51820/udp" in " ".join(svc["ports"])

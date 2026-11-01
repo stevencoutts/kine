@@ -1,12 +1,16 @@
 # Laptop WireGuard. It does not join gluetun and it does not depend on it.
 # Turning this on must not recreate the tunnel the rest of Kine is using.
 # The profile stays out of COMPOSE_PROFILES; Helm starts this service by name.
+#
+# No build section. Helm reaches Docker through the socket proxy, which
+# rejects the build API, so `compose up` must not build this image.
+# Build it on the host (the real docker socket) after wg-access/ or
+# client_vpn.py changes:
+#   docker build -f wg-access/Dockerfile -t kine/wg-access:local .
 services:
   wg-access:
-    build:
-      context: ..
-      dockerfile: wg-access/Dockerfile
     image: kine/wg-access:local
+    pull_policy: never
     container_name: kine-wg-access
     profiles: ["wg-access"]
     restart: unless-stopped

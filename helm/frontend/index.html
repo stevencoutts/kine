@@ -2646,7 +2646,7 @@ const promptVpnProfile = ({title, name='', conf='', submitLabel='Save'}={}) => n
 const clientVpnCard = (c) => {
   const exitLine = {
     vpn: 'Laptop internet is leaving through the VPN.',
-    wan: 'Laptop internet is leaving through the home connection.',
+    wan: 'Laptop internet is leaving through the internal network connection.',
     off: 'Client VPN is off.',
     starting: 'Starting the client VPN.',
   }[c.exit] || 'Waiting for status.';
@@ -2654,8 +2654,7 @@ const clientVpnCard = (c) => {
     <div class="row" style="gap:.45rem;flex-wrap:wrap;align-items:center;margin-top:.45rem">
       <b>${escHtml(p.name || 'Device')}</b>
       <span style="color:var(--muted);font-size:.8rem">${escHtml(p.address || '')}</span>
-      <button type="button" class="act" data-client-vpn-conf="${escAttr(p.id)}" data-where="lan" data-name="${escAttr(p.name || 'device')}">Home config</button>
-      <button type="button" class="act" data-client-vpn-conf="${escAttr(p.id)}" data-where="wan" data-name="${escAttr(p.name || 'device')}">Away config</button>
+      <button type="button" class="act" data-client-vpn-conf="${escAttr(p.id)}" data-name="${escAttr(p.name || 'device')}">Config</button>
       <button type="button" class="act" data-client-vpn-remove="${escAttr(p.id)}">Remove</button>
     </div>`).join('');
   return `
@@ -2664,7 +2663,7 @@ const clientVpnCard = (c) => {
         <h2>Laptop VPN</h2>
       </div>
       <article class="vpn-card">
-        <p class="vpn-apps-hint">Connect a laptop to Kine with WireGuard. At home, use the home config. Away from home, forward the UDP port on the router to this machine and use the away config. Internet from the laptop leaves through Kine's VPN when that VPN is up, and through the home connection when it is not. The house stays reachable either way. Connecting the laptop does not restart the VPN the rest of Kine is using.</p>
+        <p class="vpn-apps-hint">Connect a laptop to Kine with WireGuard. Use one config. DNS should resolve its endpoint to this machine on the internal network, and to the public address from outside. Forward the UDP port on the router to this machine. Internet from the laptop leaves through Kine's VPN when that VPN is up, and through the internal network connection when it is not. The internal network stays reachable either way. Connecting the laptop does not restart the VPN the rest of Kine is using.</p>
         <p id="client-vpn-status">${escHtml(c.detail || exitLine)}</p>
         ${c.error ? `<p class="vpn-card-err">${escHtml(c.error)}</p>` : ''}
         <label for="client-vpn-enabled" style="display:flex;gap:.5rem;align-items:center;margin:.7rem 0">
@@ -2672,20 +2671,23 @@ const clientVpnCard = (c) => {
           Use the client VPN
         </label>
         <div class="row" style="gap:.6rem;flex-wrap:wrap">
-          <label style="flex:1;min-width:12rem">LAN address
-            <input id="client-vpn-lan" value="${escAttr(c.lan_endpoint || '')}" placeholder="192.168.1.10" autocomplete="off">
+          <label style="flex:1;min-width:12rem">Internal address
+            <input id="client-vpn-lan" value="${escAttr(c.lan_endpoint || '')}" placeholder="10.0.0.10" autocomplete="off">
           </label>
           <label style="flex:1;min-width:12rem">Public address
-            <input id="client-vpn-wan" value="${escAttr(c.wan_endpoint || '')}" placeholder="home.example.com" autocomplete="off">
+            <input id="client-vpn-wan" value="${escAttr(c.wan_endpoint || '')}" placeholder="203.0.113.10" autocomplete="off">
+          </label>
+          <label style="flex:1;min-width:12rem">Endpoint hostname
+            <input id="client-vpn-endpoint" value="${escAttr(c.endpoint_host || '')}" placeholder="vpn.example.net" autocomplete="off">
           </label>
           <label style="width:8rem">UDP port
             <input id="client-vpn-port" value="${escAttr(String(c.host_port || 51820))}" inputmode="numeric">
           </label>
         </div>
-        <label for="client-vpn-domain">Names that resolve to the LAN address
+        <label for="client-vpn-domain">Names that resolve to the internal address
           <input id="client-vpn-domain" value="${escAttr(c.lan_domain || 'kine.local')}" autocomplete="off">
         </label>
-        <p class="vpn-apps-hint">Other devices in the house are reached by their IP address. Kine's own app names, such as emby.${escHtml(c.lan_domain || 'kine.local')}, resolve to the LAN address above.</p>
+        <p class="vpn-apps-hint">Other devices on the internal network are reached by their IP address. Kine's own app names, such as emby.${escHtml(c.lan_domain || 'kine.local')}, resolve to the internal address above.</p>
         <div class="vpn-card-actions">
           <button type="button" class="act primary" id="client-vpn-save">Save</button>
         </div>
@@ -2702,7 +2704,7 @@ const clientVpnCard = (c) => {
 render.vpn = async () => {
   const v = await api('/vpn');
   let clients = {
-    enabled: false, peers: [], lan_endpoint: '', wan_endpoint: '',
+    enabled: false, peers: [], lan_endpoint: '', wan_endpoint: '', endpoint_host: '',
     host_port: 51820, lan_domain: 'kine.local', exit: 'off', detail: '',
   };
   try {
@@ -2868,8 +2870,8 @@ render.vpn = async () => {
     </div>`);
   const out = $('#out');
   const setOut = (t) => { if (out) out.textContent = t || ''; };
-  const downloadClientConf = async (id, where, name) => {
-    const r = await fetch(`/api/vpn/clients/peers/${encodeURIComponent(id)}/conf?where=${encodeURIComponent(where)}`, {credentials:'same-origin'});
+  const downloadClientConf = async (id, name) => {
+    const r = await fetch(`/api/vpn/clients/peers/${encodeURIComponent(id)}/conf`, {credentials:'same-origin'});
     if (r.status === 401) { render.login(); return; }
     if (!r.ok) {
       const data = await r.json().catch(() => ({}));
@@ -2879,7 +2881,7 @@ render.vpn = async () => {
     const a = document.createElement('a');
     const url = URL.createObjectURL(blob);
     a.href = url;
-    a.download = `kine-${(name || 'device').replace(/[^A-Za-z0-9._-]+/g, '-')}-${where === 'lan' ? 'home' : 'away'}.conf`;
+    a.download = `kine-${(name || 'device').replace(/[^A-Za-z0-9._-]+/g, '-')}.conf`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -2893,6 +2895,7 @@ render.vpn = async () => {
           enabled: $('#client-vpn-enabled').checked,
           lan_endpoint: $('#client-vpn-lan').value.trim(),
           wan_endpoint: $('#client-vpn-wan').value.trim(),
+          endpoint_host: $('#client-vpn-endpoint').value.trim(),
           host_port: Number($('#client-vpn-port').value),
           lan_domain: $('#client-vpn-domain').value.trim(),
         }),
@@ -2917,7 +2920,7 @@ render.vpn = async () => {
     btn.onclick = async () => {
       setOut('preparing config...');
       try {
-        await downloadClientConf(btn.dataset.clientVpnConf, btn.dataset.where, btn.dataset.name);
+        await downloadClientConf(btn.dataset.clientVpnConf, btn.dataset.name);
         setOut('');
       } catch (e) { setOut(e.message || String(e)); }
     };

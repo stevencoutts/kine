@@ -29,12 +29,12 @@ GLUETUN_HOSTNAME = "kine-gluetun"
 HELPER_MARKERS = (b"/config/socks.json", b"/config/router.json")
 SINGBOX_PATH = b"/usr/local/bin/sing-box"
 
-# Compose only ever names this service. No --force-recreate, no gluetun.
+# Compose only ever names this service. No build, no --force-recreate,
+# no gluetun. The image is built on the host; the socket proxy cannot build.
 COMPOSE_UP = ("up", "-d", "--no-deps", "wg-access")
-COMPOSE_UP_BUILD = ("up", "-d", "--no-deps", "--build", "wg-access")
 COMPOSE_STOP = ("stop", "wg-access")
 COMPOSE_RM = ("rm", "-f", "wg-access")
-COMPOSE_ACTIONS = (COMPOSE_UP, COMPOSE_UP_BUILD, COMPOSE_STOP, COMPOSE_RM)
+COMPOSE_ACTIONS = (COMPOSE_UP, COMPOSE_STOP, COMPOSE_RM)
 
 _RESERVED_PORTS = {53, 80, 443, 8080, 8443, 8600}
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$")
@@ -113,7 +113,7 @@ def validate_lan_ip(value: str) -> str:
     try:
         return str(ipaddress.IPv4Address(text))
     except ipaddress.AddressValueError as exc:
-        raise ValueError("LAN address must be an IPv4 address of this machine") from exc
+        raise ValueError("Internal address must be an IPv4 address of this machine") from exc
 
 
 def validate_wan_host(value: str) -> str:
@@ -128,6 +128,28 @@ def validate_wan_host(value: str) -> str:
         pass
     if not _HOST.match(text):
         raise ValueError("Public address is not a hostname")
+    return text
+
+
+def validate_endpoint_host(value: str) -> str:
+    """Hostname that split DNS points at the internal or public address.
+
+    The WireGuard config carries this name, never a raw address. Kine
+    does not choose it from the app search domain.
+    """
+    text = (value or "").strip().strip(".").lower()
+    if not text:
+        return ""
+    if ":" in text or "/" in text or " " in text:
+        raise ValueError("Endpoint hostname is a hostname, without a port")
+    try:
+        ipaddress.ip_address(text)
+    except ValueError:
+        pass
+    else:
+        raise ValueError("Endpoint hostname must be a hostname, not an IP address")
+    if not _HOST.match(text) or "." not in text:
+        raise ValueError("Endpoint hostname must be a hostname")
     return text
 
 
@@ -167,6 +189,7 @@ def fresh_state(lan_domain: str, subdomains: list[str]) -> dict:
         "enabled": False,
         "lan_endpoint": "",
         "wan_endpoint": "",
+        "endpoint_host": "",
         "host_port": INTERNAL_LISTEN_PORT,
         "lan_domain": domain,
         "names": service_names(domain, subdomains),
@@ -261,13 +284,18 @@ def apply_settings(
     host_port: object,
     lan_domain: str,
     subdomains: list[str],
+    endpoint_host: str | None = None,
 ) -> dict:
-    """Return a new state. Enabling requires the LAN address."""
+    """Return a new state. Enabling requires the internal address.
+
+    ``endpoint_host is None`` leaves a hostname already stored alone.
+    The app search domain is not copied into it.
+    """
     lan = ""
     if (lan_endpoint or "").strip():
         lan = validate_lan_ip(lan_endpoint)
     if enabled and not lan:
-        raise ValueError("LAN address is required before the client VPN can be turned on")
+        raise ValueError("Internal address is required before the client VPN can be turned on")
     domain = (lan_domain or state.get("lan_domain") or "kine.local").strip().strip(".").lower()
     if not domain or "." not in domain or " " in domain:
         raise ValueError("Name suffix must look like kine.local")
@@ -275,10 +303,25 @@ def apply_settings(
     updated["enabled"] = bool(enabled)
     updated["lan_endpoint"] = lan
     updated["wan_endpoint"] = validate_wan_host(wan_endpoint)
+    if endpoint_host is None:
+        updated["endpoint_host"] = str(state.get("endpoint_host") or "")
+    else:
+        updated["endpoint_host"] = validate_endpoint_host(endpoint_host)
     updated["host_port"] = validate_port(host_port)
     updated["lan_domain"] = domain
     updated["names"] = service_names(domain, subdomains)
     return updated
+
+
+def failed_start_state(previous: dict, updated: dict) -> dict:
+    """Container did not start. Keep the addresses and devices they typed.
+
+    Only the on/off flag returns to what it was, so a failed start cannot
+    wipe the LAN address or write a placeholder over the public address.
+    """
+    kept = dict(updated)
+    kept["enabled"] = bool(previous.get("enabled"))
+    return kept
 
 
 def needs_compose(previous: dict, updated: dict) -> str | None:
@@ -286,11 +329,12 @@ def needs_compose(previous: dict, updated: dict) -> str | None:
 
     Peer edits are not a compose action: the access container reloads
     them. Turning the feature on or moving its host port is the only
-    reason to call compose, and then only for wg-access.
+    reason to call compose, and then only to start wg-access. Never
+    build: Helm's socket proxy rejects the build API.
     """
-    if updated.get("enabled") and not previous.get("enabled"):
-        return "build"
-    if updated.get("enabled") and previous.get("host_port") != updated.get("host_port"):
+    turning_on = updated.get("enabled") and not previous.get("enabled")
+    port_moved = updated.get("enabled") and previous.get("host_port") != updated.get("host_port")
+    if turning_on or port_moved:
         return "up"
     if previous.get("enabled") and not updated.get("enabled"):
         return "stop"
@@ -315,17 +359,17 @@ def server_config(state: dict) -> str:
     return "\n".join(lines)
 
 
-def client_config(state: dict, peer: dict, where: str) -> str:
-    if where == "lan":
-        host = state.get("lan_endpoint") or ""
-        if not host:
-            raise ValueError("Set the LAN address first")
-    elif where == "wan":
-        host = state.get("wan_endpoint") or ""
-        if not host:
-            raise ValueError("Set the public address first")
+def client_config(state: dict, peer: dict) -> str:
+    """One config. Endpoint is the hostname the operator publishes in DNS."""
+    host = str(state.get("endpoint_host") or "").strip()
+    if not host:
+        raise ValueError("Set the endpoint hostname first")
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
     else:
-        raise ValueError("Config must be home or away")
+        raise ValueError("Endpoint hostname must be a hostname, not an IP address")
     port = int(state.get("host_port") or INTERNAL_LISTEN_PORT)
     return "\n".join([
         "[Interface]",
@@ -344,10 +388,9 @@ def client_config(state: dict, peer: dict, where: str) -> str:
     ])
 
 
-def config_filename(peer: dict, where: str) -> str:
+def config_filename(peer: dict) -> str:
     slug = re.sub(r"[^A-Za-z0-9._-]+", "-", str(peer.get("name") or "device")).strip("-") or "device"
-    side = "home" if where == "lan" else "away"
-    return f"kine-{slug}-{side}.conf"
+    return f"kine-{slug}.conf"
 
 
 def summary(state: dict, status: dict | None) -> dict:
@@ -368,6 +411,7 @@ def summary(state: dict, status: dict | None) -> dict:
         "enabled": bool(state.get("enabled")),
         "lan_endpoint": state.get("lan_endpoint") or "",
         "wan_endpoint": state.get("wan_endpoint") or "",
+        "endpoint_host": state.get("endpoint_host") or "",
         "host_port": int(state.get("host_port") or INTERNAL_LISTEN_PORT),
         "lan_domain": state.get("lan_domain") or "kine.local",
         "exit": exit_mode,
@@ -481,6 +525,20 @@ def desired_routes(*, vpn_exit: bool, gateway: str, iface: str) -> dict:
 
 def hostname_is_gluetun(environ: bytes) -> bool:
     return b"HOSTNAME=" + GLUETUN_HOSTNAME.encode() in environ.split(b"\0")
+
+
+def process_is_gluetun(environ: bytes, cmdline: bytes) -> bool:
+    """True for the running kine-gluetun process.
+
+    Compose does not set a hostname, so Docker names the container after
+    its id and HOSTNAME=kine-gluetun is absent. The entrypoint binary is
+    the mark that still identifies that process, which is the one whose
+    network namespace the relay has to enter.
+    """
+    if hostname_is_gluetun(environ):
+        return True
+    text = cmdline.replace(b"\0", b" ").strip()
+    return text == b"/gluetun-entrypoint" or text.startswith(b"/gluetun-entrypoint ")
 
 
 def parse_qname(packet: bytes) -> tuple[str, int, int] | None:

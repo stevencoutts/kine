@@ -1,6 +1,7 @@
 """Laptop VPN HTTP API.
 
-Compose is only asked to build, start, stop, or remove wg-access.
+Compose is only asked to start, stop, or remove wg-access. It does not
+build an image: the socket proxy rejects the build API.
 """
 from __future__ import annotations
 
@@ -32,6 +33,7 @@ def install(app, require_user) -> None:
                 enabled=bool(body.get("enabled")),
                 lan_endpoint=str(body.get("lan_endpoint") or ""),
                 wan_endpoint=str(body.get("wan_endpoint") or ""),
+                endpoint_host=str(body.get("endpoint_host") or ""),
                 host_port=body.get("host_port") or client_vpn.INTERNAL_LISTEN_PORT,
                 lan_domain=str(body.get("lan_domain") or current.get("lan_domain") or ""),
                 subdomains=_subdomains(),
@@ -43,7 +45,7 @@ def install(app, require_user) -> None:
         try:
             log = await _apply(action, updated["host_port"])
         except HTTPException:
-            _save(current)
+            _save(client_vpn.failed_start_state(current, updated))
             raise
         return {**client_vpn.summary(updated, _read_status()), "log": log}
 
@@ -70,14 +72,14 @@ def install(app, require_user) -> None:
         return client_vpn.summary(state, _read_status())
 
     @app.get("/api/vpn/clients/peers/{peer_id}/conf")
-    async def client_vpn_conf(peer_id: str, where: str = "lan", user: str = Depends(require_user)):
+    async def client_vpn_conf(peer_id: str, user: str = Depends(require_user)):
         state = _load(create=False)
         try:
             peer = client_vpn.find_peer(state, peer_id)
-            text = client_vpn.client_config(state, peer, where)
+            text = client_vpn.client_config(state, peer)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        filename = client_vpn.config_filename(peer, where)
+        filename = client_vpn.config_filename(peer)
         return PlainTextResponse(
             text,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
@@ -133,10 +135,9 @@ def _read_status() -> dict | None:
 async def _apply(action: str | None, host_port: int) -> str:
     if action is None:
         return ""
-    if action in {"build", "up"}:
+    if action == "up":
         config.write({"WG_ACCESS_PORT": str(host_port)})
-        command = client_vpn.COMPOSE_UP_BUILD if action == "build" else client_vpn.COMPOSE_UP
-        code, out = await compose.run(*command, timeout=900)
+        code, out = await compose.run(*client_vpn.COMPOSE_UP, timeout=900)
         if code != 0:
             raise HTTPException(502, (out or "could not start the client VPN")[-800:])
         return out
