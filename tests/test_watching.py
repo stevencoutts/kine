@@ -1,10 +1,13 @@
 """Parse Plex and Emby now-playing payloads without hitting a server."""
+import asyncio
 import pathlib
 import sys
+from datetime import datetime, timezone
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "helm" / "backend"))
 
+from app import watching  # noqa: E402
 from app.watching import (  # noqa: E402
     art_proxy_path,
     attach_live_providers,
@@ -13,6 +16,7 @@ from app.watching import (  # noqa: E402
     format_duration_ticks,
     index_live_providers,
     media_base,
+    parse_emby_recordings,
     parse_emby_sessions,
     parse_plex_sessions,
     progress_pct,
@@ -792,3 +796,144 @@ def test_live_audio_codec_comes_from_dispatcharr_over_the_media_server():
     attach_live_providers(sessions, _dispatcharr_rows())
     assert sessions[0]["audio_codec"] == "AAC"
     assert sessions[0]["formats"] == ["1080p", "H264", "AAC", "5 Mbps"]
+
+
+EMBY_TIMERS = {"Items": [
+    {
+        "Status": "InProgress",
+        "Id": "4cf28a286ee74e67ae62c74a65dbb840",
+        "ChannelId": "3689282",
+        "ChannelName": "SKY SCI-FI",
+        "ChannelNumber": "145",
+        "ChannelPrimaryImageTag": "chan-tag",
+        "Name": "Stargate Atlantis",
+        "StartDate": "2026-11-01T14:00:00.0000000Z",
+        "EndDate": "2026-11-01T15:00:00.0000000Z",
+        "PostPaddingSeconds": 600,
+        "ProgramInfo": {
+            "Name": "Stargate Atlantis",
+            "EpisodeTitle": "Rising",
+            "ParentIndexNumber": 1,
+            "IndexNumber": 1,
+            "Width": 1920,
+            "Height": 1080,
+        },
+    },
+    {
+        "Status": "New",
+        "Id": "later",
+        "ChannelName": "BBC 1",
+        "Name": "News",
+        "StartDate": "2026-11-01T18:00:00.0000000Z",
+        "EndDate": "2026-11-01T18:30:00.0000000Z",
+    },
+]}
+_NOW = datetime(2026, 11, 1, 14, 6, 7, tzinfo=timezone.utc)
+
+
+def test_emby_in_progress_timer_becomes_a_recording_card():
+    rows = parse_emby_recordings(EMBY_TIMERS, now=_NOW)
+    assert len(rows) == 1
+    rec = rows[0]
+    assert rec["server"] == "emby"
+    assert rec["state"] == "recording"
+    assert rec["kind"] == "channel"
+    assert rec["title"] == "SKY SCI-FI — Stargate Atlantis"
+    assert rec["channel"] == "SKY SCI-FI"
+    assert rec["channel_number"] == "145"
+    assert rec["episode_title"] == "Rising"
+    assert rec["user"] is None
+    assert rec["position_label"] == "6:07"
+    assert rec["duration_label"] == "1:00:00"
+    assert rec["progress"] == 10
+    assert rec["ends_at"] == "2026-11-01T15:10:00Z"
+    assert rec["formats"] == ["1080p"]
+    assert "item_id=3689282" in rec["art_url"]
+    assert "tag=chan-tag" in rec["art_url"]
+    assert parse_emby_recordings({}) == []
+    assert parse_emby_recordings({"Items": [{"Status": "Completed", "Name": "x"}]}) == []
+
+
+def test_recording_takes_provider_and_chips_from_dispatcharr_alongside_a_playback():
+    sky = "ae639239-5cc6-4791-bb20-9a9260edd7c8"
+    rows = index_live_providers(
+        {"live": {"channels": [{
+            "channel_id": sky, "channel_name": "SKY SCI-FI", "stream_id": 5,
+            "resolution": "1920x1080", "video_codec": "h264", "audio_codec": "aac",
+            "avg_bitrate_kbps": 6986,
+        }]}},
+        [{"id": 5, "m3u_account": 5}],
+        [{"id": 5, "name": "Strong8K"}],
+        [{"uuid": sky, "channel_number": 145, "logo_id": 277}],
+        [{"channel_uuid": sky, "title": "Stargate Atlantis", "sub_title": "Rising"}],
+    )
+    recordings = parse_emby_recordings(EMBY_TIMERS, now=_NOW)
+    sessions = parse_emby_sessions([{
+        "Id": "sess-sky", "UserName": "stevec", "DeviceName": "Living Room Apple TV",
+        "NowPlayingItem": {"Id": "3689282", "Name": "SKY SCI-FI", "Type": "TvChannel", "ChannelNumber": "145"},
+        "PlayState": {"IsPaused": False},
+    }])
+    attach_live_providers(sessions, rows)
+    attach_live_providers(recordings, rows)
+    rec = recordings[0]
+    assert rec["provider"] == "Strong8K"
+    assert rec["formats"] == ["1080p", "H264", "AAC", "7 Mbps"]
+    assert rec["bitrate_bps"] == 6_986_000
+    assert rec["title"] == "SKY SCI-FI — Stargate Atlantis"
+    assert rec["state"] == "recording"
+    # Same channel, different activity: the playback keeps its own card.
+    assert sessions[0]["provider"] == "Strong8K"
+    assert sessions[0]["state"] == "playing"
+
+
+def _fake_snapshot(monkeypatch, timers):
+    monkeypatch.setattr(watching.config, "read", lambda: {
+        "EMBY_HOST": "emby.test", "EMBY_API_KEY": "k", "EMBY_USE_SSL": "true",
+    })
+    monkeypatch.setattr(watching.config, "profiles", lambda: [])
+
+    async def fake_get_json(url, headers, params=None):
+        if url.endswith("/Sessions"):
+            return [{
+                "Id": "sess-itv", "UserName": "stevec", "DeviceName": "Living Room Apple TV",
+                "NowPlayingItem": {"Id": "1", "Name": "ITV 1", "Type": "TvChannel"},
+                "PlayState": {"IsPaused": False},
+            }]
+        if url.endswith("/LiveTv/Timers"):
+            if isinstance(timers, Exception):
+                raise timers
+            return timers
+        raise AssertionError(url)
+
+    async def fake_rows():
+        return []
+
+    monkeypatch.setattr(watching, "_get_json", fake_get_json)
+    monkeypatch.setattr(watching, "_fetch_live_provider_rows", fake_rows)
+    return asyncio.run(watching.snapshot())
+
+
+def test_snapshot_counts_recordings_apart_from_sessions(monkeypatch):
+    snap = _fake_snapshot(monkeypatch, EMBY_TIMERS)
+    assert snap["count"] == 1
+    assert len(snap["sessions"]) == 1
+    assert snap["recording_count"] == 1
+    assert snap["recordings"][0]["state"] == "recording"
+    assert snap["errors"] == {}
+
+
+def test_snapshot_without_recordings_is_unchanged(monkeypatch):
+    snap = _fake_snapshot(monkeypatch, {"Items": [], "TotalRecordCount": 0})
+    assert snap["count"] == 1
+    assert snap["recording_count"] == 0
+    assert snap["recordings"] == []
+
+
+def test_snapshot_ignores_a_failing_timers_call(monkeypatch):
+    import httpx
+
+    snap = _fake_snapshot(monkeypatch, httpx.ConnectError("boom"))
+    assert snap["count"] == 1
+    assert snap["sessions"][0]["title"] == "ITV 1"
+    assert snap["recording_count"] == 0
+    assert snap["errors"] == {}

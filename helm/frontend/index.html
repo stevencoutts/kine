@@ -299,6 +299,7 @@ details.settings-group[open] > summary.settings-group-title::before{transform:ro
 .watch-card.plex{--watch-accent:#e5a00d}
 .watch-card.emby{--watch-accent:#52b54b}
 .watch-card.paused{opacity:.88}
+.watch-card.recording{--watch-accent:#dc2626}
 .watch-card-body{display:flex;align-items:stretch;gap:0;min-height:148px}
 .watch-art{flex:none;width:168px;position:relative;overflow:hidden;
   background:#12151c;border:0;border-radius:0;box-shadow:none;
@@ -330,6 +331,8 @@ details.settings-group[open] > summary.settings-group-title::before{transform:ro
   border-color:color-mix(in srgb, var(--ok) 28%, transparent)}
 .watch-badge.state.paused{background:rgba(224,160,48,.14);color:var(--warn);
   border-color:rgba(224,160,48,.28)}
+.watch-badge.state.recording{background:rgba(220,38,38,.12);color:#dc2626;
+  border-color:rgba(220,38,38,.3)}
 .watch-badge.kind{background:color-mix(in srgb, var(--panel-2) 80%, transparent);color:var(--muted);
   border-color:color-mix(in srgb, var(--line) 70%, transparent)}
 .watch-badge.format-res{background:color-mix(in srgb, var(--panel-2) 78%, transparent);color:var(--text);
@@ -1599,7 +1602,7 @@ const watchPanel = (w) => {
   if (!configured.plex && !configured.emby) {
     return '<p style="color:var(--muted);margin:0">Add Plex or Emby credentials in Settings to see what is playing.</p>';
   }
-  const sessions = w.sessions || [];
+  const sessions = [...(w.sessions || []), ...(w.recordings || [])];
   const errors = Object.entries(w.errors || {}).map(([k,v]) => `${k}: ${v}`).join(' · ');
   if (!sessions.length) {
     return `<p style="color:var(--muted);margin:0">Nothing is playing right now.</p>
@@ -1620,20 +1623,30 @@ const watchPanel = (w) => {
     `<span class="watch-art-fallback"><span class="mono">${escHtml(mono)}</span></span>`;
   const cards = sessions.map(s => {
     const server = s.server === 'plex' ? 'Plex' : 'Emby';
-    const st = s.state === 'paused' ? 'paused' : 'playing';
+    const recording = s.state === 'recording';
+    const st = recording ? 'recording' : (s.state === 'paused' ? 'paused' : 'playing');
     const channelText = String(s.channel || '').trim();
     const channelIsNumber = /^\d+(?:\.\d+)?$/.test(channelText);
-    const showLine = s.kind === 'episode' && s.show
+    const epCode = s.season != null && s.episode != null
+      ? `S${String(s.season).padStart(2,'0')}E${String(s.episode).padStart(2,'0')}` : '';
+    const showLine = recording
+      ? ((s.episode_title || epCode)
+          ? `<div class="watch-card-show">${escHtml([epCode, s.episode_title].filter(Boolean).join(' '))}</div>` : '')
+      : s.kind === 'episode' && s.show
       ? `<div class="watch-card-show">${escHtml(s.show)}${s.season != null && s.episode != null ? ` · S${String(s.season).padStart(2,'0')}E${String(s.episode).padStart(2,'0')}` : ''}</div>`
       : (s.kind === 'channel' && channelText && !channelIsNumber
           && !String(s.title || '').toLowerCase().startsWith(channelText.toLowerCase())
         ? `<div class="watch-card-show">${escHtml(channelText)}</div>`
         : '');
     const meta = [];
-    meta.push(`<span><b>${escHtml(s.user || 'unknown')}</b></span>`);
-    meta.push(`<span>${escHtml(s.player || 'Player')}</span>`);
-    if (s.product && s.product !== s.player) meta.push(`<span>${escHtml(s.product)}</span>`);
-    if (s.library) meta.push(`<span>${escHtml(s.library)}</span>`);
+    if (recording) {
+      meta.push(`<span><b>Emby recording</b></span>`);
+    } else {
+      meta.push(`<span><b>${escHtml(s.user || 'unknown')}</b></span>`);
+      meta.push(`<span>${escHtml(s.player || 'Player')}</span>`);
+      if (s.product && s.product !== s.player) meta.push(`<span>${escHtml(s.product)}</span>`);
+      if (s.library) meta.push(`<span>${escHtml(s.library)}</span>`);
+    }
     const formats = (Array.isArray(s.formats) ? s.formats : []).filter(f => /[a-z0-9]/i.test(String(f || '')));
     const streamClass = s.stream === 'transcode' ? 'stream transcode' : 'stream';
     const formatPills = [
@@ -1650,7 +1663,10 @@ const watchPanel = (w) => {
       const left = s.position_label && s.duration_label
         ? `${escHtml(s.position_label)} / ${escHtml(s.duration_label)}`
         : (s.position_label ? escHtml(s.position_label) : '');
-      const right = s.remaining_label
+      const endsAt = recording && s.ends_at ? new Date(s.ends_at) : null;
+      const right = endsAt && !isNaN(endsAt)
+        ? `ends ${escHtml(endsAt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}))}`
+        : s.remaining_label
         ? `${escHtml(s.remaining_label)} left`
         : (s.progress != null ? `${s.progress}%` : '');
       const width = s.progress != null ? Math.max(0, Math.min(100, s.progress)) : 0;
@@ -1878,12 +1894,17 @@ render.apps = async () => {
   const watchingActive = state.activeTier === 'watching';
   const downloadsActive = state.activeTier === 'downloads';
   const mediaActive = state.activeTier === 'media';
-  const watchCount = watch.count || 0;
+  const watchLive = (w) => !!((w.count || 0) || (w.recording_count || 0));
+  const watchStat = (w) => {
+    const n = w.count || 0, r = w.recording_count || 0;
+    return `${n}<span> ${n===1?'session':'sessions'}</span>`
+      + (r ? `<span> · </span>${r}<span> ${r===1?'recording':'recordings'}</span>` : '');
+  };
   const dlActive = dl.active || 0;
-  const watchBtn = `<div class="overview-btn ${watchingActive?'active':''}${watchCount?' watching-live':''}"
+  const watchBtn = `<div class="overview-btn ${watchingActive?'active':''}${watchLive(watch)?' watching-live':''}"
       data-overview="watching" role="button" tabindex="0" aria-pressed="${watchingActive}">
       <div class="overview-top"><h2>Watching</h2></div>
-      <div class="overview-stat">${watchCount}<span> ${watchCount===1?'session':'sessions'}</span></div>
+      <div class="overview-stat">${watchStat(watch)}</div>
     </div>`;
   const downloadsBtn = `<div class="overview-btn ${downloadsActive?'active':''}${dlActive?' downloads-live':''}"
       data-overview="downloads" role="button" tabindex="0" aria-pressed="${downloadsActive}">
@@ -1941,8 +1962,8 @@ render.apps = async () => {
       if (box) box.innerHTML = watchPanel(next);
       const btn = document.querySelector('[data-overview="watching"]');
       const stat = btn && btn.querySelector('.overview-stat');
-      if (stat) stat.innerHTML = `${next.count||0}<span> ${(next.count||0)===1?'session':'sessions'}</span>`;
-      if (btn) btn.classList.toggle('watching-live', !!(next.count||0));
+      if (stat) stat.innerHTML = watchStat(next);
+      if (btn) btn.classList.toggle('watching-live', watchLive(next));
     }, 15000);
   }
   if (downloadsActive) {

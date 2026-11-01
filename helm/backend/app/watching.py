@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import quote, urlencode
 
@@ -965,6 +966,85 @@ def parse_emby_sessions(payload: list | dict) -> list[dict]:
     return rows
 
 
+def _emby_time(value: Any) -> datetime | None:
+    """Emby dates are UTC with seven fractional digits, e.g. 2026-11-01T14:00:00.0000000Z."""
+    text = str(value or "").strip()
+    try:
+        return datetime.strptime(text[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+
+
+def parse_emby_recordings(payload: Any, now: datetime | None = None) -> list[dict]:
+    """In-progress recordings from Emby /LiveTv/Timers (Status == InProgress)."""
+    items = payload if isinstance(payload, list) else (
+        payload.get("Items") if isinstance(payload, dict) else None
+    ) or []
+    now = now or datetime.now(timezone.utc)
+    rows: list[dict] = []
+    for timer in items:
+        if not isinstance(timer, dict) or str(timer.get("Status") or "").lower() != "inprogress":
+            continue
+        program = timer.get("ProgramInfo") if isinstance(timer.get("ProgramInfo"), dict) else {}
+        channel = _text_name(timer.get("ChannelName") or program.get("ChannelName")) or None
+        name = _text_name(timer.get("Name") or program.get("Name")) or None
+        if channel and name and _norm_channel_name(name) != _norm_channel_name(channel):
+            title = f"{channel} — {name}"
+        else:
+            title = channel or name or "Recording"
+        start = _emby_time(timer.get("StartDate") or program.get("StartDate"))
+        end = _emby_time(timer.get("EndDate") or program.get("EndDate"))
+        position_ms = duration_ms = remaining_ms = None
+        if start and end and end > start:
+            duration_ms = int((end - start).total_seconds() * 1000)
+            position_ms = max(0, min(duration_ms, int((now - start).total_seconds() * 1000)))
+            remaining_ms = duration_ms - position_ms
+        ends_at = None
+        if end:
+            try:
+                padding = max(0, int(timer.get("PostPaddingSeconds") or 0))
+            except (TypeError, ValueError):
+                padding = 0
+            ends_at = (end + timedelta(seconds=padding)).isoformat().replace("+00:00", "Z")
+        height = program.get("Height")
+        resolution = _resolution_label(height) if height else None
+        rows.append({
+            "server": "emby",
+            "session_id": f"recording-{timer.get('Id') or ''}",
+            "kind": "channel",
+            "title": title,
+            "show": None,
+            "episode_title": _text_name(program.get("EpisodeTitle")) or None,
+            "season": program.get("ParentIndexNumber"),
+            "episode": program.get("IndexNumber"),
+            "channel": channel,
+            "channel_number": _channel_number(timer.get("ChannelNumber") or program.get("ChannelNumber")),
+            "channel_id": None,
+            "program": name,
+            "user": None,
+            "player": "Emby recording",
+            "state": "recording",
+            "progress": progress_pct(position_ms, duration_ms),
+            "position_ms": position_ms,
+            "duration_ms": duration_ms,
+            "remaining_ms": remaining_ms,
+            "position_label": format_duration_ms(position_ms),
+            "duration_label": format_duration_ms(duration_ms),
+            "remaining_label": format_duration_ms(remaining_ms),
+            "ends_at": ends_at,
+            "stream": None,
+            "bitrate_bps": None,
+            **_format_fields(resolution=resolution),
+            "art_url": emby_art_proxy_url(
+                str(timer.get("ChannelId") or program.get("ChannelId") or ""),
+                timer.get("ChannelPrimaryImageTag") or program.get("ChannelPrimaryImageTag"),
+                image="Primary",
+            ),
+        })
+    rows.sort(key=lambda r: (-(r.get("position_ms") or 0), r["session_id"]))
+    return rows
+
+
 def _configured(env: dict, host_key: str, secret_key: str) -> bool:
     return bool(env.get(host_key, "").strip() and env.get(secret_key, "").strip())
 
@@ -1145,6 +1225,24 @@ async def _emby_sessions(env: dict) -> tuple[list[dict], str | None]:
     return [], last_error
 
 
+async def _emby_recordings(env: dict) -> list[dict]:
+    """Recordings in progress. Any failure leaves the panel as it was."""
+    token = env.get("EMBY_API_KEY", "").strip()
+    if not token:
+        return []
+    for base in _emby_bases(env):
+        try:
+            data = await _get_json(
+                f"{base}/LiveTv/Timers",
+                {"X-Emby-Token": token},
+                {"IsActive": "true"},
+            )
+            return parse_emby_recordings(data)
+        except Exception:
+            continue
+    return []
+
+
 async def _fetch_live_provider_rows() -> list[dict]:
     """Ask Dispatcharr which M3U account is serving each active channel."""
     from . import dispatcharr_sources as sources
@@ -1208,12 +1306,16 @@ async def snapshot() -> dict:
     env = config.read()
     plex_task = asyncio.create_task(_plex_sessions(env))
     emby_task = asyncio.create_task(_emby_sessions(env))
+    recordings_task = asyncio.create_task(_emby_recordings(env))
     plex_rows, plex_error = await plex_task
     emby_rows, emby_error = await emby_task
+    recordings = await recordings_task
     sessions = sort_watching_sessions([*plex_rows, *emby_rows])
-    if any(row.get("kind") == "channel" for row in sessions):
+    if recordings or any(row.get("kind") == "channel" for row in sessions):
         try:
-            attach_live_providers(sessions, await _fetch_live_provider_rows())
+            rows = await _fetch_live_provider_rows()
+            attach_live_providers(sessions, rows)
+            attach_live_providers(recordings, rows)
         except Exception:
             pass
     return {
@@ -1226,5 +1328,7 @@ async def snapshot() -> dict:
         },
         "count": len(sessions),
         "sessions": sessions,
+        "recording_count": len(recordings),
+        "recordings": recordings,
         "errors": {k: v for k, v in (("plex", plex_error), ("emby", emby_error)) if v},
     }
