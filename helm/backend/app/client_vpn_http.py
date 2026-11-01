@@ -12,7 +12,7 @@ import threading
 from fastapi import Depends, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
-from . import catalogue, client_vpn, compose, config
+from . import client_vpn, compose, config
 
 _lock = threading.Lock()
 
@@ -28,15 +28,12 @@ def install(app, require_user) -> None:
         body = await request.json()
         current = _load(create=True)
         try:
+            raw_host = body.get("endpoint_host", None)
             updated = client_vpn.apply_settings(
                 current,
                 enabled=bool(body.get("enabled")),
-                lan_endpoint=str(body.get("lan_endpoint") or ""),
-                wan_endpoint=str(body.get("wan_endpoint") or ""),
-                endpoint_host=str(body.get("endpoint_host") or ""),
+                endpoint_host=None if raw_host is None else str(raw_host),
                 host_port=body.get("host_port") or client_vpn.INTERNAL_LISTEN_PORT,
-                lan_domain=str(body.get("lan_domain") or current.get("lan_domain") or ""),
-                subdomains=_subdomains(),
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
@@ -57,7 +54,6 @@ def install(app, require_user) -> None:
             client_vpn.add_peer(state, str(body.get("name") or ""))
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
-        state["names"] = client_vpn.service_names(state.get("lan_domain") or "kine.local", _subdomains())
         _save(state)
         return client_vpn.summary(state, _read_status())
 
@@ -90,18 +86,6 @@ def _stack() -> pathlib.Path:
     return pathlib.Path(config.read().get("STACK_ROOT") or "/srv/kine")
 
 
-def _subdomains() -> list[str]:
-    try:
-        apps = catalogue.load()
-    except (OSError, KeyError, TypeError):
-        return []
-    found: list[str] = []
-    for meta in apps.values():
-        if isinstance(meta, dict) and meta.get("subdomain"):
-            found.append(str(meta["subdomain"]))
-    return found
-
-
 def _load(*, create: bool) -> dict:
     path = client_vpn.state_path(_stack())
     with _lock:
@@ -113,7 +97,7 @@ def _load(*, create: bool) -> dict:
         if not create:
             raise HTTPException(404, "Client VPN is not set up")
         env = config.read()
-        state = client_vpn.fresh_state(env.get("KINE_DOMAIN") or "kine.local", _subdomains())
+        state = client_vpn.fresh_state(env.get("KINE_DOMAIN") or "kine.local")
         client_vpn.save_state(path, state)
         return state
 

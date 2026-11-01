@@ -513,6 +513,12 @@ def test_client_vpn_card_does_not_restart_the_tunnel():
     assert not re.search(r"\bhome\b", card, re.I)
     assert not re.search(r"\bhouse\b", card, re.I)
     assert card.count(">Config</button>") == 1
+    assert "Internal address" not in card
+    assert "Public address" not in card
+    assert "Names that resolve" not in card
+    assert "Endpoint hostname" in card
+    assert "UDP port" in card
+    assert "internal DNS server" in card
     assert "/vpn/restart" not in card
     assert "data-vpn-restart" not in card
     handlers = FRONTEND.split("const saveBtn = $('#client-vpn-save')", 1)[1].split("document.querySelectorAll('[data-vpn-leak]')", 1)[0]

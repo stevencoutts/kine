@@ -4,7 +4,7 @@ This process never restarts gluetun and never changes its firewall.
 The only contact with that container is a read of its VPN status and,
 when the status is up, a new process placed in its network namespace
 so the laptop's internet can leave through the tunnel that is already
-up. If that path is missing, the laptop uses the home connection.
+up. If that path is missing, the laptop uses the internal network connection.
 """
 from __future__ import annotations
 
@@ -32,8 +32,8 @@ UPSTREAM_DNS = ("1.1.1.1", 53)
 STOP = threading.Event()
 RUNTIME = {
     "lock": threading.Lock(),
-    "lan_ip": "",
-    "names": frozenset(),
+    "zones": (),
+    "resolver": "",
     "vpn_exit": False,
     "socks_ip": "",
 }
@@ -266,17 +266,45 @@ def _read_exact(sock: socket.socket, n: int) -> bytes:
     return buf
 
 
-def forward_plain(query: bytes) -> bytes | None:
+def forward_to(query: bytes, dest: tuple[str, int]) -> bytes | None:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(3)
     try:
-        sock.sendto(query, UPSTREAM_DNS)
+        sock.sendto(query, dest)
         data, _ = sock.recvfrom(2048)
         return data
     except OSError:
         return None
     finally:
         sock.close()
+
+
+def host_file(path: str) -> str:
+    """Read a host file. Read-only, and it does not enter gluetun."""
+    result = run(["nsenter", "-t", "1", "-m", "--", "cat", path])
+    if result.returncode != 0:
+        return ""
+    return result.stdout or ""
+
+
+def host_resolver_inputs() -> tuple[str, str]:
+    """Host resolver text, and this machine's addresses.
+
+    systemd-resolved's uplink file lists the DNS server the LAN gave
+    the host. ``ip addr`` is read in the host network namespace and
+    does not change routes.
+    """
+    resolv = "\n".join(
+        part for part in (
+            host_file("/run/systemd/resolve/resolv.conf"),
+            host_file("/etc/resolv.conf"),
+        ) if part
+    )
+    addrs = run([
+        "nsenter", "-t", "1", "-n", "--",
+        "ip", "-4", "-o", "addr", "show", "scope", "global",
+    ])
+    return resolv, (addrs.stdout or "") if addrs.returncode == 0 else ""
 
 
 def forward_socks(query: bytes, socks_ip: str) -> bytes | None:
@@ -338,26 +366,32 @@ def answer(query: bytes) -> bytes | None:
     if parsed is None:
         return None
     name, _end, _qtype = parsed
-    key = name.lower().rstrip(".")
     with RUNTIME["lock"]:
-        names = RUNTIME["names"]
-        lan_ip = RUNTIME["lan_ip"]
+        zones = RUNTIME["zones"]
+        resolver = RUNTIME["resolver"]
         vpn_exit = RUNTIME["vpn_exit"]
         socks_ip = RUNTIME["socks_ip"]
-    if key in names and lan_ip:
-        return client_vpn.dns_reply(query, lan_ip)
-    if vpn_exit and socks_ip:
+    path = client_vpn.dns_exit(name, zones, vpn_exit=vpn_exit)
+    # The internal zone stays on the LAN resolver. A miss must not fall
+    # through to the provider exit, which does not know those names.
+    if path == "internal":
+        if not resolver:
+            return None
+        return forward_to(query, (resolver, 53))
+    if path == "vpn" and socks_ip:
         forwarded = forward_socks(query, socks_ip)
         if forwarded:
             return forwarded
-    return forward_plain(query)
+    return forward_to(query, UPSTREAM_DNS)
 
 
 def publish_runtime(state: dict, vpn_exit: bool, socks_ip: str) -> None:
-    names = {str(name).lower().rstrip(".") for name in state.get("names") or []}
+    resolv, addrs = host_resolver_inputs()
+    zones = tuple(client_vpn.internal_zones(str(state.get("lan_domain") or ""), resolv))
+    resolver = client_vpn.internal_resolver(resolv, addrs) or ""
     with RUNTIME["lock"]:
-        RUNTIME["lan_ip"] = str(state.get("lan_endpoint") or "")
-        RUNTIME["names"] = frozenset(names)
+        RUNTIME["zones"] = zones
+        RUNTIME["resolver"] = resolver
         RUNTIME["vpn_exit"] = vpn_exit
         RUNTIME["socks_ip"] = socks_ip
 

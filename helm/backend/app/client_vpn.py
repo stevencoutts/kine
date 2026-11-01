@@ -108,29 +108,6 @@ def public_from_private(private_b64: str) -> str:
     return _b64(_x25519(raw, _BASE))
 
 
-def validate_lan_ip(value: str) -> str:
-    text = (value or "").strip()
-    try:
-        return str(ipaddress.IPv4Address(text))
-    except ipaddress.AddressValueError as exc:
-        raise ValueError("Internal address must be an IPv4 address of this machine") from exc
-
-
-def validate_wan_host(value: str) -> str:
-    text = (value or "").strip()
-    if not text:
-        return ""
-    if ":" in text or "/" in text or " " in text:
-        raise ValueError("Public address is a hostname or IPv4 address, without a port")
-    try:
-        return str(ipaddress.IPv4Address(text))
-    except ipaddress.AddressValueError:
-        pass
-    if not _HOST.match(text):
-        raise ValueError("Public address is not a hostname")
-    return text
-
-
 def validate_endpoint_host(value: str) -> str:
     """Hostname that split DNS points at the internal or public address.
 
@@ -170,29 +147,21 @@ def validate_name(value: str) -> str:
     return text
 
 
-def service_names(domain: str, subdomains: list[str]) -> list[str]:
-    """Names the laptop resolver answers with Kine's LAN address."""
-    base = (domain or "kine.local").strip().strip(".").lower()
-    names = {base, f"kine-admin.{base}"}
-    for sub in subdomains:
-        label = (sub or "").strip().strip(".").lower()
-        if label:
-            names.add(f"{label}.{base}")
-    return sorted(names)
+def fresh_state(lan_domain: str, subdomains: list[str] | None = None) -> dict:
+    """New state. ``lan_domain`` is the internal zone, not a list of names.
 
-
-def fresh_state(lan_domain: str, subdomains: list[str]) -> dict:
+    The second argument used to be catalogue labels that were answered
+    with one address. It is ignored so older callers keep working.
+    """
+    del subdomains
     private, public = generate_keypair()
     domain = (lan_domain or "kine.local").strip().strip(".").lower() or "kine.local"
     return {
         "version": 1,
         "enabled": False,
-        "lan_endpoint": "",
-        "wan_endpoint": "",
         "endpoint_host": "",
         "host_port": INTERNAL_LISTEN_PORT,
         "lan_domain": domain,
-        "names": service_names(domain, subdomains),
         "server_private": private,
         "server_public": public,
         "peers": [],
@@ -279,45 +248,38 @@ def apply_settings(
     state: dict,
     *,
     enabled: bool,
-    lan_endpoint: str,
-    wan_endpoint: str,
     host_port: object,
-    lan_domain: str,
-    subdomains: list[str],
     endpoint_host: str | None = None,
 ) -> dict:
-    """Return a new state. Enabling requires the internal address.
+    """Return a new state. Enabling requires the endpoint hostname.
 
-    ``endpoint_host is None`` leaves a hostname already stored alone.
-    The app search domain is not copied into it.
+    Addresses are not inputs. A hostname already stored is left as it
+    is when ``endpoint_host`` is omitted, including a placeholder the
+    operator has not replaced yet. The internal zone stays whatever was
+    stored; the form does not edit it.
     """
-    lan = ""
-    if (lan_endpoint or "").strip():
-        lan = validate_lan_ip(lan_endpoint)
-    if enabled and not lan:
-        raise ValueError("Internal address is required before the client VPN can be turned on")
-    domain = (lan_domain or state.get("lan_domain") or "kine.local").strip().strip(".").lower()
-    if not domain or "." not in domain or " " in domain:
-        raise ValueError("Name suffix must look like kine.local")
     updated = dict(state)
-    updated["enabled"] = bool(enabled)
-    updated["lan_endpoint"] = lan
-    updated["wan_endpoint"] = validate_wan_host(wan_endpoint)
     if endpoint_host is None:
-        updated["endpoint_host"] = str(state.get("endpoint_host") or "")
+        host = str(state.get("endpoint_host") or "")
     else:
-        updated["endpoint_host"] = validate_endpoint_host(endpoint_host)
+        host = validate_endpoint_host(endpoint_host)
+    if enabled and not host:
+        raise ValueError("Endpoint hostname is required before the client VPN can be turned on")
+    updated["enabled"] = bool(enabled)
+    updated["endpoint_host"] = host
     updated["host_port"] = validate_port(host_port)
-    updated["lan_domain"] = domain
-    updated["names"] = service_names(domain, subdomains)
+    # Addresses are not settings. Drop them so a save cannot write a
+    # placeholder public address back. The endpoint hostname is kept,
+    # including a placeholder the operator has not replaced.
+    for stale in ("lan_endpoint", "wan_endpoint", "names"):
+        updated.pop(stale, None)
     return updated
 
 
 def failed_start_state(previous: dict, updated: dict) -> dict:
-    """Container did not start. Keep the addresses and devices they typed.
+    """Container did not start. Keep the hostname and devices already stored.
 
-    Only the on/off flag returns to what it was, so a failed start cannot
-    wipe the LAN address or write a placeholder over the public address.
+    Only the on/off flag returns to what it was.
     """
     kept = dict(updated)
     kept["enabled"] = bool(previous.get("enabled"))
@@ -409,11 +371,8 @@ def summary(state: dict, status: dict | None) -> dict:
         })
     return {
         "enabled": bool(state.get("enabled")),
-        "lan_endpoint": state.get("lan_endpoint") or "",
-        "wan_endpoint": state.get("wan_endpoint") or "",
         "endpoint_host": state.get("endpoint_host") or "",
         "host_port": int(state.get("host_port") or INTERNAL_LISTEN_PORT),
-        "lan_domain": state.get("lan_domain") or "kine.local",
         "exit": exit_mode,
         "detail": detail,
         "peers": peers,
@@ -575,33 +534,125 @@ def parse_qname(packet: bytes) -> tuple[str, int, int] | None:
     return ".".join(labels), offset + 4, qtype
 
 
-def dns_reply(query: bytes, ipv4: str | None) -> bytes | None:
-    """Answer an A query with ipv4, or an empty NOERROR for AAAA of the same name.
+_SKIP_IFACE = re.compile(
+    r"^(lo|docker\d*|virbr\d*|tailscale\d*|veth.*|tun\d*|br-[0-9a-f]+|wg\d*|wgexit)$"
+)
 
-    ``ipv4 is None`` means this name is not one of ours; the caller forwards it.
+
+def internal_zones(lan_domain: str, resolv_text: str) -> list[str]:
+    """Zones the laptop asks the internal DNS server about.
+
+    The appliance domain is one. Search domains from the host resolver
+    are the others. This is not a list of names to answer ourselves.
     """
-    parsed = parse_qname(query)
-    if parsed is None:
-        return None
-    _name, end, qtype = parsed
-    if ipv4 is None:
-        return None
-    header = bytearray(query[:2])
-    header += (0x8180).to_bytes(2, "big")
-    header += (1).to_bytes(2, "big")  # qd
-    if qtype == 1:
-        header += (1).to_bytes(2, "big")  # an
-    else:
-        header += (0).to_bytes(2, "big")
-    header += (0).to_bytes(2, "big")  # ns
-    header += (0).to_bytes(2, "big")  # ar
-    question = query[12:end]
-    if qtype != 1:
-        return bytes(header) + question
-    answer = b"\xc0\x0c" + (1).to_bytes(2, "big") + (1).to_bytes(2, "big")
-    answer += (60).to_bytes(4, "big") + (4).to_bytes(2, "big")
-    answer += ipaddress.IPv4Address(ipv4).packed
-    return bytes(header) + question + answer
+    zones: list[str] = []
+
+    def add(value: str) -> None:
+        text = (value or "").strip().strip(".").lower()
+        if text and "." in text and " " not in text and text not in zones:
+            zones.append(text)
+
+    add(lan_domain)
+    for raw in (resolv_text or "").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        parts = line.split()
+        if not parts or parts[0].lower() not in {"search", "domain"}:
+            continue
+        for item in parts[1:]:
+            add(item)
+    return zones
+
+
+def name_in_internal_zone(name: str, zones: list[str] | tuple[str, ...]) -> bool:
+    key = (name or "").lower().rstrip(".")
+    if not key:
+        return False
+    for zone in zones:
+        base = (zone or "").lower().rstrip(".")
+        if not base:
+            continue
+        if key == base or key.endswith("." + base):
+            return True
+    return False
+
+
+def dns_exit(name: str, zones: list[str] | tuple[str, ...], *, vpn_exit: bool) -> str:
+    """Where a laptop lookup is sent.
+
+    ``internal`` is the LAN resolver, reached toward the internal network.
+    It never follows the provider exit. ``vpn`` is that exit, and only for
+    other names while the provider tunnel is up. ``plain`` is the internal
+    network connection.
+    """
+    if name_in_internal_zone(name, zones):
+        return "internal"
+    if vpn_exit:
+        return "vpn"
+    return "plain"
+
+
+def nameservers_from_resolv(text: str) -> list[str]:
+    found: list[str] = []
+    for raw in (text or "").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line.lower().startswith("nameserver"):
+            continue
+        parts = line.split()
+        if len(parts) >= 2:
+            found.append(parts[1])
+    return found
+
+
+def internal_address_from_addrs(addr_text: str) -> str | None:
+    """This machine's internal address, from ``ip -4 -o addr`` text.
+
+    Docker bridges and the laptop tunnel are skipped. A route or a DNS
+    query uses this only when the host resolver is on the machine itself.
+    """
+    private: list[str] = []
+    other: list[str] = []
+    for raw in (addr_text or "").splitlines():
+        match = re.search(
+            r"^\d+:\s+(\S+)\s+inet\s+(\d+\.\d+\.\d+\.\d+)/",
+            raw.strip(),
+        )
+        if not match:
+            continue
+        iface, ip = match.group(1), match.group(2)
+        if _SKIP_IFACE.match(iface):
+            continue
+        try:
+            addr = ipaddress.IPv4Address(ip)
+        except ipaddress.AddressValueError:
+            continue
+        if addr.is_loopback or addr.is_link_local or addr.is_multicast:
+            continue
+        if addr.is_private:
+            private.append(str(addr))
+        else:
+            other.append(str(addr))
+    if private:
+        return private[0]
+    return other[0] if other else None
+
+
+def internal_resolver(resolv_text: str, addr_text: str) -> str | None:
+    """Address of the DNS server the host uses for internal names.
+
+    A private nameserver in the host resolver is that server. Loopback
+    and public resolvers are not: loopback means this machine is the
+    resolver, so the query goes to the machine's internal address.
+    """
+    for raw in nameservers_from_resolv(resolv_text):
+        try:
+            ip = ipaddress.IPv4Address(raw)
+        except ipaddress.AddressValueError:
+            continue
+        if ip.is_loopback or ip.is_unspecified or ip.is_link_local or ip.is_multicast:
+            continue
+        if ip.is_private:
+            return str(ip)
+    return internal_address_from_addrs(addr_text)
 
 
 def socks5_udp_packet(dest_ip: str, dest_port: int, payload: bytes) -> bytes:

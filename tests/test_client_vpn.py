@@ -68,42 +68,51 @@ def test_client_config_is_one_full_tunnel_to_a_hostname():
 def test_search_domain_is_not_copied_into_the_endpoint_hostname():
     state = client_vpn.fresh_state("couttsnet.com", [])
     state["endpoint_host"] = "wg.example.net"
-    kept = client_vpn.apply_settings(
-        state,
-        enabled=True,
-        lan_endpoint="10.100.100.34",
-        wan_endpoint="",
-        host_port=51820,
-        lan_domain="couttsnet.com",
-        subdomains=[],
-    )
+    kept = client_vpn.apply_settings(state, enabled=True, host_port=51820)
     assert kept["endpoint_host"] == "wg.example.net"
     assert kept["lan_domain"] == "couttsnet.com"
     named = client_vpn.apply_settings(
         state,
         enabled=True,
-        lan_endpoint="10.100.100.34",
-        wan_endpoint="",
         host_port=51820,
-        lan_domain="couttsnet.com",
-        subdomains=[],
         endpoint_host="vpn.example.net",
     )
     assert named["endpoint_host"] == "vpn.example.net"
-    assert named["lan_endpoint"] == "10.100.100.34"
+    assert named["lan_domain"] == "couttsnet.com"
+    assert "lan_endpoint" not in named
+    assert "wan_endpoint" not in named
+
+
+def test_settings_keep_the_device_and_do_not_store_address_placeholders():
+    state = client_vpn.fresh_state("couttsnet.com")
+    state["endpoint_host"] = "vpn.example.net"
+    state["wan_endpoint"] = "203.0.113.10"
+    client_vpn.add_peer(state, "steven macbook")
+    updated = client_vpn.apply_settings(state, enabled=True, host_port=51820)
+    assert updated["peers"][0]["name"] == "steven macbook"
+    assert updated["endpoint_host"] == "vpn.example.net"
+    assert updated["endpoint_host"] != "vpn.couttsnet.com"
+    assert "wan_endpoint" not in updated
+    assert "lan_endpoint" not in updated
+    assert "203.0.113.10" not in repr(updated)
+    assert "203.0.113.10" not in client_vpn.client_config(updated, updated["peers"][0])
+    cleared = client_vpn.fresh_state("couttsnet.com")
+    saved = client_vpn.apply_settings(
+        cleared,
+        enabled=True,
+        host_port=51820,
+        endpoint_host="vpn.couttsnet.com",
+    )
+    assert "lan_endpoint" not in saved
+    assert "wan_endpoint" not in saved
+    assert "203.0.113.10" not in repr(saved)
+    assert "vpn.example.net" not in repr(saved)
 
 
 def test_adding_a_peer_does_not_call_compose():
     state = client_vpn.fresh_state("kine.local", [])
-    state = client_vpn.apply_settings(
-        state,
-        enabled=True,
-        lan_endpoint="10.1.1.5",
-        wan_endpoint="",
-        host_port=51820,
-        lan_domain="kine.local",
-        subdomains=["emby"],
-    )
+    state["endpoint_host"] = "vpn.example.net"
+    state = client_vpn.apply_settings(state, enabled=True, host_port=51820)
     before = dict(state)
     client_vpn.add_peer(state, "Laptop")
     assert client_vpn.needs_compose(before, state) is None
@@ -114,11 +123,8 @@ def test_enable_starts_only_the_access_container():
     updated = client_vpn.apply_settings(
         state,
         enabled=True,
-        lan_endpoint="192.168.1.9",
-        wan_endpoint="vpn.example",
         host_port=51821,
-        lan_domain="kine.local",
-        subdomains=[],
+        endpoint_host="vpn.example.net",
     )
     assert client_vpn.needs_compose(state, updated) == "up"
     for cmd in client_vpn.COMPOSE_ACTIONS:
@@ -130,39 +136,33 @@ def test_enable_starts_only_the_access_container():
         assert cmd[-1] == "wg-access"
 
 
+def test_enable_without_a_hostname_does_not_require_addresses():
+    state = client_vpn.fresh_state("couttsnet.com")
+    try:
+        client_vpn.apply_settings(state, enabled=True, host_port=51820, endpoint_host="")
+    except ValueError as exc:
+        assert "hostname" in str(exc).lower()
+    else:
+        raise AssertionError("enabling still needs the endpoint hostname")
+
+
 def test_port_change_starts_only_the_access_container():
     state = client_vpn.fresh_state("kine.local", [])
     state["enabled"] = True
-    state["lan_endpoint"] = "192.168.1.9"
+    state["endpoint_host"] = "vpn.example.net"
     state["host_port"] = 51820
-    updated = client_vpn.apply_settings(
-        state,
-        enabled=True,
-        lan_endpoint="192.168.1.9",
-        wan_endpoint="",
-        host_port=51821,
-        lan_domain="kine.local",
-        subdomains=[],
-    )
+    updated = client_vpn.apply_settings(state, enabled=True, host_port=51821)
     assert client_vpn.needs_compose(state, updated) == "up"
 
 
-def test_failed_start_keeps_lan_and_devices():
+def test_failed_start_keeps_the_device_and_hostname():
     state = client_vpn.fresh_state("couttsnet.com", ["emby"])
+    state["endpoint_host"] = "vpn.example.net"
     client_vpn.add_peer(state, "steven macbook")
-    updated = client_vpn.apply_settings(
-        state,
-        enabled=True,
-        lan_endpoint="10.100.100.34",
-        wan_endpoint="",
-        host_port=51820,
-        lan_domain="couttsnet.com",
-        subdomains=["emby"],
-    )
+    updated = client_vpn.apply_settings(state, enabled=True, host_port=51820)
     kept = client_vpn.failed_start_state(state, updated)
     assert kept["enabled"] is False
-    assert kept["lan_endpoint"] == "10.100.100.34"
-    assert kept["wan_endpoint"] == ""
+    assert kept["endpoint_host"] == "vpn.example.net"
     assert kept["lan_domain"] == "couttsnet.com"
     assert kept["peers"][0]["name"] == "steven macbook"
     assert kept["peers"][0]["address"] == state["peers"][0]["address"]
@@ -172,16 +172,8 @@ def test_failed_start_keeps_lan_and_devices():
 def test_disable_stops_only_the_access_container():
     state = client_vpn.fresh_state("kine.local", [])
     state["enabled"] = True
-    state["lan_endpoint"] = "192.168.1.9"
-    updated = client_vpn.apply_settings(
-        state,
-        enabled=False,
-        lan_endpoint="192.168.1.9",
-        wan_endpoint="",
-        host_port=51820,
-        lan_domain="kine.local",
-        subdomains=[],
-    )
+    state["endpoint_host"] = "vpn.example.net"
+    updated = client_vpn.apply_settings(state, enabled=False, host_port=51820)
     assert client_vpn.needs_compose(state, updated) == "stop"
 
 
@@ -238,24 +230,36 @@ def test_relay_refuses_pid_1_and_only_matches_our_helpers():
     assert client_vpn.is_our_helper(50, b"/usr/bin/gluetun") is False
 
 
-def test_dns_answers_kine_names_and_leaves_the_rest_alone():
-    query = _query("emby.kine.local", 1)
-    reply = client_vpn.dns_reply(query, "192.168.1.20")
-    assert reply is not None
-    assert reply[2] & 0x80  # response
-    assert reply[-4:] == bytes([192, 168, 1, 20])
-    aaaa = _query("emby.kine.local", 28)
-    empty = client_vpn.dns_reply(aaaa, "192.168.1.20")
-    assert empty is not None
-    assert int.from_bytes(empty[6:8], "big") == 0
-    assert client_vpn.dns_reply(_query("example.com", 1), None) is None
+def test_internal_zone_uses_the_lan_resolver_not_the_provider_exit():
+    zones = client_vpn.internal_zones(
+        "couttsnet.com",
+        "search couttsnet.com\nnameserver 10.100.100.1\n",
+    )
+    assert "couttsnet.com" in zones
+    assert client_vpn.name_in_internal_zone("emby.couttsnet.com", zones)
+    assert client_vpn.name_in_internal_zone("printer.couttsnet.com", zones)
+    assert client_vpn.name_in_internal_zone("notcouttsnet.com", zones) is False
+    assert client_vpn.name_in_internal_zone("example.com", zones) is False
+    assert client_vpn.dns_exit("emby.couttsnet.com", zones, vpn_exit=True) == "internal"
+    assert client_vpn.dns_exit("example.com", zones, vpn_exit=True) == "vpn"
+    assert client_vpn.dns_exit("example.com", zones, vpn_exit=False) == "plain"
 
 
-def test_service_names_include_admin_and_catalogue():
-    names = client_vpn.service_names("kine.local", ["emby", "sonarr"])
-    assert "emby.kine.local" in names
-    assert "kine-admin.kine.local" in names
-    assert "kine.local" in names
+def test_internal_resolver_prefers_the_lan_nameserver():
+    resolv = "nameserver 127.0.0.53\nnameserver 1.1.1.1\nnameserver 10.100.100.1\n"
+    addrs = "2: eno1    inet 10.100.100.34/24 brd 10.100.100.255 scope global eno1\n"
+    assert client_vpn.internal_resolver(resolv, addrs) == "10.100.100.1"
+
+
+def test_internal_resolver_uses_this_machine_when_the_host_resolver_is_loopback():
+    resolv = "nameserver 127.0.0.53\nnameserver 8.8.8.8\n"
+    addrs = (
+        "2: docker0    inet 172.17.0.1/16 scope global docker0\n"
+        "3: br-aabbccdd0011    inet 172.18.0.1/16 scope global br-aabbccdd0011\n"
+        "4: wg0    inet 10.66.66.1/24 scope global wg0\n"
+        "5: eno1    inet 10.100.100.34/24 scope global eno1\n"
+    )
+    assert client_vpn.internal_resolver(resolv, addrs) == "10.100.100.34"
 
 
 def test_summary_hides_keys():
@@ -288,15 +292,8 @@ def test_compose_fragment_does_not_attach_to_gluetun():
     assert "force-recreate" not in entry
     assert "docker restart" not in entry
     assert "compose" not in entry
-
-
-def _query(name: str, qtype: int) -> bytes:
-    packet = bytearray(b"\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00")
-    for label in name.split("."):
-        raw = label.encode()
-        packet.append(len(raw))
-        packet += raw
-    packet.append(0)
-    packet += qtype.to_bytes(2, "big")
-    packet += (1).to_bytes(2, "big")
-    return bytes(packet)
+    assert "dns_reply" not in entry
+    assert "dns_exit" in entry
+    http = (ROOT / "helm" / "backend" / "app" / "client_vpn_http.py").read_text()
+    assert "lan_endpoint" not in http
+    assert "wan_endpoint" not in http

@@ -2671,12 +2671,6 @@ const clientVpnCard = (c) => {
           Use the client VPN
         </label>
         <div class="row" style="gap:.6rem;flex-wrap:wrap">
-          <label style="flex:1;min-width:12rem">Internal address
-            <input id="client-vpn-lan" value="${escAttr(c.lan_endpoint || '')}" placeholder="10.0.0.10" autocomplete="off">
-          </label>
-          <label style="flex:1;min-width:12rem">Public address
-            <input id="client-vpn-wan" value="${escAttr(c.wan_endpoint || '')}" placeholder="203.0.113.10" autocomplete="off">
-          </label>
           <label style="flex:1;min-width:12rem">Endpoint hostname
             <input id="client-vpn-endpoint" value="${escAttr(c.endpoint_host || '')}" placeholder="vpn.example.net" autocomplete="off">
           </label>
@@ -2684,10 +2678,7 @@ const clientVpnCard = (c) => {
             <input id="client-vpn-port" value="${escAttr(String(c.host_port || 51820))}" inputmode="numeric">
           </label>
         </div>
-        <label for="client-vpn-domain">Names that resolve to the internal address
-          <input id="client-vpn-domain" value="${escAttr(c.lan_domain || 'kine.local')}" autocomplete="off">
-        </label>
-        <p class="vpn-apps-hint">Other devices on the internal network are reached by their IP address. Kine's own app names, such as emby.${escHtml(c.lan_domain || 'kine.local')}, resolve to the internal address above.</p>
+        <p class="vpn-apps-hint">Names in the internal zone are looked up on the internal DNS server, over the tunnel toward the internal network. Other names follow the VPN when it is up.</p>
         <div class="vpn-card-actions">
           <button type="button" class="act primary" id="client-vpn-save">Save</button>
         </div>
@@ -2704,8 +2695,8 @@ const clientVpnCard = (c) => {
 render.vpn = async () => {
   const v = await api('/vpn');
   let clients = {
-    enabled: false, peers: [], lan_endpoint: '', wan_endpoint: '', endpoint_host: '',
-    host_port: 51820, lan_domain: 'kine.local', exit: 'off', detail: '',
+    enabled: false, peers: [], endpoint_host: '',
+    host_port: 51820, exit: 'off', detail: '',
   };
   try {
     clients = await api('/vpn/clients');
@@ -2893,11 +2884,8 @@ render.vpn = async () => {
         method: 'PUT',
         body: JSON.stringify({
           enabled: $('#client-vpn-enabled').checked,
-          lan_endpoint: $('#client-vpn-lan').value.trim(),
-          wan_endpoint: $('#client-vpn-wan').value.trim(),
           endpoint_host: $('#client-vpn-endpoint').value.trim(),
           host_port: Number($('#client-vpn-port').value),
-          lan_domain: $('#client-vpn-domain').value.trim(),
         }),
       });
       setOut(r.log || 'saved');
