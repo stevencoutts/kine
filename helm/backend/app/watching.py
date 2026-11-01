@@ -273,6 +273,11 @@ def index_live_providers(
             "episode": guide.get("episode"),
             "provider": provider,
             "logo_id": _logo_id(detail),
+            "resolution": _resolution_label(channel.get("resolution")),
+            "video_codec": _codec(channel.get("video_codec")),
+            "audio_codec": _codec(channel.get("audio_codec")),
+            # total_bytes / uptime since the channel started, not a live reading.
+            "avg_bitrate_bps": _kbps_to_bps(channel.get("avg_bitrate_kbps")),
         })
     return indexed
 
@@ -315,6 +320,25 @@ def _label_live_program(session: dict, row: dict) -> None:
         logo = dispatcharr_logo_path(row.get("logo_id"))
         if logo:
             session["art_url"] = logo
+
+
+def _apply_live_stream(session: dict, row: dict) -> None:
+    """Fill gaps from Dispatcharr's probe; audio and bandwidth prefer Dispatcharr."""
+    for key in ("resolution", "video_codec"):
+        if not session.get(key) and row.get(key):
+            session[key] = row[key]
+    if row.get("audio_codec"):
+        session["audio_codec"] = row["audio_codec"]
+    if row.get("avg_bitrate_bps"):
+        session["bitrate_bps"] = row["avg_bitrate_bps"]
+    fields = _format_fields(
+        resolution=session.get("resolution"),
+        video_codec=session.get("video_codec"),
+        audio_codec=session.get("audio_codec"),
+        bitrate_label=_bitrate_label(session.get("bitrate_bps")),
+    )
+    session["formats"] = fields["formats"]
+    session["quality"] = fields["quality"]
 
 
 def _matched_row(bucket: dict[str, dict | None], key: str | None) -> dict | None:
@@ -372,6 +396,7 @@ def attach_live_providers(sessions: list[dict], rows: list[dict]) -> list[dict]:
         if provider:
             session["provider"] = provider
             _label_live_program(session, matched)
+            _apply_live_stream(session, matched)
         else:
             session.pop("provider", None)
     return sessions
@@ -437,6 +462,19 @@ def emby_art_proxy_url(
     if tag and isinstance(tag, str) and tag.strip():
         query["tag"] = tag.strip()
     return f"/api/watching/art/emby?{urlencode(query)}"
+
+
+def _codec(value: Any) -> str | None:
+    """Upper-case codec name. Plex sends '*' while a live transcode settles."""
+    text = str(value or "").strip()
+    return text.upper() if any(ch.isalnum() for ch in text) else None
+
+
+def _resolution_label(value: Any) -> str | None:
+    """'1920x1080' or '1080' -> '1080p'."""
+    text = str(value or "").strip().lower()
+    height = text.rsplit("x", 1)[-1].rstrip("p")
+    return f"{height}p" if height.isdigit() and int(height) > 0 else None
 
 
 def _format_fields(
@@ -586,8 +624,8 @@ def _plex_media_bits(item: dict) -> dict[str, Any]:
         resolution = f"{res}p" if str(res).isdigit() else str(res)
     elif media.get("height"):
         resolution = f"{media['height']}p"
-    video_codec = str(media["videoCodec"]).upper() if media.get("videoCodec") else None
-    audio_codec = str(media["audioCodec"]).upper() if media.get("audioCodec") else None
+    video_codec = _codec(media.get("videoCodec"))
+    audio_codec = _codec(media.get("audioCodec"))
     bitrate_bps = _plex_resolve_bitrate_bps(item, media, parts)
     bitrate_label = _bitrate_label(bitrate_bps)
     if item.get("TranscodeSession"):
@@ -763,14 +801,14 @@ def _emby_media_bits(now: dict, session: dict) -> dict[str, Any]:
     for stream in streams:
         if not isinstance(stream, dict):
             continue
-        if stream.get("Type") == "Video" and stream.get("Codec"):
-            video_codec = str(stream["Codec"]).upper()
+        if stream.get("Type") == "Video" and _codec(stream.get("Codec")):
+            video_codec = _codec(stream["Codec"])
             break
     for stream in streams:
         if not isinstance(stream, dict):
             continue
-        if stream.get("Type") == "Audio" and stream.get("Codec"):
-            audio_codec = str(stream["Codec"]).upper()
+        if stream.get("Type") == "Audio" and _codec(stream.get("Codec")):
+            audio_codec = _codec(stream["Codec"])
             break
 
     bitrate_bps = _sane_bps(bitrate_bps)

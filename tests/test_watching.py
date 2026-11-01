@@ -676,3 +676,119 @@ def test_parse_live_sessions_keep_tuner_channel_id_and_number():
     boxing = next(r for r in emby if r["session_id"] == "sess-boxing")
     assert boxing["channel_number"] == "3000"
     assert emby[0]["channel_number"] is None
+
+
+def _dispatcharr_rows():
+    """Shape of /proxy/stats/ on osiris with ITV 1 and SKY ATLANTIC live."""
+    itv = "65b4e027-fee6-434b-ab87-41d82e14d34e"
+    sky = "31b9fc2a-87ba-4d93-b573-b517f281ec71"
+    return index_live_providers(
+        {"live": {"channels": [
+            {
+                "channel_id": itv, "channel_name": "ITV 1", "stream_id": 24804,
+                "resolution": "1920x1080", "video_codec": "h264", "audio_codec": "aac",
+                "avg_bitrate_kbps": 3564.15, "total_bytes": 286834612, "uptime": 643.8,
+            },
+            {
+                "channel_id": sky, "channel_name": "SKY ATLANTIC", "stream_id": 128918,
+                "resolution": "1920x1080", "video_codec": "h264", "audio_codec": "aac",
+                "avg_bitrate_kbps": 4636.89,
+            },
+        ]}},
+        [{"id": 24804, "m3u_account": 5}, {"id": 128918, "m3u_account": 7}],
+        [{"id": 5, "name": "Strong8K"}, {"id": 7, "name": "D4K"}],
+        [{"uuid": itv}, {"uuid": sky}],
+        [
+            {"channel_uuid": itv, "title": "The World Is Not Enough"},
+            {"channel_uuid": sky, "title": "Fargo"},
+        ],
+    )
+
+
+def test_live_cards_take_resolution_codecs_and_average_bitrate_from_dispatcharr():
+    emby = parse_emby_sessions([{
+        "Id": "sess-itv",
+        "UserName": "stevec",
+        "Client": "Emby for Apple TV",
+        "DeviceName": "Living Room Apple TV",
+        "NowPlayingItem": {
+            "Id": "itv-1",
+            "Name": "ITV 1",
+            "Type": "TvChannel",
+            "MediaStreams": [{"Type": "Video", "Codec": "h264"}, {"Type": "Audio", "Codec": "aac"}],
+        },
+        "TranscodingInfo": {"Bitrate": 10_194_361, "VideoCodec": "h264"},
+        "PlayState": {"IsPaused": False},
+    }])
+    plex = parse_plex_sessions({"MediaContainer": {"Metadata": [{
+        "type": "episode",
+        "title": "Fargo",
+        "live": "1",
+        "channelTitle": "SKY ATLANTIC",
+        "User": {"title": "coutts99"},
+        "Player": {"title": "steven-macbook.couttsnet.com", "product": "Plex for Mac", "state": "playing"},
+        "TranscodeSession": {},
+        "Media": [{"origin": "livetv", "videoResolution": "1080", "videoCodec": "h264", "audioCodec": "*"}],
+    }]}})
+    assert emby[0]["resolution"] is None
+    assert emby[0]["formats"] == ["H264", "AAC", "10 Mbps"]
+    # Plex reports '*' for an audio codec it has not settled yet: never a chip.
+    assert plex[0]["audio_codec"] is None
+    assert "*" not in plex[0]["formats"]
+
+    sessions = [*emby, *plex]
+    attach_live_providers(sessions, _dispatcharr_rows())
+    itv, sky = sessions
+    assert itv["provider"] == "Strong8K"
+    assert itv["resolution"] == "1080p"
+    assert itv["bitrate_bps"] == 3_564_000
+    assert itv["formats"] == ["1080p", "H264", "AAC", "4 Mbps"]
+    assert itv["quality"] == "1080p · H264 · AAC · 4 Mbps"
+    assert sky["provider"] == "D4K"
+    assert sky["audio_codec"] == "AAC"
+    assert sky["bitrate_bps"] == 4_636_000
+    assert sky["formats"] == ["1080p", "H264", "AAC", "5 Mbps"]
+
+
+def test_live_card_keeps_media_server_values_when_dispatcharr_has_none():
+    sessions = parse_plex_sessions({"MediaContainer": {"Metadata": [{
+        "type": "episode",
+        "title": "Fargo",
+        "live": "1",
+        "channelTitle": "SKY ATLANTIC",
+        "User": {"title": "coutts99"},
+        "Player": {"title": "Mac", "state": "playing"},
+        "Media": [{"origin": "livetv", "videoResolution": "720", "videoCodec": "mpeg2video", "audioCodec": "ac3"}],
+    }]}})
+    rows = index_live_providers(
+        {"live": {"channels": [{"channel_id": "c", "channel_name": "SKY ATLANTIC", "stream_id": 1}]}},
+        [{"id": 1, "m3u_account": 7}],
+        [{"id": 7, "name": "D4K"}],
+    )
+    attach_live_providers(sessions, rows)
+    live = sessions[0]
+    assert live["provider"] == "D4K"
+    assert live["formats"] == ["720p", "MPEG2VIDEO", "AC3", "5 Mbps"]
+
+
+def test_library_plays_ignore_dispatcharr_stream_stats():
+    sessions = parse_plex_sessions(PLEX_SAMPLE)
+    before = [dict(s) for s in sessions]
+    attach_live_providers(sessions, _dispatcharr_rows())
+    assert sessions[0]["formats"] == before[0]["formats"]
+    assert sessions[0]["bitrate_bps"] == before[0]["bitrate_bps"]
+
+
+def test_live_audio_codec_comes_from_dispatcharr_over_the_media_server():
+    sessions = parse_plex_sessions({"MediaContainer": {"Metadata": [{
+        "type": "episode",
+        "title": "Fargo",
+        "live": "1",
+        "channelTitle": "SKY ATLANTIC",
+        "User": {"title": "coutts99"},
+        "Player": {"title": "Mac", "state": "playing"},
+        "Media": [{"origin": "livetv", "videoResolution": "1080", "videoCodec": "h264", "audioCodec": "ac3"}],
+    }]}})
+    attach_live_providers(sessions, _dispatcharr_rows())
+    assert sessions[0]["audio_codec"] == "AAC"
+    assert sessions[0]["formats"] == ["1080p", "H264", "AAC", "5 Mbps"]
