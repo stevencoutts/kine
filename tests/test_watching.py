@@ -486,6 +486,129 @@ def test_plex_livetv_program_uses_the_provider_on_that_channel():
     assert library["art_url"] != live["art_url"]
 
 
+def _plex_episode_four(**extra):
+    item = {
+        "type": "episode",
+        "title": "Episode 4",
+        "live": "1",
+        "key": "/livetv/sessions/episode-four",
+        "User": {"title": "coutts99"},
+        "Player": {"title": "Apple TV", "product": "Plex for Apple TV", "state": "playing"},
+        "Media": [{
+            "origin": "livetv",
+            "videoResolution": "1080",
+            "videoCodec": "h264",
+            "audioCodec": "aac",
+        }],
+    }
+    item.update(extra)
+    return parse_plex_sessions({"MediaContainer": {"Metadata": [item]}})
+
+
+def test_plex_untitled_episode_matches_the_series_when_several_are_episode_four():
+    """Plex titles a nameless live episode 'Episode 4'. The guide title is the series."""
+    sessions = _plex_episode_four(
+        grandparentTitle="Caught Red Handed",
+        parentTitle="Season 3",
+        parentIndex=3,
+        index=4,
+    )
+    live = sessions[0]
+    assert live["kind"] == "channel"
+    assert live["title"] == "Episode 4"
+    assert live["show"] == "Caught Red Handed"
+    assert live["program"] == "Episode 4"
+    sky = "b6a09085-47c2-41af-85c7-17bc5cbd6514"
+    itv = "65b4e027-fee6-434b-ab87-41d82e14d34e"
+    rows = index_live_providers(
+        {"live": {"channels": [
+            {"channel_id": sky, "channel_name": "Sky Crime", "stream_id": 1},
+            {"channel_id": itv, "channel_name": "ITV 1", "stream_id": 2},
+        ]}},
+        [{"id": 1, "m3u_account": 5}, {"id": 2, "m3u_account": 9}],
+        [{"id": 5, "name": "Strong8K"}, {"id": 9, "name": "Lumen-direct"}],
+        [
+            {"uuid": sky, "channel_number": 121, "logo_id": 9},
+            {"uuid": itv, "channel_number": 103, "logo_id": 8},
+        ],
+        [
+            {"channel_uuid": sky, "title": "Caught Red Handed", "sub_title": None, "episode": 4, "season": 3},
+            {"channel_uuid": itv, "title": "Talking Royals", "episode": 4, "season": 2},
+        ],
+    )
+    attach_live_providers(sessions, rows)
+    assert live["provider"] == "Strong8K"
+    assert live["title"] == "Sky Crime — Caught Red Handed"
+    assert live["channel"] == "Sky Crime"
+    assert live["art_url"] == "/api/watching/art/dispatcharr?logo_id=9"
+
+
+def test_plex_untitled_episode_matches_the_only_guide_slot_on_episode_four():
+    sessions = _plex_episode_four()
+    live = sessions[0]
+    assert live.get("show") is None
+    channel = "1190c95a-f716-4f65-934c-89dd81c505f6"
+    rows = index_live_providers(
+        {"live": {"channels": [
+            {"channel_id": channel, "channel_name": "U&W", "stream_id": 3},
+        ]}},
+        [{"id": 3, "m3u_account": 5}],
+        [{"id": 5, "name": "Strong8K"}],
+        [{"uuid": channel, "channel_number": 132, "logo_id": 4}],
+        [{"channel_uuid": channel, "title": "Inside the Ambulance", "episode": 4, "season": 8}],
+    )
+    attach_live_providers(sessions, rows)
+    assert live["provider"] == "Strong8K"
+    assert live["title"] == "U&W — Inside the Ambulance"
+    assert live["channel"] == "U&W"
+
+
+def test_plex_untitled_episode_does_not_guess_between_two_episode_fours():
+    sessions = _plex_episode_four()
+    sky = "b6a09085-47c2-41af-85c7-17bc5cbd6514"
+    itv = "65b4e027-fee6-434b-ab87-41d82e14d34e"
+    rows = index_live_providers(
+        {"live": {"channels": [
+            {"channel_id": sky, "channel_name": "Sky Crime", "stream_id": 1},
+            {"channel_id": itv, "channel_name": "ITV 1", "stream_id": 2},
+        ]}},
+        [{"id": 1, "m3u_account": 5}, {"id": 2, "m3u_account": 5}],
+        [{"id": 5, "name": "Strong8K"}],
+        [
+            {"uuid": sky, "channel_number": 121},
+            {"uuid": itv, "channel_number": 103},
+        ],
+        [
+            {"channel_uuid": sky, "title": "Caught Red Handed", "episode": 4},
+            {"channel_uuid": itv, "title": "Talking Royals", "episode": 4},
+        ],
+    )
+    attach_live_providers(sessions, rows)
+    assert "provider" not in sessions[0]
+    assert sessions[0]["title"] == "Episode 4"
+
+
+def test_plex_episode_subtitle_matches_when_the_guide_title_is_the_series():
+    sessions = _plex_episode_four()
+    channel = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    rows = index_live_providers(
+        {"live": {"channels": [
+            {"channel_id": channel, "channel_name": "Drama", "stream_id": 7},
+            {"channel_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "channel_name": "ITV 1", "stream_id": 8},
+        ]}},
+        [{"id": 7, "m3u_account": 5}, {"id": 8, "m3u_account": 5}],
+        [{"id": 5, "name": "Strong8K"}],
+        [{"uuid": channel, "logo_id": 3}, {"uuid": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"}],
+        [
+            {"channel_uuid": channel, "title": "Tip Toe", "sub_title": "Episode 4", "episode": 4},
+            {"channel_uuid": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", "title": "Talking Royals", "episode": 4},
+        ],
+    )
+    attach_live_providers(sessions, rows)
+    assert sessions[0]["provider"] == "Strong8K"
+    assert sessions[0]["title"] == "Drama — Tip Toe"
+
+
 def test_emby_live_title_is_channel_and_programme_without_the_number():
     sessions = parse_emby_sessions([{
         "Id": "sess-bbc",

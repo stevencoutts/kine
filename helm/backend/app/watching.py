@@ -111,6 +111,34 @@ def _norm_channel_name(value: Any) -> str:
     return " ".join(str(value or "").casefold().split())
 
 
+def _episode_number(value: Any) -> str | None:
+    """Guide episode index, as a decimal string. Zero and blanks are ignored."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, float):
+        if value != value or value != int(value) or value <= 0:
+            return None
+        return str(int(value))
+    if isinstance(value, int):
+        return str(value) if value > 0 else None
+    text = str(value).strip()
+    if text.isdigit() and int(text) > 0:
+        return str(int(text))
+    return None
+
+
+_GENERIC_EPISODE_RE = re.compile(r"^episode\s+0*(\d+)$", re.IGNORECASE)
+
+
+def _generic_episode_number(value: Any) -> str | None:
+    """Plex titles an untitled live episode 'Episode 4' instead of the series name."""
+    match = _GENERIC_EPISODE_RE.match(str(value or "").strip())
+    if not match:
+        return None
+    number = int(match.group(1))
+    return str(number) if number > 0 else None
+
+
 def _tuner_ref(path: str | None) -> tuple[str | None, str | None]:
     """Channel UUID or HDHomeRun number embedded in a Plex/Emby media path."""
     if not path or not isinstance(path, str):
@@ -201,12 +229,16 @@ def index_live_providers(
         cid = row.get("uuid") or row.get("channel_id")
         if cid:
             detail_by_id[str(cid).lower()] = row
-    program_by_id: dict[str, str] = {}
+    program_by_id: dict[str, dict] = {}
     for row in _rows(programs):
         cid = str(row.get("channel_uuid") or row.get("uuid") or "").strip().lower()
         title = str(row.get("title") or "").strip()
         if cid and title:
-            program_by_id[cid] = title
+            program_by_id[cid] = {
+                "title": title,
+                "subtitle": str(row.get("sub_title") or row.get("subtitle") or "").strip(),
+                "episode": _episode_number(row.get("episode")),
+            }
     live = stats.get("live") if isinstance(stats, dict) and "live" in stats else stats
     indexed: list[dict] = []
     for channel in _rows(live):
@@ -230,12 +262,15 @@ def index_live_providers(
             or _channel_number(detail.get("channel_number"))
             or _channel_number(channel.get("channel_number"))
         )
+        guide = program_by_id.get(cid or "") or {}
         indexed.append({
             "channel_id": cid,
             "name": names[0] if names else None,
             "names": names,
             "number": number,
-            "program": program_by_id.get(cid or ""),
+            "program": guide.get("title") or None,
+            "program_subtitle": guide.get("subtitle") or None,
+            "episode": guide.get("episode"),
             "provider": provider,
             "logo_id": _logo_id(detail),
         })
@@ -289,11 +324,17 @@ def _matched_row(bucket: dict[str, dict | None], key: str | None) -> dict | None
 
 
 def attach_live_providers(sessions: list[dict], rows: list[dict]) -> list[dict]:
-    """Set provider on live sessions. Library plays are left alone."""
+    """Set provider on live sessions. Library plays are left alone.
+
+    An untitled episode arrives from Plex as title "Episode 4" with the series
+    on grandparentTitle. The guide's programme title is the series, so match
+    that, the guide subtitle, or a unique "Episode N" before giving up.
+    """
     by_id: dict[str, dict | None] = {}
     by_number: dict[str, dict | None] = {}
     by_name: dict[str, dict | None] = {}
     by_program: dict[str, dict | None] = {}
+    by_episode: dict[str, dict | None] = {}
     for row in rows:
         provider = str(row.get("provider") or "").strip()
         if not provider:
@@ -304,6 +345,8 @@ def attach_live_providers(sessions: list[dict], rows: list[dict]) -> list[dict]:
         for alias in aliases:
             _remember_row(by_name, _norm_channel_name(alias) or None, row)
         _remember_row(by_program, _norm_channel_name(row.get("program")) or None, row)
+        _remember_row(by_program, _norm_channel_name(row.get("program_subtitle")) or None, row)
+        _remember_row(by_episode, row.get("episode"), row)
     for session in sessions:
         # A library file has no tuner id. A live play can still carry one when
         # Plex/Emby label the session as an episode.
@@ -318,6 +361,12 @@ def attach_live_providers(sessions: list[dict], rows: list[dict]) -> list[dict]:
             or _matched_row(by_name, _norm_channel_name(session.get("channel")) or None)
             or _matched_row(by_name, _norm_channel_name(str(session.get("title") or "").split(" — ")[0]) or None)
             or _matched_row(by_program, _norm_channel_name(session.get("program")) or None)
+            or _matched_row(by_program, _norm_channel_name(session.get("show")) or None)
+            or _matched_row(
+                by_episode,
+                _generic_episode_number(session.get("program"))
+                or _generic_episode_number(session.get("title")),
+            )
         )
         provider = str(matched.get("provider") or "").strip() if matched else ""
         if provider:
