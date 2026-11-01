@@ -17,6 +17,7 @@ services:
     cap_add: [NET_ADMIN, SYS_ADMIN]
     # Host PIDs so the relay can enter gluetun's network namespace.
     # It signals only its own sing-box processes, never gluetun's init.
+    # The host's routes are read from /proc/1/net/route through it too.
     pid: host
     devices:
       - /dev/net/tun:/dev/net/tun
@@ -24,8 +25,11 @@ services:
       net.ipv4.ip_forward: "1"
     environment:
       TZ: ${KINE_TIMEZONE}
+      KINE_LAN_IP: ${KINE_LAN_IP:-}
     volumes:
       - ${STACK_ROOT}/config/wg-access:/config
+      # Internal-zone DNS goes to the host's private nameserver.
+      - /etc/resolv.conf:/host/resolv.conf:ro
     networks: [kine_edge, kine_internal]
     ports:
       - "${WG_ACCESS_PORT:-51820}:51820/udp"

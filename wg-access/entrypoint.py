@@ -27,6 +27,8 @@ STATUS = pathlib.Path("/config/status.json")
 SOCKS_JSON = pathlib.Path("/config/socks.json")
 ROUTER_JSON = pathlib.Path("/config/router.json")
 WG_CONF = pathlib.Path("/etc/wireguard/wg0.conf")
+HOST_RESOLV = pathlib.Path("/host/resolv.conf")
+HOST_ROUTES = pathlib.Path("/proc/1/net/route")
 UPSTREAM_DNS = ("1.1.1.1", 53)
 
 STOP = threading.Event()
@@ -287,32 +289,22 @@ def forward_to(query: bytes, dest: tuple[str, int]) -> bytes | None:
         sock.close()
 
 
-def host_file(path: str) -> str:
-    """Read a host file. Read-only, and it does not enter gluetun."""
-    result = run(["nsenter", "-t", "1", "-m", "--", "cat", path])
-    if result.returncode != 0:
+def read_text(path: pathlib.Path) -> str:
+    try:
+        return path.read_text()
+    except OSError:
         return ""
-    return result.stdout or ""
 
 
 def host_resolver_inputs() -> tuple[str, str]:
-    """Host resolver text, and this machine's addresses.
+    """Host resolver text, and the host's routing table.
 
-    systemd-resolved's uplink file lists the DNS server the LAN gave
-    the host. ``ip addr`` is read in the host network namespace and
-    does not change routes.
+    Entering the host namespaces needs ptrace rights this container does
+    not have. The host resolv.conf is a read-only mount, and the routes
+    come from host PID 1's /proc entry, readable through ``pid: host``.
     """
-    resolv = "\n".join(
-        part for part in (
-            host_file("/run/systemd/resolve/resolv.conf"),
-            host_file("/etc/resolv.conf"),
-        ) if part
-    )
-    addrs = run([
-        "nsenter", "-t", "1", "-n", "--",
-        "ip", "-4", "-o", "addr", "show", "scope", "global",
-    ])
-    return resolv, (addrs.stdout or "") if addrs.returncode == 0 else ""
+    resolv = client_vpn.resolver_text(read_text(HOST_RESOLV), read_text(pathlib.Path("/etc/resolv.conf")))
+    return resolv, read_text(HOST_ROUTES)
 
 
 def forward_socks(query: bytes, socks_ip: str) -> bytes | None:
@@ -402,10 +394,10 @@ def answer(query: bytes) -> bytes | None:
 
 
 def publish_runtime(state: dict, vpn_exit: bool, socks_ip: str) -> None:
-    resolv, addrs = host_resolver_inputs()
+    resolv, routes = host_resolver_inputs()
     zones = tuple(client_vpn.internal_zones(str(state.get("lan_domain") or ""), resolv))
-    resolver = client_vpn.internal_resolver(resolv, addrs) or ""
-    networks = client_vpn.host_networks_from_addrs(addrs)
+    resolver = client_vpn.internal_resolver(resolv, os.environ.get("KINE_LAN_IP", "")) or ""
+    networks = client_vpn.host_networks_from_routes(routes)
     with RUNTIME["lock"]:
         RUNTIME["zones"] = zones
         RUNTIME["resolver"] = resolver

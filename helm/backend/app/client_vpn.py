@@ -681,11 +681,6 @@ def parse_qname(packet: bytes) -> tuple[str, int, int] | None:
     return ".".join(labels), offset + 4, qtype
 
 
-_SKIP_IFACE = re.compile(
-    r"^(lo|docker\d*|virbr\d*|tailscale\d*|veth.*|tun\d*|br-[0-9a-f]+|wg\d*|wgexit)$"
-)
-
-
 def internal_zones(lan_domain: str, resolv_text: str) -> list[str]:
     """Zones a client device asks the internal DNS server about.
 
@@ -750,66 +745,56 @@ def nameservers_from_resolv(text: str) -> list[str]:
     return found
 
 
-def internal_address_from_addrs(addr_text: str) -> str | None:
-    """This machine's internal address, from ``ip -4 -o addr`` text.
+def resolver_text(host_text: str, container_text: str) -> str:
+    """Host resolver text, then the servers Docker forwards to.
 
-    Docker bridges and the client tunnel are skipped. A route or a DNS
-    query uses this only when the host resolver is on the machine itself.
+    When the host file is systemd-resolved's 127.0.0.53 stub, Docker has
+    already looked past it: the container's own resolv.conf names the
+    real upstream in an ``# ExtServers: [host(10.0.0.1)]`` comment.
     """
-    private: list[str] = []
-    other: list[str] = []
-    for raw in (addr_text or "").splitlines():
-        match = re.search(
-            r"^\d+:\s+(\S+)\s+inet\s+(\d+\.\d+\.\d+\.\d+)/",
-            raw.strip(),
-        )
-        if not match:
-            continue
-        iface, ip = match.group(1), match.group(2)
-        if _SKIP_IFACE.match(iface):
-            continue
-        try:
-            addr = ipaddress.IPv4Address(ip)
-        except ipaddress.AddressValueError:
-            continue
-        if addr.is_loopback or addr.is_link_local or addr.is_multicast:
-            continue
-        if addr.is_private:
-            private.append(str(addr))
-        else:
-            other.append(str(addr))
-    if private:
-        return private[0]
-    return other[0] if other else None
+    extra: list[str] = []
+    for raw in (container_text or "").splitlines():
+        if raw.lstrip("# ").lower().startswith("extservers:"):
+            extra += [f"nameserver {ip}" for ip in re.findall(r"\d+\.\d+\.\d+\.\d+", raw)]
+    return "\n".join([host_text or "", container_text or "", *extra])
 
 
-def host_networks_from_addrs(addr_text: str) -> list[dict]:
-    """Every IPv4 network on the host's interfaces, from ``ip -4 -o addr``.
+def _route_hex(value: str) -> ipaddress.IPv4Address:
+    return ipaddress.IPv4Address(int(value, 16).to_bytes(4, "little"))
 
-    Unlike ``internal_address_from_addrs`` this keeps Docker bridges:
-    a client subnet that overlaps any of them would hide it from devices.
+
+def host_networks_from_routes(route_text: str) -> list[dict]:
+    """Every IPv4 network in the host's main routing table.
+
+    ``route_text`` is ``/proc/1/net/route``, which a container sharing the
+    host PID namespace can read without entering the host namespaces.
+    Docker bridges are kept: a client subnet that overlaps any of them
+    would hide it from devices. The default route is not a network.
     """
     found: list[dict] = []
-    for raw in (addr_text or "").splitlines():
-        match = re.search(r"^\d+:\s+(\S+)\s+inet\s+(\d+\.\d+\.\d+\.\d+/\d+)", raw.strip())
-        if not match or match.group(1) == "lo":
+    for raw in (route_text or "").splitlines()[1:]:
+        parts = raw.split()
+        if len(parts) < 8 or parts[0] == "lo":
             continue
         try:
-            net = ipaddress.IPv4Interface(match.group(2)).network
+            dest, mask = _route_hex(parts[1]), _route_hex(parts[7])
+            net = ipaddress.IPv4Network(f"{dest}/{mask}")
         except ValueError:
             continue
-        entry = {"name": match.group(1), "cidr": str(net)}
+        if net.prefixlen == 0:
+            continue
+        entry = {"name": parts[0], "cidr": str(net)}
         if entry not in found:
             found.append(entry)
     return found
 
 
-def internal_resolver(resolv_text: str, addr_text: str) -> str | None:
+def internal_resolver(resolv_text: str, fallback: str = "") -> str | None:
     """Address of the DNS server the host uses for internal names.
 
     A private nameserver in the host resolver is that server. Loopback
     and public resolvers are not: loopback means this machine is the
-    resolver, so the query goes to the machine's internal address.
+    resolver, so the query goes to ``fallback``, the host's internal address.
     """
     for raw in nameservers_from_resolv(resolv_text):
         try:
@@ -820,7 +805,7 @@ def internal_resolver(resolv_text: str, addr_text: str) -> str | None:
             continue
         if ip.is_private:
             return str(ip)
-    return internal_address_from_addrs(addr_text)
+    return fallback.strip() or None
 
 
 def socks5_udp_packet(dest_ip: str, dest_port: int, payload: bytes) -> bytes:
