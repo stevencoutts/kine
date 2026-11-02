@@ -3,10 +3,10 @@
 
 Dry-run by default. Pass --apply to create missing sources on the destination.
 
-Example (on osiris, from the kine checkout):
+Example:
 
   python3 scripts/sync-from-kore-dispatcharr.py \\
-    --source-url http://10.100.100.90:9191 \\
+    --source-ssh user@source-host \\
     --dest-url http://gluetun:9191 \\
     --dest-token "$DISPATCHARR_TOKEN" \\
     --apply
@@ -19,10 +19,10 @@ import pathlib
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
-KORE_TEAMARR_EPG = "http://10.100.100.90:9195/api/v1/epg/xmltv"
 _TEAMARR_EPG_PATH = "/api/v1/epg/xmltv"
 
 
@@ -91,7 +91,7 @@ def _list_epg(base: str, token: str) -> list[dict]:
     return _unwrap_list(_request(base, token, "GET", "/api/epg/sources/"))
 
 
-def _export_from_kore_ssh(host: str = "kore") -> list[dict]:
+def _export_from_kore_ssh(host: str) -> list[dict]:
     cmd = [
         "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", host,
         "sudo", "docker", "exec", "dispatcharr", "python3", "-c",
@@ -125,7 +125,12 @@ def _export_from_kore_ssh(host: str = "kore") -> list[dict]:
 
 
 def _rewrite_epg_url(url: str) -> str:
-    if url.strip() == KORE_TEAMARR_EPG:
+    """Point a copied Teamarr guide at this install.
+
+    Matched by the XMLTV path, so the source host is not fixed.
+    """
+    path = urllib.parse.urlparse((url or "").strip()).path.rstrip("/")
+    if path == _TEAMARR_EPG_PATH.rstrip("/"):
         return kine_teamarr_epg()
     return url
 
@@ -155,7 +160,6 @@ def _epg_payload(row: dict) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-url", default="http://10.100.100.90:9191")
     parser.add_argument("--source-token", default="")
     parser.add_argument("--source-ssh", default="", help="SSH host to read kore DB via docker exec")
     parser.add_argument("--source-json", default="", help="JSON file exported from kore")

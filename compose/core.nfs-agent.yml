@@ -1,5 +1,5 @@
-# Host-network NFS browse agent. Mounts use the host LAN IP (e.g.
-# 10.100.100.34), not a Docker bridge address, so UniFi allowlists match.
+# Host-network NFS browse agent. Mounts use the host LAN IP, not a
+# Docker bridge address, so the storage server's allowlist matches.
 # Helm talks to this via NFS_BROWSE_AGENT (host.docker.internal:8611).
 services:
   nfs-browse-agent:

@@ -6,10 +6,12 @@ Dry-run by default. Pass --apply to PUT updates.
 Also sets allow_manual_channel_merge=True so create_channel if_exists=merge
 adopts hand-built/synced channels instead of spawning auto-numbered duplicates.
 
-Run from a host that can SSH to kore + osiris:
+Run from a host that can SSH to the source and the destination:
 
-  python3 scripts/ecm-rules-stamp-channel-numbers.py
-  python3 scripts/ecm-rules-stamp-channel-numbers.py --apply
+  python3 scripts/ecm-rules-stamp-channel-numbers.py \\
+    --source-ssh user@source-host --dest-ssh user@dest-host
+  python3 scripts/ecm-rules-stamp-channel-numbers.py \\
+    --source-ssh user@source-host --dest-ssh user@dest-host --apply
 """
 from __future__ import annotations
 
@@ -176,9 +178,9 @@ def dest_request(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-ssh", default="stevec@10.100.100.90")
+    parser.add_argument("--source-ssh", required=True, help="SSH target for the source host")
     parser.add_argument("--source-container", default="dispatcharr")
-    parser.add_argument("--dest-ssh", default="stevec@10.100.100.34")
+    parser.add_argument("--dest-ssh", required=True, help="SSH target for the destination host")
     parser.add_argument("--dest-container", default="kine-ecm")
     parser.add_argument("--dest-token", default="")
     parser.add_argument("--apply", action="store_true")

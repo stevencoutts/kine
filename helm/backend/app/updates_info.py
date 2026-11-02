@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 from datetime import datetime, timezone
 
 from . import catalogue, channels, config
@@ -60,6 +61,7 @@ def enrich(rows: list[dict], *, running: set[str] | None = None) -> list[dict]:
         # Helm talks to Docker through dockerproxy; applying an update to
         # it from Helm stops the proxy mid-recreate and leaves it down.
         host_only = app_id == "dockerproxy"
+        checkout = env.get("KINE_CHECKOUT", "").strip() if host_only else ""
         # Catalogue apps (including hidden metrics deps) are profile-gated.
         # Always-on plumbing (Traefik, Helm, dockerproxy, …) is not in the
         # catalogue and has no COMPOSE_PROFILES entry — treat as enabled.
@@ -75,10 +77,27 @@ def enrich(rows: list[dict], *, running: set[str] | None = None) -> list[dict]:
             "running": is_running,
             "core": core,
             "host_only": host_only,
+            "checkout": checkout,
             "tier": meta.get("tier") or "",
         }
         out.append(item)
     return out
+
+
+def host_update_hint(app_id: str, checkout: str = "") -> str:
+    """Command to update a container Helm must not recreate itself.
+
+    The directory is this install's checkout. No hostname or path from
+    another machine is filled in.
+    """
+    directory = (checkout or "").strip()
+    cd = f"cd {shlex.quote(directory)} && " if directory else ""
+    return (
+        f"{app_id} cannot be updated from Helm. Recreating it cuts "
+        "Helm's Docker access mid-apply. On the host, in the Kine checkout, run:\n"
+        f"  {cd}sudo docker compose pull {app_id} && "
+        f"sudo docker compose up -d {app_id}"
+    )
 
 
 def catalogue_apps(rows: list[dict]) -> list[dict]:

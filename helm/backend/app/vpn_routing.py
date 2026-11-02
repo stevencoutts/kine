@@ -124,7 +124,7 @@ APP_TRAEFIK_HOST: dict[str, str] = {
 }
 
 # Extra Host() names kept for legacy clients (Plex/Emby still use
-# dispatcharr.couttsnet.com; catalogue subdomain is tv).
+# dispatcharr.<domain>; catalogue subdomain is tv).
 APP_TRAEFIK_ALIASES: dict[str, tuple[str, ...]] = {
     "dispatcharr": ("dispatcharr",),
 }

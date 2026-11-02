@@ -6,10 +6,12 @@ Dry-run by default. Pass --apply to write.
 Auth uses a short-lived JWT minted inside each ECM container (admin user),
 so no password is required when Docker access is available.
 
-Example (on osiris, from the kine checkout):
+Example:
 
-  python3 scripts/sync-from-kore-ecm.py
-  python3 scripts/sync-from-kore-ecm.py --apply
+  python3 scripts/sync-from-kore-ecm.py \\
+    --source-url http://source-host:6100 --source-ssh user@source-host
+  python3 scripts/sync-from-kore-ecm.py \\
+    --source-url http://source-host:6100 --source-ssh user@source-host --apply
 """
 from __future__ import annotations
 
@@ -21,8 +23,6 @@ import urllib.error
 import urllib.request
 from typing import Any
 
-DEFAULT_SOURCE_URL = "http://10.100.100.90:6100"
-DEFAULT_SOURCE_SSH = "kore"
 DEFAULT_SOURCE_CONTAINER = "enhancedchannelmanager-ecm-1"
 DEFAULT_DEST_CONTAINER = "kine-ecm"
 
@@ -235,8 +235,8 @@ def task_enabled_patch(src: dict, dest: dict) -> dict | None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-url", default=DEFAULT_SOURCE_URL)
-    parser.add_argument("--source-ssh", default=DEFAULT_SOURCE_SSH)
+    parser.add_argument("--source-url", required=True, help="ECM base URL on the source host")
+    parser.add_argument("--source-ssh", default="", help="SSH target for the source host when no --source-token")
     parser.add_argument("--source-container", default=DEFAULT_SOURCE_CONTAINER)
     parser.add_argument("--source-token", default="", help="Bearer JWT; skips SSH mint")
     parser.add_argument("--dest-container", default=DEFAULT_DEST_CONTAINER)
@@ -245,6 +245,8 @@ def main() -> int:
     parser.add_argument("--schedules-only", action="store_true")
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
+    if not args.source_token and not args.source_ssh:
+        parser.error("pass --source-ssh, or --source-token to skip SSH")
 
     do_rules = not args.schedules_only
     do_schedules = not args.rules_only

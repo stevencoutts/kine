@@ -2549,11 +2549,14 @@ render.updates = async (opts={}) => {
       const id = b.dataset.hostUp;
       const rep = $('#rep');
       rep.style.display = 'block';
-      const cmd = `cd ~/Docker/kine && sudo docker compose pull ${id} && sudo docker compose up -d ${id}`;
+      const row = rows.find(c => c.id === id);
+      const dir = (row && row.checkout) || '';
+      const quoted = /[^A-Za-z0-9_./@:-]/.test(dir) ? `'${dir.replace(/'/g, `'\\''`)}'` : dir;
+      const cmd = `${dir ? `cd ${quoted} && ` : ''}sudo docker compose pull ${id} && sudo docker compose up -d ${id}`;
       rep.textContent =
-        `${id} must be updated on the host — Helm talks to Docker through it,\n` +
+        `${id} must be updated on the host. Helm talks to Docker through it,\n` +
         `so recreating it from here cuts that path mid-apply and leaves it down.\n\n` +
-        `Run on osiris:\n  ${cmd}\n`;
+        `On the host, in the Kine checkout:\n  ${cmd}\n`;
       setProgress(`${id} is host-only — see the command in the log below.`, 'warn');
       state.updatesLog = rep.textContent;
     });
@@ -3672,7 +3675,7 @@ render.settings = async () => {
           <h3 class="settings-group-title">NFS Server</h3>
           <label>NFS Server</label>
           <div class="row" style="gap:.5rem">
-            <input id="NFS_SERVER" value="${s.NFS_SERVER||''}" placeholder="10.100.30.222" style="flex:1">
+            <input id="NFS_SERVER" value="${s.NFS_SERVER||''}" placeholder="192.168.1.10" style="flex:1">
             <button class="act primary" id="load-nfs-shares" type="button">Load shares</button>
           </div>
           <div id="nfs-shares-status" style="margin-top:.75rem"></div>
@@ -3707,7 +3710,7 @@ render.settings = async () => {
       <div class="settings-groups">
         <div class="settings-group">
           <h3 class="settings-group-title">Plex</h3>
-          <label>Host</label><input id="PLEX_HOST" value="${esc(s.PLEX_HOST)}" placeholder="10.100.100.20">
+          <label>Host</label><input id="PLEX_HOST" value="${esc(s.PLEX_HOST)}" placeholder="192.168.1.20">
           <div class="row" style="gap:1rem;align-items:end">
             <div style="flex:1"><label>Port</label>
               <input id="PLEX_PORT" value="${esc(plexPort)}"></div>

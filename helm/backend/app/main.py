@@ -1050,14 +1050,7 @@ async def updates_progress(user: str = Depends(require_user)):
 # Helm reaches Docker only through dockerproxy. Recreating that container
 # from here stops the proxy mid-apply and leaves it (and often Traefik)
 # down. Update it on the host instead.
-HOST_ONLY_UPDATES = {
-    "dockerproxy": (
-        "dockerproxy cannot be updated from Helm — recreating it cuts "
-        "Helm's Docker access mid-apply. On the host run:\n"
-        "  cd ~/Docker/kine && sudo docker compose pull dockerproxy && "
-        "sudo docker compose up -d dockerproxy"
-    ),
-}
+HOST_ONLY_UPDATES = {"dockerproxy"}
 
 
 @app.post("/api/updates/{app_id}")
@@ -1068,7 +1061,11 @@ async def apply_update(app_id: str, user: str = Depends(require_user)):
     media stack breaks overnight, usually mid-import.
     """
     if app_id in HOST_ONLY_UPDATES:
-        raise HTTPException(status_code=409, detail=HOST_ONLY_UPDATES[app_id])
+        checkout = config.read().get("KINE_CHECKOUT", "")
+        raise HTTPException(
+            status_code=409,
+            detail=updates_info.host_update_hint(app_id, checkout),
+        )
     # `compose up -d <svc>` starts a named service even when its profile is
     # off, which is how a disabled Grafana came back after Update All.
     # Always-on plumbing (Traefik, Helm, …) is not catalogue/profile-gated.

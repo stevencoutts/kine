@@ -14,7 +14,7 @@ action also gets group_id (from the rule's target_group_id, or
 --default-group-id / Default Group). Already-converted rules missing group_id
 are patched the same way.
 
-Example (on osiris):
+Example:
 
   python3 scripts/ecm-rules-create-on-miss.py --dest-container kine-ecm
   python3 scripts/ecm-rules-create-on-miss.py --dest-container kine-ecm --apply

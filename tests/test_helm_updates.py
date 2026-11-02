@@ -134,6 +134,10 @@ def test_enrich_marks_hidden_and_unknown_as_core(monkeypatch):
     assert by_id["traefik"]["core"] is True
     assert by_id["dockerproxy"]["host_only"] is True
     assert by_id["sonarr"]["host_only"] is False
+    assert by_id["dockerproxy"]["checkout"] == ""
+    assert "osiris" not in updates_info.host_update_hint("dockerproxy", "/srv/kine")
+    assert "cd /srv/kine &&" in updates_info.host_update_hint("dockerproxy", "/srv/kine")
+    assert "cd " not in updates_info.host_update_hint("dockerproxy", "")
     # Catalogue apps honour COMPOSE_PROFILES; Traefik has no profile.
     assert by_id["sonarr"]["enabled"] is True
     assert by_id["cadvisor"]["enabled"] is True

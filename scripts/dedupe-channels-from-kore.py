@@ -9,8 +9,10 @@ Then renumber keepers to match kore.
 
 Dry-run by default. Pass --apply to write.
 
-  python3 scripts/dedupe-channels-from-kore.py
-  python3 scripts/dedupe-channels-from-kore.py --apply
+  python3 scripts/dedupe-channels-from-kore.py \\
+    --source-ssh user@source-host --dest-ssh user@dest-host
+  python3 scripts/dedupe-channels-from-kore.py \\
+    --source-ssh user@source-host --dest-ssh user@dest-host --apply
 """
 from __future__ import annotations
 
@@ -150,9 +152,9 @@ def _run_remote_py(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-ssh", default="stevec@10.100.100.90")
+    parser.add_argument("--source-ssh", required=True, help="SSH target for the source host")
     parser.add_argument("--source-container", default="dispatcharr")
-    parser.add_argument("--dest-ssh", default="stevec@10.100.100.34")
+    parser.add_argument("--dest-ssh", required=True, help="SSH target for the destination host")
     parser.add_argument("--dest-container", default="kine-dispatcharr")
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()

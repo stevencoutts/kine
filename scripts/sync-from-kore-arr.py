@@ -4,13 +4,13 @@ items from kore *arr to kine.
 
 Dry-run by default. Pass --apply to write.
 
-From osiris (LAN to kore, gluetun IP to kine *arr):
+The source and destination URLs are required. There is no default host.
 
   python3 scripts/sync-from-kore-arr.py \\
-    --source-sonarr http://10.100.100.90:8989 --source-sonarr-key "$KORE_SONARR_KEY" \\
-    --source-radarr http://10.100.100.90:7878 --source-radarr-key "$KORE_RADARR_KEY" \\
-    --dest-sonarr http://"$GLUETUN_IP":8989 --dest-sonarr-key "$KINE_SONARR_KEY" \\
-    --dest-radarr http://"$GLUETUN_IP":7878 --dest-radarr-key "$KINE_RADARR_KEY"
+    --source-sonarr http://source-host:8989 --source-sonarr-key "$SOURCE_SONARR_KEY" \\
+    --source-radarr http://source-host:7878 --source-radarr-key "$SOURCE_RADARR_KEY" \\
+    --dest-sonarr http://dest-host:8989 --dest-sonarr-key "$DEST_SONARR_KEY" \\
+    --dest-radarr http://dest-host:7878 --dest-radarr-key "$DEST_RADARR_KEY"
 
   python3 scripts/sync-from-kore-arr.py ... --apply
   python3 scripts/sync-from-kore-arr.py ... --add-missing --apply
