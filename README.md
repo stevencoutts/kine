@@ -21,6 +21,9 @@ the footer.
 - **VPN kill switch** — acquisition shares gluetun’s WireGuard namespace.
   Live TV starts there and can move to Direct as a group. No tunnel means
   no outbound path for anything still inside it
+- **Client VPN** — phones and other devices connect to Kine with their own
+  WireGuard config and share the provider tunnel already running. The
+  internal network stays reachable. Turning it on does not restart that tunnel
 - **Pi-hole** — optional DNS for the LAN and for apps outside the tunnel.
   Its only general upstream is the primary VPN
 - **Helm admin** — Dashboard, Stats, VPN, and Settings over the same Compose
@@ -256,6 +259,21 @@ own containers. They reach each other by service name (`dispatcharr:9191`,
 group moves. Game Thumbs stays untunnelled either way. Assigning any of
 those four apps to a VPN profile turns Direct off.
 
+**Client VPN.** On the VPN tab, turn on Client VPN and add a device. Each
+device gets one WireGuard config. Its endpoint is a hostname that should
+resolve to this machine on the internal network and to the public address
+from outside. Forward that UDP port (default **51820**) on the router to
+this machine; Kine does not configure the router. Device internet leaves
+through Kine's VPN when that VPN is up, and through the internal network
+when it is not. The internal network stays reachable either way, and names
+in the internal zone use the internal DNS server. The client subnet
+defaults to `10.66.66.0/24`. Pick another private range from /16 to /29
+when that overlaps a network already in use. Changing it gives every
+device a new address, so each one must download its config again. Starting
+or stopping Client VPN only starts or stops `wg-access`. It does not
+restart the tunnel the rest of Kine is using, and a client device has no
+kill switch.
+
 - No independent interface or fallback route for tunnelled apps
 - Tunnel down ⇒ acquisition down, and Live TV down while it is still inside the tunnel
 - Shared port space inside each tunnel — see [docs/port-map.md](docs/port-map.md)
@@ -289,7 +307,7 @@ never overwrites an existing key; `./kine provision` is idempotent.
 |-----|------|
 | Dashboard | Sections and apps, Watching, Downloads, Missing Search, dev channels |
 | Stats | Embedded Grafana / stack metrics |
-| VPN | Profiles, Direct Live TV, status, restart tunnel group |
+| VPN | Profiles, Direct Live TV, Client VPN, status, restart tunnel group |
 | Settings | Domain, TLS, NFS, Plex/Emby notify + path maps, Live TV token, OpenSubtitles |
 
 Updates are the footer chip: per-app and Update All. Disabled apps are
