@@ -9,7 +9,7 @@
   backup         a scheduled config snapshot, so the rollback path the
                  updater depends on is never more than a day stale.
 
-  arr-hunt       searches a small batch of missing Sonarr/Radarr items.
+  arr-hunt       searches a small batch of missing Sonarr/Radarr/Lidarr items.
                  RSS never backfills; this is the automatic magnifying glass.
 
   seerr-wire     re-runs provision wire when Seerr's wizard has finished

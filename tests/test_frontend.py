@@ -64,6 +64,9 @@ def test_status_page_shows_missing_search_job():
     assert "Missing Search" in status
     assert "arr_hunt" in status
     assert 'id="arr-hunt-now"' in status
+    assert "huntLine('lidarr', 'Lidarr')" in status
+    assert "hunt.lidarr?.skipped === 'queue'" in status
+    assert "!hunt.lidarr?.error" in status
     assert "/arr-hunt" in FRONTEND
     assert '@app.post("/api/arr-hunt")' in BACKEND
     assert "run_arr_hunt" in BACKEND

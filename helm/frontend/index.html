@@ -3259,8 +3259,8 @@ render.status = async () => {
     return `${label}: not run yet`;
   };
   const huntRan = Boolean(hunt.ran);
-  const huntWaiting = hunt.sonarr?.skipped === 'queue' || hunt.radarr?.skipped === 'queue';
-  const huntOk = huntRan && hunt.ok !== false && !hunt.sonarr?.error && !hunt.radarr?.error;
+  const huntWaiting = hunt.sonarr?.skipped === 'queue' || hunt.radarr?.skipped === 'queue' || hunt.lidarr?.skipped === 'queue';
+  const huntOk = huntRan && hunt.ok !== false && !hunt.sonarr?.error && !hunt.radarr?.error && !hunt.lidarr?.error;
   const huntBadge = !huntRan ? 'Never' : (!huntOk ? 'Attention' : (huntWaiting ? 'Waiting' : 'OK'));
   const huntBadgeState = huntOk && !huntWaiting ? '' : 'paused';
   const jobErrors = Object.keys(jobs.errors || {}).length
@@ -3313,7 +3313,8 @@ render.status = async () => {
             <div class="status-job-body">
               Last run: <b>${escHtml(fmtWhen(hunt.ran || 'never'))}</b><br>
               ${escHtml(huntLine('sonarr', 'Sonarr'))}<br>
-              ${escHtml(huntLine('radarr', 'Radarr'))}
+              ${escHtml(huntLine('radarr', 'Radarr'))}<br>
+              ${escHtml(huntLine('lidarr', 'Lidarr'))}
               <div id="arr-hunt-msg"></div>
               <div class="row" style="margin-top:.75rem">
                 <button type="button" class="act" id="arr-hunt-now">Search now</button>
