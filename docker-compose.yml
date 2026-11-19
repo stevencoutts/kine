@@ -26,6 +26,7 @@ include:
   - compose/acq.radarr.yml
   - compose/acq.lidarr.yml
   - compose/acq.prowlarr.yml
+  - compose/acq.flaresolverr.yml
   - compose/acq.jackett.yml
   - compose/acq.bazarr.yml
   - compose/acq.transmission.yml

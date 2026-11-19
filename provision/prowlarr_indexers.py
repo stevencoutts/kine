@@ -104,6 +104,9 @@ def ensure_indexers(client: ArrClient, log) -> None:
 
         if current:
             payload["id"] = current["id"]
+            # Keep tags another recipe or the user added (FlareSolverr's
+            # proxy tag); a PUT without them would clear them.
+            payload["tags"] = current.get("tags") or []
             client.put(f"indexer/{current['id']}?forceSave=true", payload)
             log(f"prowlarr: updated indexer {definition}")
             continue

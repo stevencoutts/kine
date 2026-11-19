@@ -10,7 +10,7 @@ from arrclient import ArrClient, http_error_detail
 from keys import resolve_key
 import tunnel_hosts
 from prowlarr_indexers import ensure_indexers
-from recipes import prowlarr_newznab
+from recipes import flaresolverr, prowlarr_newznab
 
 TARGETS = {
     "sonarr": ("Sonarr", "SonarrSettings", "http://localhost:8989"),
@@ -83,3 +83,11 @@ def configure(enabled: set[str], log) -> None:
     if "transmission" in enabled:
         if client.ensure("downloadclient", transmission_client()):
             log("prowlarr: download client Transmission")
+
+    # After ensure_indexers, so the Cloudflare indexers exist to be tagged.
+    if "flaresolverr" in enabled:
+        try:
+            flaresolverr.configure(client, log)
+        except Exception as exc:  # noqa: BLE001
+            detail = http_error_detail(exc) if hasattr(exc, "response") else str(exc)
+            log(f"prowlarr: FlareSolverr wiring failed ({detail})")

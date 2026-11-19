@@ -20,6 +20,7 @@ ACQUISITION_AFFINITY = (
     "sonarr",
     "radarr",
     "prowlarr",
+    "flaresolverr",
     "jackett",
     "bazarr",
     "transmission",

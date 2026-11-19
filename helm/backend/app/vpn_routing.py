@@ -105,6 +105,7 @@ APP_PORTS: dict[str, int] = {
     "teamarr": 9195,
     "prowlarr": 9696,
     "unpackerr": 5656,
+    "flaresolverr": 8191,
 }
 
 # Traefik Host() subdomain; shortcuts match vpn.gluetun.yml.

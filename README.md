@@ -100,7 +100,7 @@ Enabling a section selects its catalogue defaults:
 | Network | none (enable Pi-hole individually) |
 
 Optional individually: Emby, Lidarr, Beets, Jackett, Bazarr, NZBGet,
-Unpackerr, Seerr, ECM MCP, Pi-hole.
+Unpackerr, FlareSolverr, Seerr, ECM MCP, Pi-hole.
 Prowlarr is the indexer proxy wired into Sonarr/Radarr. Recyclarr syncs TRaSH
 Guide 1080p profiles (`WEB-1080p` / `HD Bluray + WEB`) on a daily cron.
 

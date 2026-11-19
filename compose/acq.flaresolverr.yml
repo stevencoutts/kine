@@ -1,0 +1,29 @@
+# Tunnelled and headless. FlareSolverr solves Cloudflare challenges for
+# Prowlarr. It shares gluetun's namespace with Prowlarr, which reaches it
+# on http://localhost:8191; provision registers it as Prowlarr's indexer
+# proxy and tags the Cloudflare-protected indexers (1337x, KickassTorrents).
+# Its browser traffic leaves through the VPN like every other acquisition
+# request. No ports, networks or labels: there is no UI to route.
+services:
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:${FLARESOLVERR_TAG}
+    container_name: kine-flaresolverr
+    profiles: ["flaresolverr"]
+    restart: unless-stopped
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    network_mode: "service:gluetun"
+    environment:
+      TZ: ${KINE_TIMEZONE}
+      LOG_LEVEL: info
+    # A headless Chromium: cap it so a stuck challenge cannot starve the host
+    # (idles at ~115 MB; a solve briefly uses one or two cores).
+    mem_limit: 3g
+    cpus: 2
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8191/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s

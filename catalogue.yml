@@ -109,6 +109,17 @@ apps:
     dev_tag: develop
     default: true
 
+  flaresolverr:
+    name: FlareSolverr
+    tier: acquisition
+    summary: Solves Cloudflare challenges so Prowlarr can use Cloudflare-protected indexers such as 1337x and KickassTorrents.
+    releases: https://github.com/FlareSolverr/FlareSolverr/releases
+    internal: http://gluetun:8191
+    wires: [indexer-proxy]
+    requires: [gluetun, prowlarr]
+    tunnelled: forced
+    default: false
+
   jackett:
     name: Jackett
     tier: acquisition

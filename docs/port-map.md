@@ -31,6 +31,7 @@ Unassigned forced-tunnel apps stay on the primary tunnel.
 | 6789 | NZBGet | `gluetun:6789` |
 | 7878 | Radarr | `gluetun:7878` |
 | 8000 | gluetun control server | `gluetun:8000` (internal only) |
+| 8191 | FlareSolverr | headless; Prowlarr uses `localhost:8191` |
 | 8686 | Lidarr | `gluetun:8686` |
 | 8989 | Sonarr | `gluetun:8989` |
 | 9091 | Transmission | `gluetun:9091` |
