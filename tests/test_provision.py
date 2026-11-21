@@ -171,7 +171,9 @@ def test_seed_beets_writes_inplace_import(stack):
     assert data["import"]["write"] is True
     assert data["import"]["quiet_fallback"] == "asis"
     assert "web" in data["plugins"]
-    assert "scrub" in data["plugins"]
+    assert "scrub" not in data["plugins"]
+    assert "embedart" not in data["plugins"]
+    assert "fetchart" in data["plugins"]
     assert data["web"]["host"] == "0.0.0.0"
 
 
@@ -189,7 +191,7 @@ def test_seed_beets_stamps_import_on_existing_stub(stack):
     assert data["import"]["copy"] is False
     assert data["import"]["write"] is True
     assert data["import"]["quiet_fallback"] == "asis"
-    assert "embedart" in data["plugins"]
+    assert "embedart" not in data["plugins"]
     assert "lastgenre" in data["plugins"]
 
 
@@ -593,7 +595,7 @@ def test_beets_notification_is_lidarr_custom_script():
     assert n["implementation"] == "CustomScript"
     assert n["onReleaseImport"] is True
     assert n["onUpgrade"] is True
-    assert n["onRename"] is True
+    assert n["onRename"] is False  # renaming does not change tags
     assert n["onTrackRetag"] is False
     fields = {f["name"]: f["value"] for f in n["fields"]}
     assert fields["path"] == "/config/kine-beets-hook.sh"
@@ -1575,3 +1577,47 @@ def test_metrics_seed_hands_the_tsdb_to_the_stack_user(tmp_path, monkeypatch):
     assert chowned.get(data_dir) == (1000, 1000)
     grafana_data = str(tmp_path / "config" / "grafana" / "data")
     assert chowned.get(grafana_data) == (472, 472)
+
+
+def test_seed_beets_removes_embedart_and_scrub_from_an_existing_config(stack):
+    import yaml
+    import seed
+    d = stack / "config" / "beets"
+    d.mkdir(parents=True)
+    (d / "config.yaml").write_text("plugins: web fetchart embedart lastgenre scrub\n")
+    seed.seed_beets()
+    data = yaml.safe_load((d / "config.yaml").read_text())
+    assert data["plugins"].split() == ["web", "fetchart", "lastgenre"]
+
+
+def _run_beets_hook(tmp_path, **env):
+    import os
+    import pathlib
+    import subprocess
+
+    hook = pathlib.Path(__file__).resolve().parents[1] / "provision" / "assets" / "lidarr" / "kine-beets-hook.sh"
+    queue = tmp_path / "queue"
+    full = {"PATH": os.environ["PATH"], "KINE_BEETS_QUEUE": str(queue), "KINE_LIDARR_MUSIC": "/data/media/music", **env}
+    subprocess.run(["sh", str(hook)], env=full, check=True)
+    return queue.read_text().splitlines() if queue.exists() else []
+
+
+def test_beets_hook_queues_the_album_folder_not_the_artist(tmp_path):
+    q = _run_beets_hook(
+        tmp_path, lidarr_eventtype="Download", lidarr_artist_path="/data/media/music/Muse",
+        lidarr_addedtrackpaths="/data/media/music/Muse/Absolution (2003)/a.flac|/data/media/music/Muse/Absolution (2003)/b.flac",
+    )
+    assert q == ["/music/Muse/Absolution (2003)"]
+
+
+def test_beets_hook_walks_disc_folders_up_to_the_album(tmp_path):
+    q = _run_beets_hook(
+        tmp_path, lidarr_eventtype="Upgrade",
+        lidarr_addedtrackpaths="/data/media/music/Beatles/White (1968)/CD 01/a.flac|/data/media/music/Beatles/White (1968)/CD 02/b.flac",
+    )
+    assert q == ["/music/Beatles/White (1968)"]
+
+
+def test_beets_hook_ignores_renames_and_falls_back_to_the_artist(tmp_path):
+    assert _run_beets_hook(tmp_path, lidarr_eventtype="Rename", lidarr_artist_path="/data/media/music/Muse") == []
+    assert _run_beets_hook(tmp_path, lidarr_eventtype="Download", lidarr_artist_path="/data/media/music/Muse") == ["/music/Muse"]

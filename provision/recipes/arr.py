@@ -194,7 +194,7 @@ def beets_notification() -> dict:
         "onGrab": False,
         "onReleaseImport": True,
         "onUpgrade": True,
-        "onRename": True,
+        "onRename": False,   # renaming files does not change tags
         "onTrackRetag": False,
         "onHealthIssue": False,
         "onApplicationUpdate": False,

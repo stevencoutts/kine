@@ -231,7 +231,10 @@ def seed_bazarr(enabled: set[str]) -> None:
     print("  bazarr: seeded config/config.yaml with derived API key")
 
 
-BEETS_PLUGINS = ("web", "fetchart", "embedart", "lastgenre", "scrub")
+BEETS_PLUGINS = ("web", "fetchart", "lastgenre")
+# embedart rewrites every file just to embed what the folder cover.jpg already gives Plex/Emby;
+# scrub strips tags beets does not know about (ReplayGain, lyrics). Removed from existing configs too.
+BEETS_REMOVED_PLUGINS = ("embedart", "scrub")
 
 
 def _beets_plugins(existing) -> str:
@@ -241,6 +244,7 @@ def _beets_plugins(existing) -> str:
         names = [str(p) for p in existing]
     else:
         names = []
+    names = [n for n in names if n not in BEETS_REMOVED_PLUGINS]
     for plugin in BEETS_PLUGINS:
         if plugin not in names:
             names.append(plugin)
